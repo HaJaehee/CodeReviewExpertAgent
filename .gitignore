@@ -19,6 +19,9 @@ reports/
 # 폐쇄망 반입용 wheel 묶음. 용량이 크고 플랫폼마다 다르다.
 wheels/
 
+# 반입 번들. tools\package.ps1 이 만든다. 수십 MB 라 커밋하지 않는다.
+dist/
+
 # 로그
 *.log
 

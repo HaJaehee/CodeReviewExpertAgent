@@ -38,7 +38,7 @@ chat_template_kwargs = { enable_thinking = false }
 
 [llm.verifier]
 base_url = "http://vllm-gemma:8000/v1"
-model = "gemma-4-26b-it"
+model = "gemma-4-31b-it"
 api_key = "EMPTY"
 temperature = 0.0
 max_input_tokens = 4096            # 검증은 청크 하나만 보므로 더 좁게 잡는다

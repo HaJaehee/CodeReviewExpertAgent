@@ -313,16 +313,36 @@ def test_fastmcp_bindings_registered() -> None:
 
     from crx import mcp as mcp_module
 
-    tools = asyncio.run(mcp_module.mcp.get_tools())
-    names = set(tools)
+    # FastMCP 3.x 는 list_tools() 를 쓴다 (2.x 의 get_tools() 는 없다).
+    tools = asyncio.run(mcp_module.mcp.list_tools())
+    names = {t.name for t in tools}
     expected = {
         "review_diff", "review_staged", "review_working_tree",
         "review_file", "review_directory",
     }
     _check(names == expected, f"도구 목록 불일치: {sorted(names)}")
 
-    for name, tool in tools.items():
-        _check(bool(getattr(tool, "description", None)), f"{name} 설명 없음")
+    def schema_of(tool) -> dict:
+        # FastMCP 3.x 의 FunctionTool 은 parameters, 구버전은 inputSchema 를 쓴다.
+        for attr in ("parameters", "inputSchema", "input_schema"):
+            value = getattr(tool, attr, None)
+            if isinstance(value, dict):
+                return value
+        return {}
+
+    for tool in tools:
+        # 스키마와 설명은 타입 힌트·docstring 에서 자동 생성된다.
+        # 비어 있으면 에이전트가 도구를 못 고른다.
+        _check(bool(tool.description), f"{tool.name} 설명 없음")
+        _check(bool(schema_of(tool)), f"{tool.name} 입력 스키마 없음")
+
+    by_name = {t.name: t for t in tools}
+    diff_props = schema_of(by_name["review_diff"]).get("properties", {})
+    _check("from_ref" in diff_props, f"review_diff 인자 누락: {sorted(diff_props)}")
+    _check("paths" in diff_props, f"paths 인자 누락: {sorted(diff_props)}")
+
+    staged_props = schema_of(by_name["review_staged"]).get("properties", {})
+    _check("paths" in staged_props, f"review_staged paths 누락: {sorted(staged_props)}")
 
 
 TESTS = [

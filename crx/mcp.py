@@ -27,8 +27,14 @@ import os
 import sys
 from pathlib import Path
 
-from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
+# FastMCP 는 기동할 때 pypi.org 에 새 버전이 있는지 물어본다. 폐쇄망에서는
+# 나가지도 못하고, 나가려 시도하는 것 자체가 반입 심사에서 걸린다.
+# import 전에 꺼야 한다 — 설정이 import 시점에 읽힌다.
+# 사용자가 기억해야 하는 환경변수로 두지 않고 여기서 못 박는다.
+os.environ.setdefault("FASTMCP_CHECK_FOR_UPDATES", "off")
+
+from fastmcp import FastMCP  # noqa: E402
+from fastmcp.exceptions import ToolError  # noqa: E402
 
 from .config import load_config
 from .gitio import gitpython_available, resolve_repo_root

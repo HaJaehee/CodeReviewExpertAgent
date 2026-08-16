@@ -15,7 +15,8 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 | [설정](configuration.md) | `crx.toml` 의 모든 항목과 손대야 할 때 |
 | [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](evaluation.md) | 골든셋 만들기, KBI/FAR 해석, 룰 폐기 |
-| [운영](operations.md) | 폐쇄망 반입, vLLM 기동, Zed 연동, 일상 운영 |
+| [반입](transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
+| [운영](operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
 | [문제 해결](troubleshooting.md) | 증상별 원인과 조치 |
 | [동작 원리](internals.md) | 내부 구조와 설계 의도 |
 

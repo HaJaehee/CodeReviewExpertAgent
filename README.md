@@ -94,7 +94,8 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 | [설정](docs/configuration.md) | `crx.toml` 전체 항목 |
 | [룰 작성법](docs/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](docs/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
-| [운영](docs/operations.md) | 폐쇄망 반입, vLLM 기동, Zed 연동 |
+| [반입](docs/transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
+| [운영](docs/operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
 | [문제 해결](docs/troubleshooting.md) | 증상별 원인과 조치 |
 | [동작 원리](docs/internals.md) | 내부 구조와 설계 의도 |
 
