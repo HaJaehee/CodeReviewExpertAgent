@@ -81,6 +81,11 @@ compile_commands_dir = "build"
 #  C#: 빌드할 솔루션/프로젝트. Roslyn 분석기 경고를 그대로 수확한다.
 dotnet_project = "src/App.sln"
 
+#  clang-tidy 체크 목록. 비워두는 것이 기본이자 권장이다.
+#  비우면 프로젝트의 .clang-tidy 를 존중하고(= 팀 코딩 룰이 살아난다),
+#  그것도 없으면 버그 탐지 위주 기본값을 쓴다. 지정하면 그것이 이긴다.
+# clang_tidy_checks = "-*,bugprone-*,cert-*"
+
 #  Semgrep: 폐쇄망에서 "auto" 는 동작하지 않는다 (룰을 인터넷에서 받아온다).
 #  룰팩을 사전에 반입하고 로컬 경로를 지정해야 한다. 미지정 시 semgrep 은
 #  아예 실행되지 않는다.

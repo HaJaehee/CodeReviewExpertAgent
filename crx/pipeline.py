@@ -224,6 +224,7 @@ class Pipeline:
 
     def _build_gate(self, repo_root: Path) -> GroundingGate:
         grounding = self.config.grounding
+        self._repo_root = repo_root
         instances: list[Analyzer] = []
         seen: set[type[Analyzer]] = set()
 
@@ -259,7 +260,12 @@ class Pipeline:
     def _instantiate(self, cls: type[Analyzer], timeout: float) -> Analyzer:
         grounding = self.config.grounding
         if cls is ClangTidy:
-            return ClangTidy(compile_commands_dir=grounding.compile_commands_dir, timeout=timeout)
+            return ClangTidy(
+                checks=grounding.clang_tidy_checks,
+                compile_commands_dir=grounding.compile_commands_dir,
+                project_root=self._repo_root,
+                timeout=timeout,
+            )
         if cls is RoslynAnalyzers:
             return RoslynAnalyzers(project=grounding.dotnet_project, timeout=timeout)
         if cls is Roslynator:

@@ -35,8 +35,8 @@ CLI is documented there only as maintainer tooling (golden set, rule tuning).
 - **Python 3.11+**. Core is stdlib-only; only the MCP server needs wheels
   (`requirements.txt`: FastMCP, GitPython). tree-sitter and GitPython both have
   working fallbacks — see [invariants.md](invariants.md).
-- **~4,056 lines** across 17 modules in `crx/`.
-- **62 tests**, all runnable without an LLM or network: `python tests/run_all.py`
+- **~4,092 lines** across 17 modules in `crx/`.
+- **64 tests**, all runnable without an LLM or network: `python tests/run_all.py`
 - **41 rules** in `rules/taxonomy.toml` (C++ 14, C# 15, Python 14).
 - Entry point: `python -m crx {review|scan|doctor}`
 

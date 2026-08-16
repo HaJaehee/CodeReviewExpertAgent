@@ -177,14 +177,38 @@ class ClangTidy(Analyzer):
 
     DEFAULT_CHECKS = "-*,bugprone-*,cert-*,clang-analyzer-*,concurrency-*,misc-*,performance-*"
 
-    def __init__(self, *, checks: str | None = None, compile_commands_dir: str | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        checks: str | None = None,
+        compile_commands_dir: str | None = None,
+        project_root: Path | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
-        self.checks = checks or self.DEFAULT_CHECKS
+        #: None 이면 프로젝트의 .clang-tidy 를 존중하고, 그것도 없으면 기본값을 쓴다.
+        self.checks = checks
         #: compile_commands.json 이 있는 디렉터리. 없으면 정확도가 크게 떨어진다.
         self.compile_commands_dir = compile_commands_dir
+        self.project_root = project_root
+
+    def has_project_config(self) -> bool:
+        """팀이 관리하는 .clang-tidy 가 있는가."""
+        if self.project_root is None:
+            return False
+        return (self.project_root / ".clang-tidy").is_file()
 
     def build_command(self, paths: list[str]) -> list[str]:
-        command = [self.executable, f"--checks={self.checks}", "--quiet"]
+        command = [self.executable, "--quiet"]
+
+        # 명령줄 --checks 는 .clang-tidy 의 Checks 를 덮어쓴다. 팀이 관리하는
+        # 설정이 있으면 넘기지 않는 것이 맞다 — 사내 코딩 룰이 거기 들어 있고,
+        # 여기서 덮으면 그 룰이 통째로 무시된다.
+        if self.checks:
+            command.append(f"--checks={self.checks}")
+        elif not self.has_project_config():
+            command.append(f"--checks={self.DEFAULT_CHECKS}")
+
         if self.compile_commands_dir:
             command.append(f"-p={self.compile_commands_dir}")
         command.extend(self.extra_args)

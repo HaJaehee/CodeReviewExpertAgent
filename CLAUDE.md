@@ -47,7 +47,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 62 tests, no LLM or network needed
+python tests/run_all.py                     # 64 tests, no LLM or network needed
 ```
 
 ```bash
@@ -150,7 +150,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server. 41 rules. 62 tests passing. ~4,056 lines in `crx/`.
+evaluation harness, MCP server. 41 rules. 64 tests passing. ~4,092 lines in `crx/`.
 
 **Not yet true, and load-bearing:**
 

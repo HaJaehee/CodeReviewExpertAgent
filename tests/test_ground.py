@@ -206,6 +206,42 @@ def test_render_static_findings_when_empty() -> None:
     _check("없음" in rendered, f"빈 결과 표기 누락: {rendered}")
 
 
+def test_clang_tidy_respects_project_config() -> None:
+    """팀의 .clang-tidy 가 있으면 --checks 로 덮어쓰면 안 된다.
+
+    사내 코딩 룰이 그 파일에 들어 있는데 명령줄 --checks 가 Checks 를 덮어쓴다.
+    조용히 무시되면 "룰을 넣었는데 아무 일도 안 일어나요" 가 된다.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        # .clang-tidy 가 없으면 기본 체크를 넘긴다
+        without = ClangTidy(project_root=root).build_command(["a.cpp"])
+        _check(any(c.startswith("--checks=") for c in without),
+               f"기본 체크가 없음: {without}")
+        _check("bugprone-*" in " ".join(without), f"기본 체크 내용 불일치: {without}")
+
+        # .clang-tidy 가 있으면 --checks 를 넘기지 않는다
+        (root / ".clang-tidy").write_text("Checks: '-*,readability-*'\n", encoding="utf-8")
+        with_config = ClangTidy(project_root=root).build_command(["a.cpp"])
+        _check(not any(c.startswith("--checks=") for c in with_config),
+               f"팀 설정이 있는데 --checks 를 덮어씀: {with_config}")
+
+        # 명시적으로 지정하면 그것이 이긴다
+        explicit = ClangTidy(project_root=root, checks="-*,cert-*").build_command(["a.cpp"])
+        _check("--checks=-*,cert-*" in explicit, f"명시 설정이 무시됨: {explicit}")
+
+
+def test_clang_tidy_checks_configurable() -> None:
+    """crx.toml 에서 체크 목록을 바꿀 수 있어야 한다."""
+    from crx.config import GroundingConfig
+
+    config = GroundingConfig(clang_tidy_checks="-*,modernize-*")
+    _check(config.clang_tidy_checks == "-*,modernize-*", "설정 키가 없다")
+
+
 def test_optional_analyzers_are_reachable_from_config() -> None:
     """roslynator/semgrep 은 이름을 적으면 실제로 켜져야 한다.
 
@@ -272,6 +308,8 @@ TESTS = [
     test_missing_tool_is_skipped_not_fatal,
     test_attach_matches_by_path_suffix,
     test_render_static_findings_when_empty,
+    test_clang_tidy_respects_project_config,
+    test_clang_tidy_checks_configurable,
     test_optional_analyzers_are_reachable_from_config,
 ]
 

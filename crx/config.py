@@ -24,6 +24,9 @@ class GroundingConfig:
     semgrep_config: str | None = None
     #: C# 빌드 대상 .sln/.csproj.
     dotnet_project: str | None = None
+    #: clang-tidy 체크 목록. 비우면 프로젝트의 .clang-tidy 를 존중하고,
+    #: 그것도 없으면 버그 탐지 위주의 기본값을 쓴다.
+    clang_tidy_checks: str | None = None
     #: 사용할 분석기 이름 목록. 비우면 언어별 기본값 전체.
     #: roslynator 와 semgrep 은 여기에 이름을 적어야만 켜진다 (semgrep 은
     #: semgrep_config 가 있으면 이름 없이도 켜진다).
