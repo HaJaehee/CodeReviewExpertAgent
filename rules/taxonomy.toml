@@ -1,0 +1,513 @@
+#  코드리뷰 룰 택소노미
+#
+#  BitsAI-CR 의 4개 차원 구조를 차용하되, 219개가 아니라 50여개로 시작한다.
+#  룰이 많을수록 좋은 게 아니다 — 프롬프트가 길어지면 소형 모델의 정밀도가
+#  떨어지고, 검증되지 않은 룰은 오탐만 늘린다. Phase 2 에서 골든셋으로 하나씩
+#  검증하며 늘려간다.
+#
+#  ## chunk_local 필드가 핵심이다
+#
+#  `chunk_local = true` 는 "이 룰은 제시된 코드 스니펫만 보고 판정할 수 있다"는
+#  뜻이다. false 인 룰(예: 호출부를 봐야 아는 것)은 소형 모델이 반드시 지어낸다.
+#  기본 프로파일은 chunk_local = true 인 룰만 활성화한다.
+#
+#  ## 필드
+#  id          : 안정적 식별자. 리포트/평가/플라이휠의 조인 키이므로 절대 바꾸지 말 것.
+#  language    : cpp | csharp | python | any
+#  dimension   : code_defect | security_vulnerability | maintainability | performance
+#  severity    : high | medium | low
+#  title       : 한 줄 요약 (개발자에게 보이는 이름)
+#  criteria    : 모델에게 주는 판정 기준. "무엇을 보면 참인가"를 구체적으로.
+#  counter     : 오탐 방지 단서. "이런 경우는 지적하지 마라".
+
+[meta]
+version = "0.1.0"
+updated = "2026-08-16"
+
+# ==========================================================================
+# C++
+# ==========================================================================
+
+[[rule]]
+id = "cpp.dangling-after-realloc"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "재할당 이후 무효화된 포인터/참조/반복자 사용"
+criteria = """
+vector/string/deque 등의 원소를 가리키는 포인터·참조·반복자를 얻은 뒤,
+같은 컨테이너에 resize/push_back/insert/reserve/emplace_back 이 호출되고,
+그 이후에 앞서 얻은 포인터·참조·반복자를 다시 사용하는 경우.
+"""
+counter = "재할당 이후 포인터를 다시 얻어오면 문제 없다. list/forward_list 는 삽입 시 무효화되지 않는다."
+
+[[rule]]
+id = "cpp.use-after-move"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "std::move 이후 원본 객체 사용"
+criteria = """
+std::move(x) 로 x 를 넘긴 뒤 같은 스코프에서 x 의 값을 읽거나 멤버를 호출하는 경우.
+"""
+counter = "재대입(x = ...)이나 clear() 이후의 사용은 정상이다. unique_ptr 의 == nullptr 비교도 정상."
+
+[[rule]]
+id = "cpp.manual-resource-management"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "수동 new/delete 로 인한 예외 경로 누수"
+criteria = """
+new 로 할당한 자원이 RAII 래퍼(unique_ptr/shared_ptr/lock_guard)에 담기지 않고,
+delete 까지의 경로에 예외를 던질 수 있는 호출이나 early return 이 존재하는 경우.
+fopen/malloc/CreateHandle 등 C API 도 동일하게 본다.
+"""
+counter = "소멸자에서 해제하는 소유 클래스 내부이거나, 즉시 스마트 포인터로 감싸면 문제 없다."
+
+[[rule]]
+id = "cpp.iterator-invalidation-in-loop"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "순회 중 컨테이너 구조 변경"
+criteria = """
+범위 기반 for 나 반복자 루프 안에서 같은 컨테이너에 erase/insert/push_back/clear 를
+호출하는 경우.
+"""
+counter = "erase 의 반환값으로 반복자를 갱신하는 관용구(it = c.erase(it))는 정상이다."
+
+[[rule]]
+id = "cpp.uninitialized-member"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "생성자에서 멤버 초기화 누락"
+criteria = """
+생성자가 정의되어 있고, 클래스의 스칼라 멤버(포인터·정수·불리언·실수)가
+멤버 초기화 리스트에도 본문에도 나타나지 않으며 클래스 내 기본 초기화자도 없는 경우.
+"""
+counter = "std::string/vector 같은 클래스 타입 멤버는 기본 생성자가 초기화하므로 지적하지 않는다."
+
+[[rule]]
+id = "cpp.rule-of-five"
+language = "cpp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "자원을 소유하는데 복사/이동 연산 미정의"
+criteria = """
+클래스가 raw 포인터·핸들·파일 디스크립터를 소유하고 소멸자에서 해제하는데,
+복사 생성자/복사 대입/이동 생성자/이동 대입 중 일부만 정의되었거나
+= delete 로 명시적으로 막혀 있지 않은 경우.
+"""
+counter = "모든 멤버가 스마트 포인터/컨테이너면 컴파일러 기본 구현으로 충분하다."
+
+[[rule]]
+id = "cpp.missing-override"
+language = "cpp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "가상 함수 재정의에 override 누락"
+criteria = "기반 클래스의 virtual 함수를 재정의하는 것이 명백한데 override 키워드가 없는 경우."
+counter = "기반 클래스 선언이 스니펫에 없으면 판단하지 말 것. 최초 선언에는 override 를 쓰지 않는다."
+
+[[rule]]
+id = "cpp.data-race"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "공유 상태에 동기화 없이 접근"
+criteria = """
+스레드에서 접근되는 것이 명백한 멤버(스니펫 내에 mutex/thread/async 가 함께 등장)를
+락이나 atomic 없이 읽고 쓰는 경우. 특히 검사-후-사용(check-then-act) 패턴.
+"""
+counter = "단일 스레드 코드이거나 const 읽기 전용 접근이면 지적하지 않는다."
+
+[[rule]]
+id = "cpp.buffer-bounds"
+language = "cpp"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "배열/버퍼 경계 검사 누락"
+criteria = """
+memcpy/strcpy/sprintf 에 목적지 크기 검사가 없거나, 인덱스가 컨테이너 크기와
+비교되지 않은 채 operator[] 로 접근하는 경우.
+"""
+counter = "at() 사용이나 직전에 size() 비교가 있으면 정상이다."
+
+[[rule]]
+id = "cpp.signed-unsigned-mix"
+language = "cpp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "부호 있는/없는 타입 혼용으로 인한 언더플로"
+criteria = """
+size_t 같은 부호 없는 값에서 뺄셈을 하거나, int 와 size_t 를 비교하는 경우.
+특히 `container.size() - 1` 이 빈 컨테이너에서 거대한 값이 되는 패턴.
+"""
+counter = "뺄셈 앞에 empty() 검사나 크기 비교가 있으면 정상이다."
+
+[[rule]]
+id = "cpp.temporary-lifetime"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "임시 객체에 대한 참조/포인터 반환"
+criteria = """
+지역 변수나 임시 객체의 주소·참조를 반환하거나, 임시 객체가 만든 문자열의
+c_str() 결과를 임시 수명 밖에서 사용하는 경우.
+"""
+counter = "static 이나 멤버 변수에 대한 참조 반환은 정상이다."
+
+[[rule]]
+id = "cpp.unnecessary-copy"
+language = "cpp"
+dimension = "performance"
+severity = "medium"
+chunk_local = true
+title = "큰 객체의 불필요한 복사"
+criteria = """
+컨테이너·문자열·사용자 정의 클래스를 값으로 받는 매개변수인데 함수 안에서
+수정하지 않는 경우, 또는 범위 기반 for 에서 `for (auto x : container)` 로
+값 복사하는 경우.
+"""
+counter = "int/포인터 같은 스칼라나, 실제로 사본이 필요한 경우(이동해서 저장)는 정상이다."
+
+[[rule]]
+id = "cpp.exception-in-destructor"
+language = "cpp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "소멸자에서 예외 전파"
+criteria = "소멸자 안에서 throw 하거나, 예외를 던질 수 있는 호출을 try/catch 없이 하는 경우."
+counter = "noexcept(false) 가 명시되어 있고 의도가 주석에 드러나면 지적하지 않는다."
+
+# ==========================================================================
+# C#  —  OCR 내장 룰이 없는 언어다. 여기가 실질적으로 유일한 룰 소스다.
+# ==========================================================================
+
+[[rule]]
+id = "csharp.idisposable-not-disposed"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "IDisposable 객체 미해제"
+criteria = """
+FileStream/HttpClient/SqlConnection/StreamReader 등 IDisposable 구현체를 생성하고
+using 문/선언이나 Dispose() 호출 없이 스코프를 벗어나는 경우.
+"""
+counter = "필드에 저장하고 클래스가 IDisposable 을 구현해 소유권을 넘기면 정상이다. DI 컨테이너가 관리하는 경우도 정상."
+
+[[rule]]
+id = "csharp.async-void"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "async void 메서드"
+criteria = "이벤트 핸들러가 아닌 메서드가 async void 로 선언된 경우. 예외를 호출자가 잡을 수 없다."
+counter = "EventHandler 시그니처(object sender, EventArgs e)를 따르는 이벤트 핸들러는 예외다."
+
+[[rule]]
+id = "csharp.blocking-on-async"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = ".Result / .Wait() 로 인한 데드락 위험"
+criteria = """
+Task 에 대해 .Result, .Wait(), .GetAwaiter().GetResult() 를 호출하는 경우.
+동기화 컨텍스트가 있는 환경(WPF/WinForms/구 ASP.NET)에서 데드락을 일으킨다.
+"""
+counter = "Main 진입점이나 이미 완료가 보장된 Task(Task.FromResult)에서는 지적하지 않는다."
+
+[[rule]]
+id = "csharp.unawaited-task"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "await 되지 않은 Task"
+criteria = """
+Task 를 반환하는 메서드를 호출하고 await 하지도, 반환하지도, 변수에 담지도 않는 경우.
+예외가 조용히 사라지고 실행 순서가 보장되지 않는다.
+"""
+counter = "의도적 fire-and-forget 임이 주석이나 _ = 할당으로 명시되면 지적하지 않는다."
+
+[[rule]]
+id = "csharp.linq-multiple-enumeration"
+language = "csharp"
+dimension = "performance"
+severity = "medium"
+chunk_local = true
+title = "IEnumerable 다중 열거"
+criteria = """
+IEnumerable 변수에 대해 Count()/Any()/foreach/First() 등을 두 번 이상 호출하는 경우.
+지연 평가 때문에 쿼리가 매번 다시 실행된다.
+"""
+counter = "ToList()/ToArray() 로 이미 구체화되었거나 List/배열 타입이면 정상이다."
+
+[[rule]]
+id = "csharp.exception-swallowed"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "예외를 삼킴"
+criteria = "catch 블록이 비어 있거나 로깅만 하고 복구도 재던지기도 하지 않는 경우."
+counter = "정말로 무시해도 되는 이유가 주석에 적혀 있으면 지적하지 않는다."
+
+[[rule]]
+id = "csharp.rethrow-loses-stacktrace"
+language = "csharp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "throw ex 로 스택트레이스 소실"
+criteria = "catch (Exception ex) 블록에서 `throw ex;` 로 재던지는 경우. 원래 스택트레이스가 사라진다."
+counter = "`throw;` 나 새 예외에 innerException 으로 감싸는 것은 정상이다."
+
+[[rule]]
+id = "csharp.sql-injection"
+language = "csharp"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "문자열 연결로 만든 SQL"
+criteria = """
+SQL 문자열을 + 연결이나 문자열 보간($"...")으로 만들면서 변수를 끼워 넣고,
+그것을 CommandText/ExecuteQuery 등에 넘기는 경우.
+"""
+counter = "SqlParameter 를 쓰거나, 보간된 값이 상수/열거형이면 정상이다. FromSqlInterpolated 도 안전하다."
+
+[[rule]]
+id = "csharp.collection-modified-during-enumeration"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "열거 중 컬렉션 변경"
+criteria = "foreach 루프 안에서 순회 대상 컬렉션에 Add/Remove/Clear 를 호출하는 경우."
+counter = "ToList() 사본을 순회하거나 for 인덱스 역순 루프면 정상이다."
+
+[[rule]]
+id = "csharp.static-mutable-state"
+language = "csharp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "동기화 없는 static 가변 상태"
+criteria = """
+static 필드가 컬렉션이나 가변 객체이고, 락 없이 쓰기 접근이 일어나는 경우.
+웹 요청처럼 동시 실행되는 문맥에서 경쟁 상태가 된다.
+"""
+counter = "static readonly 불변 값이나 ConcurrentDictionary 등 스레드 안전 타입은 정상이다."
+
+[[rule]]
+id = "csharp.cancellationtoken-ignored"
+language = "csharp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "CancellationToken 을 받고도 전달하지 않음"
+criteria = """
+메서드가 CancellationToken 매개변수를 받는데, 내부의 async 호출에 그것을
+넘기지 않는 경우. 취소가 동작하지 않는다.
+"""
+counter = "토큰을 받지 않는 API 를 호출하는 경우는 어쩔 수 없다."
+
+[[rule]]
+id = "csharp.equals-without-gethashcode"
+language = "csharp"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "Equals 재정의 시 GetHashCode 누락"
+criteria = "Equals(object) 를 override 하면서 GetHashCode() 를 override 하지 않은 경우."
+counter = "record 타입은 컴파일러가 둘 다 생성하므로 해당 없다."
+
+[[rule]]
+id = "csharp.string-concat-in-loop"
+language = "csharp"
+dimension = "performance"
+severity = "medium"
+chunk_local = true
+title = "루프 안에서 문자열 += 연결"
+criteria = "for/foreach/while 루프 안에서 string 변수에 += 로 문자열을 누적하는 경우."
+counter = "루프 반복 횟수가 작은 상수임이 명백하면 지적하지 않는다."
+
+[[rule]]
+id = "csharp.null-dereference"
+language = "csharp"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "null 가능 값 역참조"
+criteria = """
+null 을 반환할 수 있는 것이 명백한 호출(FirstOrDefault, as 캐스트, TryGetValue 실패 경로,
+nullable 매개변수)의 결과를 null 검사 없이 멤버 접근하는 경우.
+"""
+counter = "?. 나 ?? 로 처리하거나 직전에 null 검사/ArgumentNullException.ThrowIfNull 이 있으면 정상이다."
+
+# ==========================================================================
+# Python
+# ==========================================================================
+
+[[rule]]
+id = "python.mutable-default-arg"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "가변 객체를 기본 인자로 사용"
+criteria = "함수 정의의 기본 인자가 [] {} set() 또는 가변 객체를 만드는 호출인 경우. 호출 간에 상태가 공유된다."
+counter = "None 을 기본값으로 두고 본문에서 채우는 관용구는 정상이다."
+
+[[rule]]
+id = "python.bare-except"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "광범위한 예외 포착"
+criteria = "`except:` 또는 `except Exception:` 으로 잡고 재던지지 않는 경우. KeyboardInterrupt/SystemExit 까지 삼킨다."
+counter = "최상위 루프에서 로깅 후 계속 도는 데몬 패턴이고 주석으로 의도가 명시되면 지적하지 않는다."
+
+[[rule]]
+id = "python.resource-not-closed"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "with 없이 연 자원"
+criteria = "open()/socket()/connect() 등의 결과를 with 없이 변수에 담고, 예외 경로에서 close 가 보장되지 않는 경우."
+counter = "try/finally 로 닫거나, 반환해서 호출자가 소유하면 정상이다."
+
+[[rule]]
+id = "python.subprocess-shell-true"
+language = "python"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "shell=True 로 외부 명령 실행"
+criteria = "subprocess 호출에 shell=True 가 있고 명령 문자열에 변수가 끼어드는 경우."
+counter = "명령이 완전한 리터럴 상수면 위험도가 낮다. 리스트 인자 형태는 정상이다."
+
+[[rule]]
+id = "python.eval-exec"
+language = "python"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "eval/exec/pickle.loads 에 신뢰할 수 없는 입력"
+criteria = "eval/exec/pickle.loads/yaml.load(Loader 미지정) 에 외부에서 온 값이 들어가는 경우."
+counter = "리터럴 상수만 다루거나 yaml.safe_load 를 쓰면 정상이다."
+
+[[rule]]
+id = "python.late-binding-closure"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "루프 변수를 캡처하는 클로저"
+criteria = """
+루프 안에서 lambda 나 중첩 함수를 만들면서 루프 변수를 참조하고, 그것을 리스트에
+모으거나 콜백으로 등록하는 경우. 모든 클로저가 마지막 값을 보게 된다.
+"""
+counter = "기본 인자로 캡처(lambda x=x: ...)하거나 functools.partial 을 쓰면 정상이다."
+
+[[rule]]
+id = "python.mutation-during-iteration"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "순회 중 컬렉션 변경"
+criteria = "for 루프에서 순회 중인 dict/list/set 에 대해 추가·삭제를 하는 경우."
+counter = "list(d.items()) 나 사본을 순회하면 정상이다."
+
+[[rule]]
+id = "python.missing-timeout"
+language = "python"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "네트워크 호출에 타임아웃 없음"
+criteria = "requests/urllib/socket/httpx 호출에 timeout 인자가 없는 경우. 무한 대기로 스레드가 묶인다."
+counter = "세션 수준에서 기본 타임아웃이 설정된 것이 스니펫에 보이면 정상이다."
+
+[[rule]]
+id = "python.exception-context-lost"
+language = "python"
+dimension = "maintainability"
+severity = "medium"
+chunk_local = true
+title = "예외 재포장 시 원인 소실"
+criteria = "except 블록에서 새 예외를 raise 하면서 `from exc` 를 붙이지 않은 경우."
+counter = "`raise ... from None` 으로 의도적으로 끊는 경우는 정상이다."
+
+[[rule]]
+id = "python.mutable-class-attribute"
+language = "python"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "가변 클래스 속성"
+criteria = "클래스 본문에서 리스트/딕셔너리를 속성으로 선언하고 인스턴스 메서드에서 변경하는 경우. 모든 인스턴스가 공유한다."
+counter = "__init__ 에서 인스턴스 속성으로 만들거나 dataclass field(default_factory=...) 를 쓰면 정상이다."
+
+[[rule]]
+id = "python.float-equality"
+language = "python"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "부동소수점 == 비교"
+criteria = "float 값을 == 나 != 로 직접 비교하는 경우."
+counter = "0.0 과의 비교나 math.isclose 사용은 정상이다. 정수와의 비교도 정상."
+
+[[rule]]
+id = "python.path-traversal"
+language = "python"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "경로 조작 취약점"
+criteria = "외부에서 온 문자열을 os.path.join/open 에 정규화·검증 없이 넘기는 경우."
+counter = "Path.resolve() 후 기준 디렉터리 포함 여부를 검사하면 정상이다."
+
+[[rule]]
+id = "python.concat-in-loop"
+language = "python"
+dimension = "performance"
+severity = "low"
+chunk_local = true
+title = "루프에서 문자열/리스트 += 누적"
+criteria = "루프 안에서 문자열에 += 로 누적하는 경우. join 이 적절하다."
+counter = "반복 횟수가 작은 상수이거나 리스트 append 는 정상이다."
+
+[[rule]]
+id = "any.hardcoded-secret"
+language = "any"
+dimension = "security_vulnerability"
+severity = "high"
+chunk_local = true
+title = "코드에 박힌 비밀값"
+criteria = """
+password/secret/token/api_key/private_key 로 보이는 이름에 리터럴 문자열이
+대입되고, 그것이 명백한 더미값("", "changeme", "xxx")이 아닌 경우.
+"""
+counter = "테스트 픽스처, 환경변수 조회, 명백한 플레이스홀더는 지적하지 않는다."

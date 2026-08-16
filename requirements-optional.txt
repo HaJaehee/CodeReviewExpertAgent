@@ -1,0 +1,28 @@
+#  crx 코어는 외부 의존이 없다. Python 3.11+ 표준 라이브러리만 쓴다.
+#  (tomllib, urllib, dataclasses, concurrent.futures — 전부 stdlib)
+#
+#  아래는 선택 의존성이다. 없어도 파이프라인은 동작한다.
+#
+#  ## 폐쇄망 반입 방법
+#
+#  인터넷이 되는 장비에서 wheel 을 미리 받아 옮긴다.
+#
+#      pip download -r requirements-optional.txt -d wheels/ \
+#          --platform win_amd64 --python-version 312 --only-binary=:all:
+#
+#  폐쇄망 장비에서:
+#
+#      pip install --no-index --find-links wheels/ -r requirements-optional.txt
+#
+#  ## 없으면 어떻게 되나
+#
+#  tree-sitter 가 없으면 청킹이 휴리스틱 폴백(중괄호 매칭 / 인덴트 추적)으로
+#  동작한다. 함수 경계 탐지 정확도가 다소 떨어지지만 파이프라인은 멈추지 않는다.
+#  전처리기 조건부(#if) 안에서 괄호가 불균형한 C++ 코드에서 경계를 놓칠 수 있다.
+#
+#  `python -m crx doctor` 로 현재 상태를 확인하라.
+
+tree-sitter>=0.21
+tree-sitter-cpp>=0.22
+tree-sitter-c-sharp>=0.21
+tree-sitter-python>=0.21

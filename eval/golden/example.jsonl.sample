@@ -1,0 +1,1 @@
+{"case_id": "mr-1234", "repo_path": "D:/work/myrepo", "diff_path": "eval/golden/diffs/mr-1234.diff", "note": "리뷰어가 raw 포인터 무효화를 지적한 건", "defects": [{"path": "src/buffer.cpp", "line": 16, "category": "code_defect", "severity": "high", "comment": "resize 이후 raw 포인터가 무효화됨", "expected_rule": "cpp.dangling-after-realloc"}]}

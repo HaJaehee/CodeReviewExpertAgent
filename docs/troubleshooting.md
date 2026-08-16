@@ -1,0 +1,297 @@
+# 문제 해결
+
+## LLM 엔드포인트 연결 실패
+
+```
+실패 생성: Qwen3.6-27B @ http://vllm-qwen:8000/v1
+     LLMError: 연결 실패: <urlopen error [WinError 10061] ...>
+```
+
+연결 자체가 안 되는 겁니다. 순서대로 확인하세요.
+
+```bash
+curl http://vllm-qwen:8000/v1/models
+```
+
+이게 안 되면 crx 문제가 아닙니다. vLLM 이 떠 있는지, 포트가 맞는지, 방화벽이
+막는지 보세요. 폐쇄망에서는 사내 프록시 환경변수(`HTTP_PROXY`, `NO_PROXY`)가
+`urllib` 을 엉뚱한 데로 보내는 경우가 종종 있습니다. `NO_PROXY` 에 vLLM 호스트를
+넣으세요.
+
+`base_url` 끝에 `/v1` 이 있는지도 확인하세요. `/chat/completions` 까지 붙이면
+안 됩니다.
+
+---
+
+## HTTP 404
+
+```
+LLMError: HTTP 404: {"object":"error","message":"The model `Qwen3.6-27B` does not exist."}
+```
+
+모델 이름이 안 맞습니다. vLLM 이 아는 이름을 확인하세요.
+
+```bash
+curl http://vllm-qwen:8000/v1/models
+```
+
+`--served-model-name` 없이 띄웠다면 모델 이름이 파일 경로 전체입니다.
+그 경로를 `crx.toml` 에 그대로 넣거나, vLLM 을 재기동하면서
+`--served-model-name Qwen3.6-27B` 를 주세요.
+
+404, 400, 422 는 재시도해도 결과가 같으므로 crx 가 즉시 포기합니다.
+로그에 한 번만 찍히는 게 정상입니다.
+
+---
+
+## HTTP 400 / 422 — 구조화 출력
+
+```
+LLMError: HTTP 400: {"object":"error","message":"...response_format..."}
+```
+
+vLLM 이 `response_format` 을 모르는 버전입니다. 바꿔 보세요.
+
+```toml
+[llm.generator]
+structured_output_mode = "guided_json"
+```
+
+`[llm.verifier]` 에도 같이 넣어야 합니다.
+
+반대로 `guided_json` 에서 400이 나면 최신 버전이라는 뜻이니 `response_format`
+으로 되돌리세요.
+
+**이걸 대충 넘기지 마세요.** 구조화 출력이 안 걸리면 룰 ID 와 라인 번호에 대한
+enum 제약이 사라집니다. 환각 방어 네 겹 중 두 겹이 날아가고, 남은 두 겹이
+받아내긴 하지만 오탐이 눈에 띄게 늘어납니다.
+
+---
+
+## `content 없음 (reasoning 전용 응답?)`
+
+```
+LLMError: content 없음 (reasoning 전용 응답?): {'role': 'assistant', 'reasoning_content': '...'}
+```
+
+추론 모델이 사고 과정만 내놓고 본문을 안 냈습니다. Qwen3.x 계열에서 추론 모드가
+켜져 있을 때 나옵니다.
+
+```toml
+[llm.generator.extra_body]
+chat_template_kwargs = { enable_thinking = false }
+```
+
+`max_output_tokens` 이 너무 작아서 사고 과정만 쓰다가 잘렸을 수도 있습니다.
+추론 모드를 꼭 써야 한다면 900에서 2000 이상으로 올리세요. 다만 리뷰는 고정
+단계로 돌아가므로 추론이 도움이 되지 않습니다. 끄는 쪽을 권합니다.
+
+---
+
+## `diff 와 파일 내용이 N곳에서 불일치한다`
+
+```
+crx.pipeline: src/buffer.cpp 건너뜀: diff/파일 불일치
+```
+
+diff 가 기술하는 내용과 디스크의 파일이 다릅니다. 그대로 진행하면 라인 번호가
+밀린 채로 존재하지 않는 줄을 지적하게 되므로, 해당 파일을 건너뜁니다.
+
+원인은 대개 셋 중 하나입니다.
+
+**diff 를 저장해뒀다가 나중에 돌린 경우.** 그 사이 코드가 바뀌었습니다.
+diff 를 다시 만드세요.
+
+**과거 커밋을 비교하는데 작업 트리는 현재 상태인 경우.** 이게 제일 흔합니다.
+
+```bash
+python -m crx review --from v1.0 --to v1.1     # 작업 트리는 main 최신
+```
+
+`--to v1.1` 의 코드가 디스크에 없습니다. 그 시점을 체크아웃한 사본을 만들고
+`--repo` 로 가리키세요.
+
+```bash
+git worktree add ../snap-v1.1 v1.1
+python -m crx review --from v1.0 --to v1.1 --repo ../snap-v1.1
+```
+
+**개행 문자 문제.** 파일이 CRLF 인데 git 설정이 어긋나서 diff 는 LF 로 나오는
+경우입니다. `git config core.autocrlf` 를 확인하세요.
+
+정말 급하면 `on_mismatch = "warn"` 으로 진행할 수 있지만, 그 결과의 라인 번호는
+믿지 마세요.
+
+---
+
+## 지적이 하나도 안 나온다
+
+먼저 이게 정상일 수 있다는 걸 염두에 두세요. crx 는 확신이 없으면 침묵합니다.
+
+그래도 이상하다면 `-v` 로 단계별 숫자를 보세요.
+
+```
+INFO    crx.pipeline: 청크 0개 생성
+```
+
+**청크가 0개** — diff 에 지원 언어 파일이 없거나, 전부 `diff/파일 불일치` 로
+건너뛰어졌습니다. 위쪽 로그를 확인하세요.
+
+```
+INFO    crx.pipeline: 생성된 지적 0건
+```
+
+**생성이 0건** — 모델이 아무것도 못 찾았습니다. 프롬프트가 잘렸는지 의심해
+보세요. `absolute_max_lines` 가 크고 룰이 많으면 8192 예산을 넘겨 코드 가운데가
+잘려나갑니다. `max_input_tokens` 를 잠깐 12288 로 올려서 달라지는지 보고,
+달라진다면 청크 크기를 줄이는 쪽으로 해결하세요 (컨텍스트를 늘리는 건 최후의
+수단입니다).
+
+```
+INFO    crx.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 8, LLM 0, 오류 0)
+```
+
+**전부 결정론적으로 기각** — 라인 번호가 어긋나고 있습니다. JSON 리포트의
+`rejected` 에서 사유를 보세요. `line_out_of_range` 뿐이라면 구조화 출력이
+안 걸려서 모델이 임의의 라인 번호를 내고 있을 가능성이 큽니다.
+
+```
+INFO    crx.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 0, LLM 0, 오류 8)
+```
+
+**전부 오류** — 검증 엔드포인트가 죽었습니다. crx 는 검증에 실패한 지적을
+보수적으로 기각합니다(통과시키지 않습니다). `doctor` 로 검증 쪽을 확인하세요.
+
+---
+
+## 오탐이 너무 많다
+
+FAR 이 25% 를 넘으면 조치가 필요합니다.
+
+**1. 어떤 룰이 만드는지 봅니다.**
+
+```bash
+python eval/run_eval.py run --out reports/now.json
+```
+
+룰별 정밀도가 낮은 순으로 나옵니다. 대개 한두 개 룰이 오탐의 절반을 만듭니다.
+
+**2. 그 룰의 `counter` 를 보강합니다.**
+
+JSON 리포트에서 그 룰이 만든 지적을 몇 개 읽어보면 패턴이 보입니다.
+"아 이건 DI 컨테이너가 관리하는 거라 괜찮은데" 같은 게 반복되면 그걸
+`counter` 에 적으세요. 자세한 건 [룰 작성법](writing-rules.md#counter--여기가-진짜-승부처)에 있습니다.
+
+**3. `exclude` 를 넓힙니다.**
+
+생성 코드와 서드파티가 리뷰 대상에 들어와 있지 않은지 보세요. 이것만으로
+꽤 줄어듭니다.
+
+**4. 검증 모델을 바꿔봅니다.**
+
+생성과 검증이 같은 모델이면 자기 환각을 못 잡습니다. 두 번째 vLLM 인스턴스를
+띄울 여력이 있는지 검토하세요.
+
+---
+
+## 정적분석이 안 돌아간다
+
+```
+INFO    crx.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
+```
+
+말 그대로입니다. 없는 도구는 조용히 건너뜁니다. `doctor` 로 전체 목록을 보세요.
+
+```
+INFO    crx.ground: [clang-tidy] 건너뜀 — 120초 내에 끝나지 않아 중단
+```
+
+clang-tidy 는 헤더가 많은 C++ 에서 쉽게 몇 분을 먹습니다.
+`compile_commands.json` 이 없으면 특히 심합니다. `grounding.timeout` 을 올리거나,
+컴파일 DB 를 만들어주거나, clang-tidy 를 빼고 cppcheck 만 쓰세요.
+
+```
+INFO    crx.ground: [roslyn] 0건 보고
+```
+
+`dotnet build` 는 돌았는데 경고가 없습니다. 프로젝트에 분석기가 활성화되어
+있는지 확인하세요. `.editorconfig` 나 `Directory.Build.props` 에서
+`EnableNETAnalyzers` 를 켜야 합니다.
+
+증분 빌드라서 아무것도 안 했을 수도 있습니다. 이 경우 매번 리빌드하게 만들면
+느려지므로, C# 은 정적분석 없이 LLM 리뷰만 쓰는 것도 현실적인 선택입니다.
+
+---
+
+## `설정 오류: ... 알 수 없는 설정 키`
+
+```
+설정 오류: ReviewConfig 에 알 수 없는 설정 키: ['max_worker'].
+사용 가능한 키: ['max_findings_per_chunk', 'max_workers', 'min_severity', 'mode', 'require_changed_line']
+```
+
+오타입니다. 조용히 무시하지 않고 알려주는 게 맞습니다 — 무시하면 설정을 바꿨는데
+아무 일도 안 일어나는 상황이 되니까요.
+
+---
+
+## `review.mode = 'ocr' 는 아직 구현되지 않았다`
+
+맞습니다. 현재 `"native"` 만 있습니다. `alibaba/open-code-review` 위임은
+실제 바이너리의 출력 스키마를 확인한 뒤에 붙일 예정입니다.
+
+---
+
+## `ModuleNotFoundError: No module named 'fastmcp'`
+
+MCP 서버만 FastMCP 가 필요합니다. CLI 와 테스트는 그대로 돕니다.
+
+```bash
+pip install -r requirements.txt
+```
+
+Zed 에서 서버가 안 뜬다면 대개 **경로 문제**입니다. 가상환경에 설치했는데
+`settings.json` 의 `command` 가 시스템 `python` 을 가리키면 그 환경에는
+fastmcp 가 없습니다. 가상환경의 절대 경로를 주세요.
+
+```json
+{ "command": "/work/venv/bin/python", "args": ["-m", "crx.mcp"] }
+```
+
+현재 상태는 `python -m crx doctor` 의 마지막 절에서 확인합니다.
+
+---
+
+## GitPython 이 없다는데 괜찮은가
+
+괜찮습니다. `crx/gitio.py` 가 subprocess 로 폴백하고, 두 경로 모두 같은
+unified diff 를 돌려줍니다. `doctor` 가 어느 쪽을 쓰는지 알려줍니다.
+
+---
+
+## 테스트가 실패한다
+
+```bash
+python tests/run_all.py
+```
+
+62개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
+특히 `rules/taxonomy.toml` 이 빠지면 여러 모듈이 한꺼번에 터집니다.
+
+```
+SKIP: git 이 없어 파이프라인 테스트를 건너뛴다
+```
+
+파이프라인 테스트는 임시 git 저장소를 만들어 실제 diff 를 뽑습니다. git 이
+없으면 건너뜁니다. 나머지 테스트는 그대로 돕니다.
+
+---
+
+## 여전히 모르겠을 때
+
+`-v` 로 로그를 받고, JSON 리포트의 `rejected` 배열을 함께 보세요.
+이 둘이면 파이프라인의 어느 단계에서 무엇이 사라졌는지 대부분 추적됩니다.
+
+```bash
+python -m crx review --staged --out reports/ -v 2> debug.log
+```
