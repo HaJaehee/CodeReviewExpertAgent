@@ -24,7 +24,8 @@ precision on purpose. Target is FAR ≤ 25%.
 
 [`docs/`](docs/index.md) is the Korean end-user manual. Don't duplicate it in the wiki.
 [`docs/workflow.md`](docs/workflow.md) is the MCP/Zed usage flow — which tool gets
-called by which phrasing, and what to do with a finding. Maintainer-only work
+called by which phrasing, and what to do with a finding.
+[`docs/visualizer.md`](docs/visualizer.md) is the dashboard manual. Maintainer-only work
 (golden set, rule tuning) is a short section at the end pointing elsewhere.
 
 ## Language conventions
@@ -47,7 +48,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 64 tests, no LLM or network needed
+python tests/run_all.py                     # 78 tests, no LLM or network needed
 ```
 
 ```bash
@@ -63,6 +64,11 @@ python -m crx scan src/legacy.cpp           # whole-file audit, no diff
 ```bash
 python -m crx.mcp                        # MCP stdio server (Zed context_servers)
                                          # needs `pip install -r requirements.txt`
+```
+
+```bash
+python -m crx.viz                        # pipeline dashboard, http://127.0.0.1:8765
+                                         # uvicorn if installed, stdlib otherwise
 ```
 
 ```bash
@@ -103,6 +109,14 @@ tool results land in the agent's context, and the whole design is about spending
 context carefully. Full reports go to disk. The agent decides *when* to review;
 the pipeline still decides *how*.
 
+`crx/viz/` is a 3-tier dashboard over the same pipeline: engine (`trace.py`,
+`engine.py`) subclasses `Pipeline`/`LLMClient` to emit events, application
+(`api.py`, `server.py`) is a transport-agnostic router with uvicorn and stdlib
+backends, presentation (`web/`) is dependency-free HTML/CSS/JS storing history in
+localStorage. It exists because MCP returns only a summary, and prompt tuning needs
+the inside. **Instrumentation must never change results** — pinned by a test that
+compares `Pipeline` and `TracedPipeline` on the same diff.
+
 Four layers of defense: line annotations remove the need to infer line numbers;
 enum constraints make fabrication impossible at generation time; deterministic
 checks catch anything that slips; cross-model verification catches ungrounded claims.
@@ -122,8 +136,12 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
   appears not to work.
 - **Core stays dependency-free** — only `crx/mcp.py` may require a wheel (FastMCP).
-  `python -m crx review|scan|doctor` and `tests/run_all.py` must work with nothing
-  installed; each wheel costs a security review on every air-gapped transfer.
+  `python -m crx review|scan|doctor`, `python -m crx.viz`, and `tests/run_all.py`
+  must work with nothing installed; each wheel costs a security review on every
+  air-gapped transfer. The dashboard's front end loads no CDN, font, or framework
+  for the same reason — in an air-gapped browser those hang rather than fail.
+- **Instrumentation must not change results** — `crx/viz/` observes the pipeline by
+  subclassing it, never by re-implementing it.
 - **Tests run without network, LLM, or pip install** — `tests/fake_vllm.py` stands
   in for vLLM; FastMCP-dependent tests skip cleanly. This is how post-transfer
   integrity gets verified inside the network.
@@ -150,7 +168,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server. 41 rules. 64 tests passing. ~4,092 lines in `crx/`.
+evaluation harness, MCP server, visualizer. 41 rules. 78 tests passing.
+~5,377 lines of Python in `crx/`, plus ~1,800 lines of front end in `crx/viz/web/`.
 
 **Not yet true, and load-bearing:**
 

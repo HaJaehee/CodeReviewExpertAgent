@@ -19,6 +19,7 @@ MODULES = [
     "tests.test_ground",
     "tests.test_pipeline",
     "tests.test_mcp",
+    "tests.test_viz",
     "tests.test_cli",
     "tests.test_eval",
 ]

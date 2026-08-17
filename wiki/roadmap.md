@@ -63,12 +63,13 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | CLI: `review` / `scan` / `doctor` | Complete |
 | `ReviewService` (5 MCP operations) | Complete, 13 tests, no FastMCP needed |
 | FastMCP binding (`mcp.py`) | Written; binding test skips when FastMCP absent |
+| Visualizer (`crx/viz/`, `python -m crx.viz`) | Complete, 14 tests. Runs on stdlib; uvicorn optional |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
-| Korean user manual (`docs/`, 7 files) | Complete, claims cross-checked against code |
+| Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-64 tests total, all runnable offline.
+78 tests total, all runnable offline.
 
 ## What does not exist
 

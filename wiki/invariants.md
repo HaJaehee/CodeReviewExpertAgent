@@ -152,6 +152,24 @@ Pinned by `test_missing_tool_is_skipped_not_fatal`.
 
 ---
 
+## Instrumentation must not change review results
+
+`crx/viz/engine.py`. `TracedPipeline` and `TracedLLMClient` subclass the real
+pipeline and client and add observation only. If watching a review changes its
+outcome, there is nothing worth watching.
+
+Pinned by `test_traced_pipeline_matches_plain_pipeline`, which runs the same diff
+through `Pipeline` and `TracedPipeline` and compares kept findings field by field.
+
+The corollary is that the visualizer must never grow its own copy of pipeline
+logic. `_review()` is overridden to *register* chunks and then delegate, not to
+re-implement the stages — a duplicated `_review()` would drift and the dashboard
+would quietly display last month's behavior. `Pipeline._timed()` is a method
+rather than a module function for exactly this reason: it is the single stage
+boundary, so wrapping it is enough.
+
+---
+
 ## Rejected findings stay out of Markdown, stay in JSON
 
 `crx/report.py`. Reviewers should not read rejected items. But the JSON must retain
@@ -185,6 +203,7 @@ Python 3.11+. The split is deliberate and load-bearing:
 | git access | `gitio.py` | GitPython preferred, **subprocess fallback required** |
 | MCP transport | `mcp.py` | FastMCP (`requirements.txt`) |
 | Symbol location | `chunk.py` | tree-sitter optional, heuristic fallback required |
+| Visualizer transport | `viz/server.py` | uvicorn preferred, **stdlib `http.server` fallback required** |
 
 Two properties must survive any change here:
 
@@ -193,6 +212,13 @@ Two properties must survive any change here:
    `pip install`. Tests that need FastMCP must skip cleanly, not fail.
 2. **`python -m crx review|scan|doctor` works with nothing installed.** Only
    `python -m crx.mcp` may require a wheel.
+
+`crx/viz/` is deliberately in the same position as `gitio.py`, not `mcp.py`: it is
+a convenience surface, and a convenience surface must not lengthen the transfer
+manifest. `python -m crx.viz` runs on stdlib alone; uvicorn is used when present.
+For the same reason the page loads no CDN script, web font, or icon service — in
+an air-gapped browser those do not fail fast, they hang. Do not "modernize" the
+front end by adding a framework or a build step.
 
 This is why `crx/service.py` exists separately from `crx/mcp.py` — all review logic
 lives in the service and imports no FastMCP, so the bulk stays testable without it.

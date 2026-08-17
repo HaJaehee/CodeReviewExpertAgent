@@ -60,7 +60,7 @@ class Pipeline:
         """
         result = ReviewResult()
 
-        with _timed(result, "chunk"):
+        with self._timed(result, "chunk"):
             file_diffs = parse_unified_diff(diff_text)
             if only_paths:
                 before = len(file_diffs)
@@ -74,7 +74,7 @@ class Pipeline:
         """전체 파일 감사. diff 없이 기존 코드를 통째로 본다."""
         result = ReviewResult()
 
-        with _timed(result, "chunk"):
+        with self._timed(result, "chunk"):
             chunks: list[ReviewChunk] = []
             for path in paths:
                 source = _read(repo_root / path, result)
@@ -103,7 +103,7 @@ class Pipeline:
         log.info("청크 %d개 생성", len(chunks))
 
         if self.config.grounding.enabled:
-            with _timed(result, "ground"):
+            with self._timed(result, "ground"):
                 gate = self._build_gate(repo_root)
                 paths = sorted({c.path for c in chunks})
                 findings = gate.collect(paths)
@@ -111,7 +111,7 @@ class Pipeline:
                 result.static_findings_count = len(findings)
                 log.info("정적분석 %d건:\n%s", len(findings), gate.report())
 
-        with _timed(result, "generate"):
+        with self._timed(result, "generate"):
             checker = RuleChecker(
                 self.generator,
                 self.taxonomy,
@@ -122,7 +122,7 @@ class Pipeline:
             raw = checker.review(chunks)
             log.info("생성된 지적 %d건", len(raw))
 
-        with _timed(result, "filter"):
+        with self._timed(result, "filter"):
             review_filter = ReviewFilter(
                 self.verifier,
                 {c.chunk_id: c for c in chunks},
@@ -274,6 +274,22 @@ class Pipeline:
             return Semgrep(config=grounding.semgrep_config or "auto", timeout=timeout)
         return cls(timeout=timeout)
 
+    # -- 계측 ---------------------------------------------------------------
+
+    @contextmanager
+    def _timed(self, result: ReviewResult, name: str):
+        """단계 하나의 소요 시간을 잰다.
+
+        모듈 함수가 아니라 메서드인 이유: 이 구문이 파이프라인의 유일한 단계
+        경계다. 하위 클래스가 여기만 감싸면 단계 시작·종료를 그대로 관찰할 수
+        있고, `_review` 를 복제할 필요가 없다 (`crx/viz/engine.py`).
+        """
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            result.timings[name] = time.perf_counter() - started
+
 
 # --------------------------------------------------------------------------
 
@@ -294,12 +310,3 @@ def _sort_findings(findings: list) -> list:
         findings,
         key=lambda f: (-SEVERITY_ORDER[f.severity.value], f.path, f.line),
     )
-
-
-@contextmanager
-def _timed(result: ReviewResult, name: str):
-    started = time.perf_counter()
-    try:
-        yield
-    finally:
-        result.timings[name] = time.perf_counter() - started

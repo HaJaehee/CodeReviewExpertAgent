@@ -94,6 +94,7 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 | [설정](docs/configuration.md) | `crx.toml` 전체 항목 |
 | [룰 작성법](docs/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](docs/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
+| [관제 화면](docs/visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 보기 |
 | [반입](docs/transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
 | [운영](docs/operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
 | [문제 해결](docs/troubleshooting.md) | 증상별 원인과 조치 |
@@ -115,6 +116,13 @@ python -m crx review --staged --out reports/
 python -m crx scan src/legacy.cpp    # diff 없이 전체 파일 감사
 ```
 
+리뷰가 왜 그런 결과를 냈는지 들여다보려면 관제 화면을 띄웁니다. 생성 모델이 받은
+프롬프트, 강제된 스키마, 검증 모델의 판정과 그 근거가 그대로 보입니다.
+
+```bash
+python -m crx.viz                    # http://127.0.0.1:8765
+```
+
 테스트 (외부 의존 없음, LLM 불필요):
 
 ```bash
@@ -126,7 +134,8 @@ python tests/run_all.py
 ## 폐쇄망 반입 체크리스트
 
 **코어는 외부 의존이 없다.** Python 3.11+ 표준 라이브러리만 쓴다. 소스만 옮기면
-CLI 와 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `requirements.txt` 가 필요하다.
+CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `requirements.txt` 가
+필요하다.
 
 - [ ] Python 3.11 이상 확인 (`tomllib` 이 3.11부터 stdlib)
 - [ ] `crx/`, `rules/`, `eval/`, `tests/`, `wiki/`, `docs/` 디렉터리 복사
@@ -275,6 +284,12 @@ crx/
   gitio.py      git diff / merge-base (GitPython, 없으면 subprocess)
   service.py    ReviewService — MCP 도구 5종의 실제 동작 (FastMCP 미의존)
   mcp.py        FastMCP 바인딩 — Zed 에이전트 패널 연동
+  viz/          관제 화면 — 3계층
+    trace.py      이벤트 모델, 프롬프트↔청크↔지적 상관관계      ┐ Engine
+    engine.py     계측된 파이프라인, 실행 레지스트리            ┘
+    api.py        전송 무관 라우팅 (Request → Response)          ┐ Application
+    server.py     ASGI(uvicorn) + stdlib http.server 폴백        ┘
+    web/          index.html, style.css, store.js, client.js, view.js  ← Presentation
 rules/
   taxonomy.toml 룰 정의 — 단일 진실 공급원
 eval/

@@ -20,9 +20,16 @@
 #  동작한다. 함수 경계 탐지 정확도가 다소 떨어지지만 파이프라인은 멈추지 않는다.
 #  전처리기 조건부(#if) 안에서 괄호가 불균형한 C++ 코드에서 경계를 놓칠 수 있다.
 #
+#  uvicorn 이 없으면 관제 화면(`python -m crx.viz`)이 표준 라이브러리
+#  `http.server` 로 뜬다. 사용자 한둘이 0.4초마다 이벤트를 받아가는 게 전부라
+#  성능 차이가 의미를 갖지 않는다. 반입 목록을 줄이고 싶으면 그냥 두어도 된다.
+#
 #  `python -m crx doctor` 로 현재 상태를 확인하라.
 
 tree-sitter>=0.21
 tree-sitter-cpp>=0.22
 tree-sitter-c-sharp>=0.21
 tree-sitter-python>=0.21
+
+# 관제 화면 전송 계층 — 없으면 stdlib http.server 로 폴백한다 (crx/viz/server.py)
+uvicorn>=0.30

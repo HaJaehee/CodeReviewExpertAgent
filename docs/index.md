@@ -15,6 +15,7 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 | [설정](configuration.md) | `crx.toml` 의 모든 항목과 손대야 할 때 |
 | [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](evaluation.md) | 골든셋 만들기, KBI/FAR 해석, 룰 폐기 |
+| [관제 화면](visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 지켜보기 |
 | [반입](transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
 | [운영](operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
 | [문제 해결](troubleshooting.md) | 증상별 원인과 조치 |
@@ -33,6 +34,13 @@ python -m crx review --staged    # 스테이징된 변경 리뷰
 
 Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 —
 [운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 보세요.
+
+리뷰가 왜 그런 결과를 냈는지 들여다보려면 [관제 화면](visualizer.md)을 띄우세요.
+두 모델이 주고받은 프롬프트와 응답이 그대로 보입니다.
+
+```bash
+python -m crx.viz               # http://127.0.0.1:8765
+```
 
 ## 이 도구가 하지 않는 것
 

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!--
+  Presentation 계층.
+
+  외부 리소스를 하나도 부르지 않는다 — CDN, 웹폰트, 아이콘 서비스 모두 없다.
+  폐쇄망 브라우저에서 저 요청들은 실패하는 게 아니라 수십 초씩 매달렸다가
+  실패한다. 폰트는 OS 것을 쓰고, 아이콘은 문자와 CSS 로 그린다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>crx · 리뷰 파이프라인 관제</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128269;</text></svg>">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark">crx</span>
+    <span class="brand-sub">리뷰 파이프라인 관제</span>
+  </div>
+  <div class="top-meta">
+    <span class="chip" id="chip-repo" title="리뷰 대상 저장소">저장소 —</span>
+    <span class="chip chip-gen" id="chip-generator" title="생성 모델">생성 —</span>
+    <span class="chip chip-ver" id="chip-verifier" title="검증 모델">검증 —</span>
+    <button class="btn btn-ghost" id="btn-health" type="button">엔드포인트 점검</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── 왼쪽: 실행과 기록 ─────────────────────────────────────────── -->
+  <aside class="side">
+    <section class="panel">
+      <h2>리뷰 실행</h2>
+
+      <label class="field">
+        <span>대상</span>
+        <select id="kind">
+          <option value="staged">스테이징된 변경 (git diff --cached)</option>
+          <option value="working_tree">커밋 전 전체 변경 (git diff HEAD)</option>
+          <option value="diff">두 참조 비교 (MR 리뷰)</option>
+          <option value="file">파일 하나 전체 감사</option>
+          <option value="directory">폴더 전체 감사</option>
+        </select>
+      </label>
+
+      <div class="field-group" data-for="diff" hidden>
+        <label class="field">
+          <span>from</span>
+          <input id="from-ref" type="text" placeholder="main" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>to</span>
+          <input id="to-ref" type="text" placeholder="HEAD" spellcheck="false">
+        </label>
+        <label class="check">
+          <input id="merge-base" type="checkbox" checked>
+          <span>분기점(merge-base)과 비교</span>
+        </label>
+      </div>
+
+      <div class="field-group" data-for="path" hidden>
+        <label class="field">
+          <span>경로</span>
+          <input id="path" type="text" placeholder="src/buffer.cpp" spellcheck="false">
+        </label>
+        <label class="check" data-for="directory" hidden>
+          <input id="recursive" type="checkbox" checked>
+          <span>하위 폴더까지</span>
+        </label>
+      </div>
+
+      <label class="field" data-for="paths">
+        <span>경로 한정 <em>(선택)</em></span>
+        <input id="paths" type="text" placeholder="src/, include/parser.h" spellcheck="false">
+      </label>
+
+      <div class="row">
+        <button class="btn btn-primary" id="btn-run" type="button">리뷰 시작</button>
+        <button class="btn btn-danger" id="btn-cancel" type="button" disabled>중단</button>
+      </div>
+      <p class="hint" id="run-hint">설정: <code>crx.toml</code></p>
+    </section>
+
+    <section class="panel panel-grow">
+      <h2>실행 기록 <span class="badge" id="history-count">0</span></h2>
+      <p class="hint">브라우저 localStorage 에 남는다. 서버에는 DB 가 없다.</p>
+      <ul class="history" id="history"></ul>
+      <button class="btn btn-ghost btn-sm" id="btn-clear" type="button">기록 비우기</button>
+    </section>
+  </aside>
+
+  <!-- ── 오른쪽: 파이프라인 ─────────────────────────────────────────── -->
+  <main class="main">
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>파이프라인</h2>
+        <span class="status" id="run-status" data-state="idle">대기</span>
+        <span class="run-label" id="run-label"></span>
+      </div>
+
+      <ol class="rail" id="rail">
+        <li class="stage" data-stage="chunk">
+          <span class="stage-name">청킹</span>
+          <span class="stage-note">hunk → 심볼 경계</span>
+          <span class="stage-time"></span>
+        </li>
+        <li class="stage" data-stage="ground">
+          <span class="stage-name">그라운딩</span>
+          <span class="stage-note">정적분석 병렬 실행</span>
+          <span class="stage-time"></span>
+        </li>
+        <li class="stage stage-gen" data-stage="generate">
+          <span class="stage-name">생성</span>
+          <span class="stage-note">RuleChecker · guided decoding</span>
+          <span class="stage-time"></span>
+        </li>
+        <li class="stage stage-ver" data-stage="filter">
+          <span class="stage-name">검증</span>
+          <span class="stage-note">ReviewFilter · 교차 모델</span>
+          <span class="stage-time"></span>
+        </li>
+      </ol>
+
+      <div class="metrics" id="metrics">
+        <div class="metric"><b id="m-chunks">0</b><span>청크</span></div>
+        <div class="metric"><b id="m-static">0</b><span>정적분석</span></div>
+        <div class="metric metric-gen"><b id="m-generated">0</b><span>생성된 지적</span></div>
+        <div class="metric"><b id="m-deterministic">0</b><span>결정론적 기각</span></div>
+        <div class="metric metric-ver"><b id="m-llm-reject">0</b><span>검증 기각</span></div>
+        <div class="metric metric-keep"><b id="m-kept">0</b><span>최종 유지</span></div>
+        <div class="metric"><b id="m-reject-rate">—</b><span>기각률</span></div>
+      </div>
+    </section>
+
+    <section class="lanes">
+      <div class="panel lane lane-gen">
+        <div class="panel-head">
+          <h2><span class="dot dot-gen"></span>생성 모델</h2>
+          <span class="lane-meta" id="gen-meta">호출 0</span>
+        </div>
+        <p class="hint">청크 하나당 한 번. 응답은 <code>rule_id</code>·<code>line</code> enum 으로 묶여 있다.</p>
+        <ul class="calls" id="calls-generator"></ul>
+      </div>
+
+      <div class="panel lane lane-ver">
+        <div class="panel-head">
+          <h2><span class="dot dot-ver"></span>검증 모델</h2>
+          <span class="lane-meta" id="ver-meta">호출 0</span>
+        </div>
+        <p class="hint">지적 하나당 한 번. Conclusion-First — <code>verdict</code> 를 먼저 뽑는다.</p>
+        <ul class="calls" id="calls-verifier"></ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>판정</h2>
+        <div class="tabs" id="verdict-tabs">
+          <button class="tab is-on" data-filter="all" type="button">전체</button>
+          <button class="tab" data-filter="kept" type="button">유지</button>
+          <button class="tab" data-filter="rejected" type="button">기각</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="verdicts">
+          <thead>
+            <tr>
+              <th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th>
+            </tr>
+          </thead>
+          <tbody id="verdicts"><tr class="empty"><td colspan="6">아직 없다.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>에이전트가 받는 요약</h2>
+      </div>
+      <p class="hint">MCP 도구의 반환값 그대로. 전체 리포트는 파일로 나간다.</p>
+      <pre class="agent-summary" id="agent-summary">—</pre>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>청크</h2>
+        <span class="lane-meta" id="chunk-meta">0개</span>
+      </div>
+      <ul class="chunks" id="chunks"></ul>
+    </section>
+  </main>
+</div>
+
+<!-- ── 상세 서랍 ──────────────────────────────────────────────────── -->
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-panel">
+    <div class="drawer-head">
+      <div>
+        <h3 id="drawer-title">호출</h3>
+        <p class="drawer-sub" id="drawer-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="drawer-close" type="button">닫기</button>
+    </div>
+    <div class="tabs tabs-drawer" id="drawer-tabs">
+      <button class="tab is-on" data-pane="user" type="button">사용자 프롬프트</button>
+      <button class="tab" data-pane="system" type="button">시스템 프롬프트</button>
+      <button class="tab" data-pane="schema" type="button">스키마</button>
+      <button class="tab" data-pane="parsed" type="button">응답</button>
+      <button class="tab" data-pane="raw" type="button">원문</button>
+    </div>
+    <div class="drawer-body"><pre id="drawer-pre"></pre></div>
+  </div>
+  <div class="drawer-scrim" id="drawer-scrim"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/store.js"></script>
+<script src="/static/client.js"></script>
+<script src="/static/view.js"></script>
+</body>
+</html>

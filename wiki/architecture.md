@@ -65,19 +65,55 @@ builds or a misconfigured `structured_output_mode` silently drop the constraint.
 | `crx/generate.py` | 243 | RuleChecker: enum-constrained schema, prompt, parsing |
 | `crx/filter.py` | 283 | ReviewFilter: deterministic checks + cross-model verdict |
 | `crx/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
-| `crx/pipeline.py` | 262 | Orchestration for `run_diff()` and `run_scan()` |
+| `crx/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
 | `crx/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
 | `crx/config.py` | 164 | TOML config loading with unknown-key rejection |
 | `crx/cli.py` | 187 | `review` / `scan` / `doctor` subcommands |
 | `crx/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crx/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
 | `crx/service.py` | 209 | `ReviewService` — the 5 MCP operations. **No FastMCP import** |
-| `crx/mcp.py` | 205 | FastMCP binding only. Tool schemas from type hints + docstrings |
+| `crx/mcp.py` | 211 | FastMCP binding only. Tool schemas from type hints + docstrings |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.
 `cli` sits alongside `service`. `schema.py` imports nothing from the package.
 FastMCP appears in `mcp.py` and nowhere else.
+
+### `crx/viz/` — the observability surface
+
+A separate 3-tier package that runs the same pipeline under instrumentation and
+streams it to a browser. It adds no required wheel; see
+[invariants](invariants.md#the-core-stays-dependency-free-only-the-mcp-layer-may-not).
+
+| Tier | Module | Lines | Responsibility |
+|---|---|---|---|
+| Engine | `viz/trace.py` | 238 | Event model, `Tracer`, prompt↔chunk↔finding correlation |
+| Engine | `viz/engine.py` | 476 | `TracedPipeline` / `TracedLLMClient`, `RunRegistry` (one thread per run) |
+| Application | `viz/api.py` | 258 | Transport-agnostic router. `Request → Response`, nothing else |
+| Application | `viz/server.py` | 252 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
+| Presentation | `viz/web/*` | 1792 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
+
+Dependencies point down and never back: `server → api → engine → trace → crx.*`.
+`api.py` never imports `Pipeline`; `engine.py` never imports HTTP.
+
+Three instrumentation points, chosen so that **no pipeline logic is duplicated**:
+
+| Override | What it yields |
+|---|---|
+| `Pipeline._timed` | stage start/end for chunk, ground, generate, filter |
+| `Pipeline._review` | the chunk list — the anchor for correlation |
+| `LLMClient.complete` / `.complete_json` | prompts, schema, raw response, latency, per role |
+
+Correlation is by prompt content, not template parsing: `chunk.render_code()`
+appears verbatim inside both prompts, and a verifier prompt is scored against
+registered findings on `path:line` (3) + message (2) + `rule_id` (1). Regex over
+the prompt templates would break silently whenever a template changed.
+
+Runs execute in a daemon thread; the browser polls
+`GET /api/runs/{id}/events?since=<cursor>`. There is no server-side database —
+history lives in the browser's localStorage. Full reports still go to disk through
+the normal `ReviewService` path, which is also what makes the "what the agent
+receives" panel exact rather than reconstructed.
 
 ## Key data types
 
