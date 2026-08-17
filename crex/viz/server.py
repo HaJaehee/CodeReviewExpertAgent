@@ -1,6 +1,6 @@
 """전송 계층 — Application 계층의 바깥쪽 껍질.
 
-    python -m crex.viz --port 8765
+    python -m crex.viz --port 18765
 
 uvicorn 이 있으면 ASGI 로, 없으면 stdlib `http.server` 로 뜬다. 두 경로 모두
 `api.handle()` 하나만 부르므로 동작은 같다.
@@ -40,7 +40,7 @@ from .engine import RunRegistry
 log = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
+DEFAULT_PORT = 18765
 
 #: 요청 본문 상한. 이 API 로 들어오는 것은 실행 파라미터뿐이라 넉넉하다.
 MAX_BODY = 1 << 20

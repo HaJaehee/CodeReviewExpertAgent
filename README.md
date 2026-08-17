@@ -122,7 +122,7 @@ python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 프롬프트, 강제된 스키마, 검증 모델의 판정과 그 근거가 그대로 보입니다.
 
 ```bash
-python -m crex.viz                    # http://127.0.0.1:8765
+python -m crex.viz --port 18765       # http://127.0.0.1:18765
 ```
 
 테스트 (외부 의존 없음, LLM 불필요):
