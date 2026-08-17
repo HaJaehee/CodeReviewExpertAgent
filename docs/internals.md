@@ -1,6 +1,6 @@
 # 동작 원리
 
-이 문서는 crx 를 고칠 사람을 위한 것입니다. 쓰기만 할 거면 안 읽어도 됩니다.
+이 문서는 CREX 를 고칠 사람을 위한 것입니다. 쓰기만 할 거면 안 읽어도 됩니다.
 
 ## 전체 흐름
 
@@ -8,29 +8,29 @@
 git diff
    │
    ▼
-parse_unified_diff()          crx/chunk.py
+parse_unified_diff()          crex/chunk.py
    │  FileDiff[] — hunk 별로 라인 상태와 번호를 붙여둔다
    ▼
-Chunker.chunk_file()          crx/chunk.py
+Chunker.chunk_file()          crex/chunk.py
    │  ① diff/파일 정합성 검사
    │  ② hunk → 심볼 경계 확장 → 상한 적용
    │  ③ 겹치는 범위 병합
    │  ReviewChunk[]
    ▼
-GroundingGate.collect()       crx/ground.py
+GroundingGate.collect()       crex/ground.py
    │  분석기 병렬 실행 (기본 6종) → StaticFinding[]
    │  attach() 로 라인 범위가 맞는 청크에 붙임
    ▼
-RuleChecker.review()          crx/generate.py
+RuleChecker.review()          crex/generate.py
    │  청크당 LLM 1회, enum 제약 스키마
    │  Finding[]
    ▼
-ReviewFilter.filter()         crx/filter.py
+ReviewFilter.filter()         crex/filter.py
    │  ① 결정론적 검사 (LLM 없이 기각)
    │  ② 살아남은 것만 교차 모델 재판정
    │  Finding[] + FilterVerdict[]
    ▼
-report.write_all()            crx/report.py
+report.write_all()            crex/report.py
 ```
 
 ---
@@ -192,7 +192,7 @@ OCR 같은 도구는 모델에게 `file_read`, `code_search` 같은 툴을 주�
 검색하고, 또 열다가 컨텍스트를 다 쓰고, 그 상태에서 지적을 만듭니다.
 어디서 뭐가 잘못됐는지 추적하기도 어렵습니다.
 
-crx 는 고정 단계로 갑니다. 청크 하나, 프롬프트 하나, 지적 목록 하나.
+CREX 는 고정 단계로 갑니다. 청크 하나, 프롬프트 하나, 지적 목록 하나.
 느리지만 예측 가능하고 디버깅이 됩니다.
 
 ### 심각도 상한
@@ -269,7 +269,7 @@ if response.get("verdict") != "yes":
 
 ## MCP 계층 분리
 
-`crx/service.py` 와 `crx/mcp.py` 가 나뉜 이유가 있습니다.
+`crex/service.py` 와 `crex/mcp.py` 가 나뉜 이유가 있습니다.
 
 - `service.py` — `ReviewService`. MCP 도구 5종의 실제 동작이 전부 여기 있습니다.
   **FastMCP 를 import 하지 않습니다.**

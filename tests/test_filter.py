@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.chunk import Chunker, parse_unified_diff  # noqa: E402
-from crx.filter import ReviewFilter  # noqa: E402
-from crx.schema import Dimension, Finding, RejectReason, Severity  # noqa: E402
+from crex.chunk import Chunker, parse_unified_diff  # noqa: E402
+from crex.filter import ReviewFilter  # noqa: E402
+from crex.schema import Dimension, Finding, RejectReason, Severity  # noqa: E402
 from tests.test_chunk import CPP_DIFF, CPP_SOURCE  # noqa: E402
 
 
@@ -191,7 +191,7 @@ TESTS = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     failures = 0

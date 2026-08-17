@@ -1,7 +1,7 @@
 # 설정
 
-`crx.toml` 한 파일로 전부 제어합니다. 현재 디렉터리에서 위로 올라가며
-`crx.toml` → `.crx.toml` 순서로 찾고, 없으면 기본값으로 돕니다.
+`crex.toml` 한 파일로 전부 제어합니다. 현재 디렉터리에서 위로 올라가며
+`crex.toml` → `.crex.toml` 순서로 찾고, 없으면 기본값으로 돕니다.
 `--config` 로 직접 지정할 수도 있습니다.
 
 설정 키에 오타가 나면 조용히 무시하지 않고 오류를 냅니다. `max_worker` 라고
@@ -68,7 +68,7 @@ vLLM 버전마다 구조화 출력을 받는 필드가 다릅니다.
 | `"response_format"` | 최신 (기본값, 권장) |
 | `"guided_json"` | 구버전 |
 
-어느 쪽인지 모르겠으면 `python -m crx doctor` 를 돌려보고, LLM 항목이
+어느 쪽인지 모르겠으면 `python -m crex doctor` 를 돌려보고, LLM 항목이
 400이나 422로 실패하면 반대쪽으로 바꿔서 다시 돌리세요.
 
 이 설정은 단순한 호환성 문제가 아닙니다. 구조화 출력이 안 걸리면 룰 ID와 라인
@@ -288,7 +288,7 @@ taxonomy_path = "rules/taxonomy.toml"
 
 ## 설정 없이 돌리면
 
-`crx.toml` 이 없어도 실행은 됩니다. 엔드포인트가 `http://localhost:8000/v1`,
+`crex.toml` 이 없어도 실행은 됩니다. 엔드포인트가 `http://localhost:8000/v1`,
 모델이 `Qwen3.6-27B` 로 잡히고, 나머지는 위에 적힌 기본값입니다.
 `doctor` 가 첫 줄에 `설정 파일: (없음 — 기본값 사용 중)` 이라고 알려줍니다.
 
@@ -296,5 +296,5 @@ taxonomy_path = "rules/taxonomy.toml"
 나중에 "그때 어떤 설정으로 돌린 거지"를 추적할 수 있습니다.
 
 ```
-INFO    crx.cli: 설정: 모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000/v1 ...
+INFO    crex.cli: 설정: 모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000/v1 ...
 ```

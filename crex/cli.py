@@ -1,9 +1,9 @@
-"""crx CLI.
+"""CREX CLI.
 
-    python -m crx review --from HEAD~1 --to HEAD
-    python -m crx review --staged
-    python -m crx scan src/buffer.cpp src/service.cs
-    python -m crx doctor
+    python -m crex review --from HEAD~1 --to HEAD
+    python -m crex review --staged
+    python -m crex scan src/buffer.cpp src/service.cs
+    python -m crex doctor
 """
 
 from __future__ import annotations
@@ -44,12 +44,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m crx", description="폐쇄망 sLLM 코드리뷰")
+    parser = argparse.ArgumentParser(prog="python -m crex", description="폐쇄망 sLLM 코드리뷰")
     _add_global_args(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     # 전역 옵션을 서브커맨드에도 단다. argparse 기본 동작은 서브커맨드 *앞*에만
-    # 허용하는데, 사람은 `crx review --staged --repo ...` 처럼 뒤에 쓴다.
+    # 허용하는데, 사람은 `crex review --staged --repo ...` 처럼 뒤에 쓴다.
     # SUPPRESS 를 써서 실제로 준 경우에만 앞의 값을 덮게 한다.
     common = argparse.ArgumentParser(add_help=False)
     _add_global_args(common, suppress=True)
@@ -77,7 +77,7 @@ def force_utf8_output() -> None:
     직후 처음 실행하는 명령이라 콘솔 인코딩으로 죽으면 안 된다.
 
     한국어 Windows 의 기본 콘솔 코드페이지는 cp949 다. 리포트에 심각도 표시
-    이모지와 한글이 함께 들어가므로 그대로 두면 `python -m crx review` 가
+    이모지와 한글이 함께 들어가므로 그대로 두면 `python -m crex review` 가
     UnicodeEncodeError 로 죽는다. 대상 사용자가 바로 그 환경이라 반드시 터진다.
 
     파이프로 리다이렉트할 때도 같은 문제가 나므로 여기서 못 박는다.
@@ -104,7 +104,7 @@ def _add_global_args(parser: argparse.ArgumentParser, *, suppress: bool = False)
     default_verbose = argparse.SUPPRESS if suppress else False
 
     parser.add_argument("--config", type=Path, default=default_config,
-                        help="설정 파일 경로 (기본: crx.toml 탐색)")
+                        help="설정 파일 경로 (기본: crex.toml 탐색)")
     parser.add_argument("--repo", type=Path, default=default_repo, help="저장소 루트")
     parser.add_argument("-v", "--verbose", action="store_true", default=default_verbose)
 
@@ -181,7 +181,7 @@ def _cmd_doctor(args: argparse.Namespace, config: Config) -> int:
 
         print(f"  OK  fastmcp {getattr(fastmcp, '__version__', '')}")
     except ImportError:
-        print("  없음 fastmcp — `python -m crx.mcp` 를 쓸 수 없다 (CLI 는 정상)")
+        print("  없음 fastmcp — `python -m crex.mcp` 를 쓸 수 없다 (CLI 는 정상)")
 
     return 0 if ok else 1
 

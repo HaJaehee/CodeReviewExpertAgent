@@ -1,4 +1,4 @@
-# crx 사용 설명서
+# CREX 사용 설명서
 
 폐쇄망에 있는 25~40B급 로컬 모델로 C++/C#/Python 코드를 리뷰하는 도구입니다.
 
@@ -12,7 +12,7 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 |---|---|
 | [시작하기](getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
 | [워크플로](workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
-| [설정](configuration.md) | `crx.toml` 의 모든 항목과 손대야 할 때 |
+| [설정](configuration.md) | `crex.toml` 의 모든 항목과 손대야 할 때 |
 | [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](evaluation.md) | 골든셋 만들기, KBI/FAR 해석, 룰 폐기 |
 | [관제 화면](visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 지켜보기 |
@@ -24,9 +24,9 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 ## 30초 요약
 
 ```bash
-cp crx.example.toml crx.toml     # 엔드포인트 주소만 고치면 됩니다
-python -m crx doctor             # 무엇이 되고 무엇이 안 되는지 확인
-python -m crx review --staged    # 스테이징된 변경 리뷰
+cp crex.example.toml crex.toml  # 엔드포인트 주소만 고치면 됩니다
+python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
+python -m crex review --staged  # 스테이징된 변경 리뷰
 ```
 
 리뷰 결과는 기본적으로 stdout 에 마크다운으로 나옵니다. 파일로 받으려면
@@ -39,7 +39,7 @@ Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 �
 두 모델이 주고받은 프롬프트와 응답이 그대로 보입니다.
 
 ```bash
-python -m crx.viz               # http://127.0.0.1:8765
+python -m crex.viz               # http://127.0.0.1:8765
 ```
 
 ## 이 도구가 하지 않는 것

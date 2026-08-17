@@ -22,8 +22,8 @@
  */
 
 (function () {
-  const store = CRX.store;
-  const client = CRX.client;
+  const store = CREX.store;
+  const client = CREX.client;
 
   const $ = (id) => document.getElementById(id);
 

@@ -1,4 +1,4 @@
-# crx — Agent Orientation Wiki
+# CREX — Agent Orientation Wiki
 
 English reference for AI agents working on this codebase.
 The user-facing manual in [`docs/`](../docs/index.md) is Korean; this wiki is not
@@ -6,7 +6,7 @@ a translation of it. It covers what an agent needs to make correct changes.
 
 ## What this project is
 
-`crx` reviews C++/C#/Python code changes using small local LLMs (25–40B, typically
+CREX reviews C++/C#/Python code changes using small local LLMs (25–40B, typically
 Qwen3.6-27B and Gemma 4 26B) served by vLLM inside a corporate air-gapped network.
 
 The entire design optimizes for one thing: **suppressing hallucination**. Small
@@ -35,10 +35,10 @@ CLI is documented there only as maintainer tooling (golden set, rule tuning).
 - **Python 3.11+**. Core is stdlib-only; only the MCP server needs wheels
   (`requirements.txt`: FastMCP, GitPython). tree-sitter and GitPython both have
   working fallbacks — see [invariants.md](invariants.md).
-- **~4,092 lines** across 17 modules in `crx/`.
-- **64 tests**, all runnable without an LLM or network: `python tests/run_all.py`
+- **~4,092 lines** across 17 modules in `crex/`.
+- **79 tests**, all runnable without an LLM or network: `python tests/run_all.py`
 - **41 rules** in `rules/taxonomy.toml` (C++ 14, C# 15, Python 14).
-- Entry point: `python -m crx {review|scan|doctor}`
+- Entry point: `python -m crex {review|scan|doctor}`
 
 ## Language conventions
 
@@ -62,25 +62,25 @@ the surrounding tone: direct, explaining *why* rather than restating *what*.
 [`docs/writing-rules.md`](../docs/writing-rules.md). Rule IDs are join keys for
 evaluation statistics; never rename one.
 
-**Changing chunking** → `crx/chunk.py`. Read the expansion-cap section in
+**Changing chunking** → `crex/chunk.py`. Read the expansion-cap section in
 [design-decisions.md](design-decisions.md) first; the 4×/3× numbers come from
 published production practice, not guesswork.
 
-**Touching prompts or schemas** → `crx/generate.py` and `crx/filter.py`.
+**Touching prompts or schemas** → `crex/generate.py` and `crex/filter.py`.
 The JSON Schema property order in `VERDICT_SCHEMA` is load-bearing
 (see [invariants.md](invariants.md#conclusion-first-property-order)).
 
-**Adding a static analyzer** → subclass `Analyzer` in `crx/ground.py`; implement
+**Adding a static analyzer** → subclass `Analyzer` in `crex/ground.py`; implement
 `build_command()` and `parse()` only. Register it in `DEFAULT_ANALYZERS` (runs
 automatically) or `OPTIONAL_ANALYZERS` (opt-in by name).
 
-**Adding an output format** → `crx/report.py`.
+**Adding an output format** → `crex/report.py`.
 
-**Adding or changing an MCP tool** → the operation goes in `crx/service.py`
-(`ReviewService`), the binding in `crx/mcp.py`. Keep the split: `service.py` must
+**Adding or changing an MCP tool** → the operation goes in `crex/service.py`
+(`ReviewService`), the binding in `crex/mcp.py`. Keep the split: `service.py` must
 not import FastMCP, or the tests stop running on a bare interpreter. Tool schemas
 come from type hints and docstrings, so the docstring *is* the spec the model reads.
 
-**Changing git access** → `crx/gitio.py`. Both the GitPython path and the
+**Changing git access** → `crex/gitio.py`. Both the GitPython path and the
 subprocess fallback must return identical unified-diff text; the chunker consumes
 only that.

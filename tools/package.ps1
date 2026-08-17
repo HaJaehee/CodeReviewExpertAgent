@@ -8,12 +8,12 @@
     사람이 읽고 확인할 수 있다. 그게 폐쇄망에서 통과시키기 쉬운 형태다.
 
     번들 구조:
-        crx-<날짜>/
+        crex-<날짜>/
           runtime/      Python 임베더블 (설치 불필요, 레지스트리 안 건드림)
           pylibs/       fastmcp, GitPython 등을 미리 풀어둔 것
           wheels/       원본 wheel (직접 pip 하고 싶을 때만)
-          crx/ docs/ wiki/ rules/ eval/ tests/ ...
-          crx.cmd       실행 진입점
+          crex/ docs/ wiki/ rules/ eval/ tests/ ...
+          crex.cmd       실행 진입점
           MANIFEST.txt  전 파일 SHA256
           설치.md        폐쇄망에서 할 일
 
@@ -47,7 +47,7 @@ $ProgressPreference = "SilentlyContinue"   # 5.1 의 진행 표시줄은 다운�
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Stamp = Get-Date -Format "yyyyMMdd"
-$BundleName = "crx-$Stamp"
+$BundleName = "crex-$Stamp"
 $DistDir = Join-Path $RepoRoot $OutDir
 $Staging = Join-Path $DistDir $BundleName
 
@@ -115,9 +115,9 @@ Write-Note "작업 위치: $Staging"
 
 Write-Step "소스 복사"
 
-$Sources = @("crx", "rules", "eval", "tests", "docs", "wiki", "tools")
+$Sources = @("crex", "rules", "eval", "tests", "docs", "wiki", "tools")
 $Files = @(
-    "README.md", "CLAUDE.md", "AGENTS.md", "crx.example.toml",
+    "README.md", "CLAUDE.md", "AGENTS.md", "crex.example.toml",
     "requirements.txt", "requirements-optional.txt", ".gitignore"
 )
 
@@ -176,7 +176,7 @@ if ($SkipRuntime) {
     # ._pth 를 고쳐 번들 루트와 pylibs 를 sys.path 에 넣는다.
     #
     # 임베더블 패키지는 sys.path 를 ._pth 파일로 못 박는다. 기본값에는 번들
-    # 루트가 없어서 `python -m crx` 가 crx 를 못 찾는다. 경로는 python.exe 가
+    # 루트가 없어서 `python -m crex` 가 crex 패키지를 못 찾는다. 경로는 python.exe 가
     # 있는 디렉터리 기준 상대경로다.
     $PthFile = Get-ChildItem -Path $RuntimeDir -Filter "python*._pth" | Select-Object -First 1
     if (-not $PthFile) { throw "runtime 에 ._pth 파일이 없다. 임베더블 패키지가 맞는지 확인하라." }
@@ -185,7 +185,7 @@ if ($SkipRuntime) {
     @(
         $zipName
         "."
-        ".."                # 번들 루트 — crx 패키지가 여기 있다
+        ".."                # 번들 루트 — crex 패키지가 여기 있다
         "..\pylibs"         # 미리 설치해둔 서드파티
         # pywin32 는 자기 .pth 로 아래 둘을 sys.path 에 넣는데, --target 설치본의
         # .pth 는 실행되지 않는다. 직접 적어준다. 없는 경로는 그냥 무시된다.
@@ -203,7 +203,7 @@ if ($SkipRuntime) {
 if ($SkipDeps) {
     Write-Step "서드파티 건너뜀 (-SkipDeps)"
     Write-Note "코어는 표준 라이브러리만 쓰므로 review/scan/doctor 와 테스트는 그대로 동작한다"
-    Write-Note "python -m crx.mcp (Zed 연동) 는 쓸 수 없다"
+    Write-Note "python -m crex.mcp (Zed 연동) 는 쓸 수 없다"
 } else {
     Write-Step "서드파티 내려받기 (fastmcp, GitPython)"
 
@@ -264,11 +264,11 @@ if (-not $SkipRuntime) {
     # cmd 래퍼 — 번들 안의 python 을 쓰므로 PATH 를 건드릴 필요가 없다
     @'
 @echo off
-rem crx 실행 진입점. 번들 안의 Python 을 쓴다.
-rem   crx review --staged
-rem   crx doctor
-"%~dp0runtime\python.exe" -m crx %*
-'@ | Set-Content -Path (Join-Path $Staging "crx.cmd") -Encoding ascii
+rem crex 실행 진입점. 번들 안의 Python 을 쓴다.
+rem   crex review --staged
+rem   crex doctor
+"%~dp0runtime\python.exe" -m crex %*
+'@ | Set-Content -Path (Join-Path $Staging "crex.cmd") -Encoding ascii
 
     @'
 @echo off
@@ -279,10 +279,10 @@ rem 반입 무결성 확인. 여기서 실패하면 파일이 덜 복사된 것�
     @'
 @echo off
 rem Zed MCP 서버. Zed settings.json 의 command 로 이 파일을 지정해도 된다.
-"%~dp0runtime\python.exe" -m crx.mcp %*
-'@ | Set-Content -Path (Join-Path $Staging "crx-mcp.cmd") -Encoding ascii
+"%~dp0runtime\python.exe" -m crex.mcp %*
+'@ | Set-Content -Path (Join-Path $Staging "crex-mcp.cmd") -Encoding ascii
 
-    Write-Note "crx.cmd / crx-mcp.cmd / 테스트.cmd"
+    Write-Note "crex.cmd / crex-mcp.cmd / 테스트.cmd"
 }
 
 # --------------------------------------------------------------------------
@@ -297,7 +297,7 @@ $entries = Get-ChildItem -Path $Staging -Recurse -File |
     Sort-Object FullName
 
 $lines = New-Object System.Collections.Generic.List[string]
-$lines.Add("# crx 반입 번들 매니페스트")
+$lines.Add("# CREX 반입 번들 매니페스트")
 $lines.Add("# 생성: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $lines.Add("# Python: $(if ($SkipRuntime) { '미포함' } else { $PythonVersion })")
 $lines.Add("# 서드파티: $(if ($SkipDeps) { '미포함' } else { 'fastmcp, GitPython' })")

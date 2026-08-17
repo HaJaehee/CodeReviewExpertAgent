@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.ground import (  # noqa: E402
+from crex.ground import (  # noqa: E402
     Bandit,
     ClangTidy,
     Cppcheck,
@@ -21,7 +21,7 @@ from crx.ground import (  # noqa: E402
     Ruff,
     Semgrep,
 )
-from crx.schema import Language, ReviewChunk, Severity, StaticFinding  # noqa: E402
+from crex.schema import Language, ReviewChunk, Severity, StaticFinding  # noqa: E402
 
 CLANG_TIDY_OUT = """\
 src/buffer.cpp:16:5: warning: pointer 'raw' is invalidated by call to 'resize' [bugprone-dangling-handle]
@@ -235,8 +235,8 @@ def test_clang_tidy_respects_project_config() -> None:
 
 
 def test_clang_tidy_checks_configurable() -> None:
-    """crx.toml 에서 체크 목록을 바꿀 수 있어야 한다."""
-    from crx.config import GroundingConfig
+    """crex.toml 에서 체크 목록을 바꿀 수 있어야 한다."""
+    from crex.config import GroundingConfig
 
     config = GroundingConfig(clang_tidy_checks="-*,modernize-*")
     _check(config.clang_tidy_checks == "-*,modernize-*", "설정 키가 없다")
@@ -247,10 +247,10 @@ def test_optional_analyzers_are_reachable_from_config() -> None:
 
     문서가 사용 가능하다고 적어둔 이름이 코드에서 도달 불가능하면 그건 거짓말이다.
     """
-    from crx.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig
-    from crx.ground import ALL_ANALYZER_NAMES, Roslynator, Semgrep
-    from crx.llm import EndpointConfig
-    from crx.pipeline import Pipeline
+    from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig
+    from crex.ground import ALL_ANALYZER_NAMES, Roslynator, Semgrep
+    from crex.llm import EndpointConfig
+    from crex.pipeline import Pipeline
 
     endpoint = EndpointConfig(base_url="http://x/v1", model="m")
 
@@ -317,7 +317,7 @@ TESTS = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     failures = 0

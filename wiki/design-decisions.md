@@ -7,7 +7,7 @@ revisit it. Several of these look arbitrary from the code alone.
 
 ## Context budget is 8,192 tokens, not 256K
 
-Qwen3.6 and Gemma 4 both support 256K context. `crx` uses 8,192.
+Qwen3.6 and Gemma 4 both support 256K context. CREX uses 8,192.
 
 **Why.** Longer context measurably reduces precision on this task. In the ASE 2025
 retrieval-augmented code review study, expanding retrieved examples from top-1 to
@@ -172,7 +172,7 @@ records across time. Renaming one severs that rule's history exactly when three
 months of data would let you decide whether to retire it.
 
 The ID prefix must match the `language` field (`any.` for cross-language rules) or
-per-language statistics blend together. `python -m crx.rules` rejects duplicates.
+per-language statistics blend together. `python -m crex.rules` rejects duplicates.
 
 To rename: add under the new ID, delete the old one. Don't mutate.
 
@@ -197,12 +197,12 @@ than dropping the principle wholesale:
 
 | Dependency | Status | Fallback |
 |---|---|---|
-| FastMCP | required by `crx/mcp.py` only | none — but CLI and tests don't need it |
-| GitPython | preferred in `crx/gitio.py` | subprocess, same diff text |
-| tree-sitter | optional in `crx/chunk.py` | brace/indent heuristic |
+| FastMCP | required by `crex/mcp.py` only | none — but CLI and tests don't need it |
+| GitPython | preferred in `crex/gitio.py` | subprocess, same diff text |
+| tree-sitter | optional in `crex/chunk.py` | brace/indent heuristic |
 
-`crx/service.py` was split out of `crx/mcp.py` specifically so the review logic
-imports no FastMCP and stays testable without it. `python -m crx review|scan|doctor`
+`crex/service.py` was split out of `crex/mcp.py` specifically so the review logic
+imports no FastMCP and stays testable without it. `python -m crex review|scan|doctor`
 and `python tests/run_all.py` still run on a bare interpreter — post-transfer
 integrity verification cannot presuppose a working `pip install`.
 

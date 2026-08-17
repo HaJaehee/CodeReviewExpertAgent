@@ -23,13 +23,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
-from crx.llm import EndpointConfig  # noqa: E402
-from crx.pipeline import Pipeline  # noqa: E402
-from crx.rules import load_taxonomy  # noqa: E402
-from crx.viz.api import Context, Request, handle  # noqa: E402
-from crx.viz.engine import RunRegistry, TracedPipeline  # noqa: E402
-from crx.viz.trace import MAX_TEXT, Tracer, clip  # noqa: E402
+from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
+from crex.llm import EndpointConfig  # noqa: E402
+from crex.pipeline import Pipeline  # noqa: E402
+from crex.rules import load_taxonomy  # noqa: E402
+from crex.viz.api import Context, Request, handle  # noqa: E402
+from crex.viz.engine import RunRegistry, TracedPipeline  # noqa: E402
+from crex.viz.trace import MAX_TEXT, Tracer, clip  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 from tests.test_mcp import _make_repo  # noqa: E402
 from tests.test_pipeline import _git  # noqa: E402
@@ -204,7 +204,7 @@ def test_identical_messages_in_two_places_do_not_cross_wire() -> None:
     원문만으로 짝을 지으면 검증 레인이 엉뚱한 라인을 가리킨다 — 개발 중 실제로
     그렇게 어긋났다. 위치가 원문보다 강한 신호여야 한다.
     """
-    from crx.schema import Language, ReviewChunk
+    from crex.schema import Language, ReviewChunk
 
     chunk = ReviewChunk(
         chunk_id="src/a.py#0", path="src/a.py", language=Language.PYTHON,
@@ -232,7 +232,7 @@ def test_unmatched_prompt_does_not_break_the_run() -> None:
 
 def test_event_cap_never_swallows_the_ending() -> None:
     """상한에 걸려도 run.finished 는 나가야 한다 — 판정 전체가 거기 실린다."""
-    from crx.viz.trace import MAX_EVENTS
+    from crex.viz.trace import MAX_EVENTS
 
     tracer = Tracer()
     for _ in range(MAX_EVENTS + 50):
@@ -370,7 +370,7 @@ def test_event_cursor_never_replays() -> None:
 
 def test_stdlib_server_serves_over_real_http() -> None:
     """uvicorn 이 없는 장비에서도 화면이 떠야 한다."""
-    from crx.viz.server import serve_stdlib
+    from crex.viz.server import serve_stdlib
 
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _context(Path(tmp), "http://127.0.0.1:1/v1", Path(tmp) / "reports")
@@ -394,7 +394,7 @@ def test_asgi_app_answers_without_uvicorn() -> None:
     """ASGI 앱 자체는 인터페이스일 뿐이다 — uvicorn 없이도 검증된다."""
     import asyncio
 
-    from crx.viz.server import build_asgi
+    from crex.viz.server import build_asgi
 
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _context(Path(tmp), "http://127.0.0.1:1/v1", Path(tmp) / "reports")
@@ -462,7 +462,7 @@ TESTS = [
 
 
 def main() -> int:
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     if shutil.which("git") is None:

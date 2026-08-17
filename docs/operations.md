@@ -11,7 +11,7 @@
 옮길 것:
 
 ```
-crx/            파이프라인 본체
+crex/            파이프라인 본체
 rules/          룰 택소노미
 eval/           평가 하네스
 tests/          테스트
@@ -20,7 +20,7 @@ wiki/           에이전트용 영문 문서
 README.md
 CLAUDE.md
 AGENTS.md                 Zed 에이전트 지시 (대상 저장소로 복사)
-crx.example.toml
+crex.example.toml
 requirements.txt          MCP 서버용 (코어는 불필요)
 requirements-optional.txt tree-sitter (선택)
 ```
@@ -28,10 +28,10 @@ requirements-optional.txt tree-sitter (선택)
 반입 직후 순서:
 
 ```bash
-python --version                 # 3.11 이상인지
-python tests/run_all.py          # 반입 무결성 — 64개 전부 통과해야 합니다
-cp crx.example.toml crx.toml     # 엔드포인트 수정
-python -m crx doctor             # 연결 확인
+python --version                # 3.11 이상인지
+python tests/run_all.py         # 반입 무결성 — 79개 전부 통과해야 합니다
+cp crex.example.toml crex.toml  # 엔드포인트 수정
+python -m crex doctor           # 연결 확인
 ```
 
 `tests/run_all.py` 는 LLM 없이, pip install 없이 돕니다. 가짜 vLLM 을 프로세스
@@ -55,8 +55,8 @@ fastmcp 는 의존성이 적지 않습니다(pydantic, httpx, mcp 등). `pip dow
 끌어오는 wheel 전부를 함께 옮겨야 하고, 그만큼 보안 검토 대상이 늘어납니다.
 Zed 을 쓰는 개발자 장비에만 설치하고, 빌드 서버에는 코어만 두는 편이 낫습니다.
 
-GitPython 은 없어도 됩니다 — `crx/gitio.py` 가 subprocess 로 폴백합니다.
-`python -m crx doctor` 의 마지막 절이 현재 상태를 보여줍니다.
+GitPython 은 없어도 됩니다 — `crex/gitio.py` 가 subprocess 로 폴백합니다.
+`python -m crex doctor` 의 마지막 절이 현재 상태를 보여줍니다.
 
 ### tree-sitter (선택)
 
@@ -111,16 +111,16 @@ vllm serve /models/Qwen3.6-27B \
   --port 8000
 ```
 
-`--served-model-name` 이 `crx.toml` 의 `model` 과 정확히 같아야 합니다.
+`--served-model-name` 이 `crex.toml` 의 `model` 과 정확히 같아야 합니다.
 경로를 그대로 쓰면 모델 이름도 경로가 되므로 명시해 주는 게 편합니다.
 
-`--max-model-len` 은 32768 이면 충분합니다. crx 는 8192 로 잘라서 보내므로
+`--max-model-len` 은 32768 이면 충분합니다. CREX 는 8192 로 잘라서 보내므로
 더 크게 잡을 이유가 없고, 크게 잡으면 KV 캐시가 메모리를 먹어 동시 처리량이
 떨어집니다.
 
 ### 구조화 출력 백엔드
 
-여기가 중요합니다. crx 의 환각 방어 중 두 겹이 이것에 의존합니다.
+여기가 중요합니다. CREX 의 환각 방어 중 두 겹이 이것에 의존합니다.
 
 vLLM 버전에 따라 플래그 이름이 바뀌었습니다. 0.6~0.8 대에서는
 `--guided-decoding-backend xgrammar`, 그 이후로는 구조화 출력 설정이 다른
@@ -155,7 +155,7 @@ GPU 가 정말 부족하면 `[llm.verifier]` 블록을 지우고 생성 모델�
 
 ## 텔레메트리
 
-crx 자체는 아무 데도 연결하지 않습니다. 설정된 vLLM 엔드포인트에만 HTTP 를
+CREX 자체는 아무 데도 연결하지 않습니다. 설정된 vLLM 엔드포인트에만 HTTP 를
 보냅니다. 외부 호출 코드가 없습니다.
 
 `alibaba/open-code-review` 를 병행 평가한다면 그쪽은 따로 확인해야 합니다.
@@ -169,7 +169,7 @@ OTLP 텔레메트리 설정이 있는 것으로 보이므로, 반입 전에 비�
 ### MR 리뷰
 
 ```bash
-python -m crx review --from $(git merge-base main HEAD) --to HEAD --out reports/
+python -m crex review --from $(git merge-base main HEAD) --to HEAD --out reports/
 ```
 
 `--from` 에 그냥 `main` 을 넣으면 브랜치가 오래됐을 때 남의 변경까지 딸려
@@ -182,7 +182,7 @@ API 를 호출하는 얇은 스크립트를 짜면 되는데, 도입 초기에�
 ### 커밋 전 자가 점검
 
 ```bash
-python -m crx review --staged
+python -m crex review --staged
 ```
 
 개발자가 스스로 돌리는 용도입니다. 이 경로가 실제로는 제일 많이 쓰이게 됩니다 —
@@ -193,7 +193,7 @@ python -m crx review --staged
 ### 레거시 감사
 
 ```bash
-python -m crx scan src/legacy/*.cpp --out reports/legacy/
+python -m crex scan src/legacy/*.cpp --out reports/legacy/
 ```
 
 diff 리뷰보다 오탐이 많습니다. 변경 라인이라는 필터가 없어서 모든 줄이 지적
@@ -214,13 +214,13 @@ Zed 에이전트 패널에서 "내 변경사항 리뷰해줘"로 부를 수 있�
 ```json
 {
   "context_servers": {
-    "crx": {
+    "crex": {
       "command": "python",
-      "args": ["-m", "crx.mcp"],
+      "args": ["-m", "crex.mcp"],
       "env": {
-        "CRX_REPO": "/work/myrepo",
-        "CRX_CONFIG": "/work/myrepo/crx.toml",
-        "CRX_REPORTS": "/work/myrepo/reports"
+        "CREX_REPO": "/work/myrepo",
+        "CREX_CONFIG": "/work/myrepo/crex.toml",
+        "CREX_REPORTS": "/work/myrepo/reports"
       }
     }
   }
@@ -235,7 +235,7 @@ FastMCP 를 씁니다. CLI 와 테스트는 그대로 의존성 없이 돕니다
 넣으세요. 가상환경에 설치했다면 그 환경의 `python` 절대 경로를 줘야 합니다 —
 이게 제일 흔한 실패 원인입니다.
 
-환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 `crx.toml` 을 찾고
+환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 `crex.toml` 을 찾고
 `reports/` 에 리포트를 씁니다.
 
 설정을 바꾸면 Zed 을 재시작하거나 창을 새로 고쳐야 반영됩니다.
@@ -250,7 +250,7 @@ stdin/stdout 으로 대화하며, 수명이 에디터 세션에 묶입니다. �
 
 Zed 은 OpenAI 호환 커스텀 프로바이더를 지원합니다. `agent: open settings` →
 LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩니다.
-에이전트 패널이 쓰는 모델과 crx 내부가 쓰는 모델은 별개이니, 같은 인스턴스를
+에이전트 패널이 쓰는 모델과 crex 내부가 쓰는 모델은 별개이니, 같은 인스턴스를
 가리켜도 되고 다르게 둬도 됩니다.
 
 ### 도구
@@ -273,7 +273,7 @@ LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩�
 
 ### 반환값은 요약입니다
 
-도구가 돌려주는 건 지적 목록 요약이고, 전체 리포트는 `CRX_REPORTS` 경로에
+도구가 돌려주는 건 지적 목록 요약이고, 전체 리포트는 `CREX_REPORTS` 경로에
 마크다운·SARIF·JSON 으로 저장됩니다.
 
 전문을 돌려주지 않는 건 의도입니다. MCP 도구의 반환값은 그대로 에이전트
@@ -284,20 +284,20 @@ LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩�
 ### 에이전트 지시 파일 (AGENTS.md)
 
 **이게 제일 효과가 큽니다.** 지시를 주지 않으면 Zed 에이전트가 도구를 부르는
-대신 스스로 diff 를 읽고 리뷰해 버립니다. 검증을 안 거친 지적이라 crx 를 쓰는
+대신 스스로 diff 를 읽고 리뷰해 버립니다. 검증을 안 거친 지적이라 CREX 를 쓰는
 의미가 사라집니다.
 
-crx 저장소 루트의 [`AGENTS.md`](../AGENTS.md) 를 **리뷰 대상 저장소 루트로
+CREX 저장소 루트의 [`AGENTS.md`](../AGENTS.md) 를 **리뷰 대상 저장소 루트로
 복사**하세요.
 
 ```bash
-cp <crx-설치경로>/AGENTS.md /work/myrepo/AGENTS.md
+cp <crex-설치경로>/AGENTS.md /work/myrepo/AGENTS.md
 ```
 
 모든 프로젝트에 한 번에 적용하려면 개인 설정 위치에 둡니다.
 
 ```bash
-cp <crx-설치경로>/AGENTS.md ~/.config/zed/AGENTS.md
+cp <crex-설치경로>/AGENTS.md ~/.config/zed/AGENTS.md
 ```
 
 내용은 다섯 가지입니다 — 직접 리뷰하지 말고 도구를 부를 것, 어떤 말에 어떤
@@ -313,9 +313,9 @@ cp <crx-설치경로>/AGENTS.md ~/.config/zed/AGENTS.md
 Zed 문서도 "모델에 따라 신뢰도가 다르다"고 적어두고 있고, 27B 급에서는 실제로
 그렇습니다. 두 가지가 더 있습니다.
 
-- **서버 이름을 직접 부르기** — "crx 로 리뷰해줘"
-- **커스텀 에이전트 프로필** — 내장 도구를 끄고 crx 도구만 남기면 다른 데로
-  새지 않습니다. 도구 권한 키는 `mcp:crx:review_staged` 형식입니다.
+- **서버 이름을 직접 부르기** — "crex 로 리뷰해줘"
+- **커스텀 에이전트 프로필** — 내장 도구를 끄고 CREX 도구만 남기면 다른 데로
+  새지 않습니다. 도구 권한 키는 `mcp:crex:review_staged` 형식입니다.
 
 리뷰 전용 프로필을 만들어 팀에 배포하는 걸 권합니다.
 
@@ -325,7 +325,7 @@ Zed 문서도 "모델에 따라 신뢰도가 다르다"고 적어두고 있고, 
 되고 청크마다 LLM 호출이 최대 두 번이라, 큰 폴더를 무심코 지정하면 몇 시간이
 걸립니다. 조용히 자르지 않고 범위를 좁히라고 알려줍니다.
 
-상한은 `crx/paths.py` 의 `MAX_SCAN_FILES` 입니다.
+상한은 `crex/paths.py` 의 `MAX_SCAN_FILES` 입니다.
 
 ---
 
@@ -358,17 +358,17 @@ Zed 문서도 "모델에 따라 신뢰도가 다르다"고 적어두고 있고, 
 ## 로그
 
 ```bash
-python -m crx review -v
+python -m crex review -v
 ```
 
 `-v` 를 붙이면 청크 생성, 분석기 실행 결과, 필터 통계가 stderr 로 나옵니다.
 리뷰 결과는 stdout 이므로 섞이지 않습니다.
 
 ```
-INFO    crx.pipeline: 청크 25개 생성
-INFO    crx.ground: [clang-tidy] 7건 보고
-INFO    crx.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
-INFO    crx.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적 3, LLM 4, 오류 0)
+INFO    crex.pipeline: 청크 25개 생성
+INFO    crex.ground: [clang-tidy] 7건 보고
+INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
+INFO    crex.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적 3, LLM 4, 오류 0)
 ```
 
 기각률 한 줄만 봐도 그날 파이프라인이 정상인지 대충 압니다.
@@ -377,10 +377,10 @@ INFO    crx.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적 
 
 ## 버전 관리
 
-`crx.toml` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
-상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crx.toml` 에는 공통
-설정만 두고 `.crx.toml` 을 개인용으로 `.gitignore` 에 넣는 방법도 있습니다.
-탐색 순서상 `crx.toml` 이 먼저이므로, 개인 설정을 우선하려면 `--config` 로
+`crex.toml` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
+상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crex.toml` 에는 공통
+설정만 두고 `.crex.toml` 을 개인용으로 `.gitignore` 에 넣는 방법도 있습니다.
+탐색 순서상 `crex.toml` 이 먼저이므로, 개인 설정을 우선하려면 `--config` 로
 명시하세요.
 
 `rules/taxonomy.toml` 도 당연히 커밋합니다. 룰 변경 이력이 곧 튜닝 이력입니다.

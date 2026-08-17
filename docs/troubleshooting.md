@@ -13,7 +13,7 @@
 curl http://vllm-qwen:8000/v1/models
 ```
 
-이게 안 되면 crx 문제가 아닙니다. vLLM 이 떠 있는지, 포트가 맞는지, 방화벽이
+이게 안 되면 CREX 문제가 아닙니다. vLLM 이 떠 있는지, 포트가 맞는지, 방화벽이
 막는지 보세요. 폐쇄망에서는 사내 프록시 환경변수(`HTTP_PROXY`, `NO_PROXY`)가
 `urllib` 을 엉뚱한 데로 보내는 경우가 종종 있습니다. `NO_PROXY` 에 vLLM 호스트를
 넣으세요.
@@ -36,10 +36,10 @@ curl http://vllm-qwen:8000/v1/models
 ```
 
 `--served-model-name` 없이 띄웠다면 모델 이름이 파일 경로 전체입니다.
-그 경로를 `crx.toml` 에 그대로 넣거나, vLLM 을 재기동하면서
+그 경로를 `crex.toml` 에 그대로 넣거나, vLLM 을 재기동하면서
 `--served-model-name Qwen3.6-27B` 를 주세요.
 
-404, 400, 422 는 재시도해도 결과가 같으므로 crx 가 즉시 포기합니다.
+404, 400, 422 는 재시도해도 결과가 같으므로 CREX 가 즉시 포기합니다.
 로그에 한 번만 찍히는 게 정상입니다.
 
 ---
@@ -91,7 +91,7 @@ chat_template_kwargs = { enable_thinking = false }
 ## `diff 와 파일 내용이 N곳에서 불일치한다`
 
 ```
-crx.pipeline: src/buffer.cpp 건너뜀: diff/파일 불일치
+crex.pipeline: src/buffer.cpp 건너뜀: diff/파일 불일치
 ```
 
 diff 가 기술하는 내용과 디스크의 파일이 다릅니다. 그대로 진행하면 라인 번호가
@@ -105,7 +105,7 @@ diff 를 다시 만드세요.
 **과거 커밋을 비교하는데 작업 트리는 현재 상태인 경우.** 이게 제일 흔합니다.
 
 ```bash
-python -m crx review --from v1.0 --to v1.1     # 작업 트리는 main 최신
+python -m crex review --from v1.0 --to v1.1     # 작업 트리는 main 최신
 ```
 
 `--to v1.1` 의 코드가 디스크에 없습니다. 그 시점을 체크아웃한 사본을 만들고
@@ -113,7 +113,7 @@ python -m crx review --from v1.0 --to v1.1     # 작업 트리는 main 최신
 
 ```bash
 git worktree add ../snap-v1.1 v1.1
-python -m crx review --from v1.0 --to v1.1 --repo ../snap-v1.1
+python -m crex review --from v1.0 --to v1.1 --repo ../snap-v1.1
 ```
 
 **개행 문자 문제.** 파일이 CRLF 인데 git 설정이 어긋나서 diff 는 LF 로 나오는
@@ -126,19 +126,19 @@ python -m crx review --from v1.0 --to v1.1 --repo ../snap-v1.1
 
 ## 지적이 하나도 안 나온다
 
-먼저 이게 정상일 수 있다는 걸 염두에 두세요. crx 는 확신이 없으면 침묵합니다.
+먼저 이게 정상일 수 있다는 걸 염두에 두세요. CREX 는 확신이 없으면 침묵합니다.
 
 그래도 이상하다면 `-v` 로 단계별 숫자를 보세요.
 
 ```
-INFO    crx.pipeline: 청크 0개 생성
+INFO    crex.pipeline: 청크 0개 생성
 ```
 
 **청크가 0개** — diff 에 지원 언어 파일이 없거나, 전부 `diff/파일 불일치` 로
 건너뛰어졌습니다. 위쪽 로그를 확인하세요.
 
 ```
-INFO    crx.pipeline: 생성된 지적 0건
+INFO    crex.pipeline: 생성된 지적 0건
 ```
 
 **생성이 0건** — 모델이 아무것도 못 찾았습니다. 프롬프트가 잘렸는지 의심해
@@ -148,7 +148,7 @@ INFO    crx.pipeline: 생성된 지적 0건
 수단입니다).
 
 ```
-INFO    crx.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 8, LLM 0, 오류 0)
+INFO    crex.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 8, LLM 0, 오류 0)
 ```
 
 **전부 결정론적으로 기각** — 라인 번호가 어긋나고 있습니다. JSON 리포트의
@@ -156,10 +156,10 @@ INFO    crx.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 8,
 안 걸려서 모델이 임의의 라인 번호를 내고 있을 가능성이 큽니다.
 
 ```
-INFO    crx.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 0, LLM 0, 오류 8)
+INFO    crex.filter: 검증 8건 → 유지 0건 (기각률 100%: 결정론적 0, LLM 0, 오류 8)
 ```
 
-**전부 오류** — 검증 엔드포인트가 죽었습니다. crx 는 검증에 실패한 지적을
+**전부 오류** — 검증 엔드포인트가 죽었습니다. CREX 는 검증에 실패한 지적을
 보수적으로 기각합니다(통과시키지 않습니다). `doctor` 로 검증 쪽을 확인하세요.
 
 ---
@@ -197,13 +197,13 @@ JSON 리포트에서 그 룰이 만든 지적을 몇 개 읽어보면 패턴이 
 ## 정적분석이 안 돌아간다
 
 ```
-INFO    crx.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
+INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
 ```
 
 말 그대로입니다. 없는 도구는 조용히 건너뜁니다. `doctor` 로 전체 목록을 보세요.
 
 ```
-INFO    crx.ground: [clang-tidy] 건너뜀 — 120초 내에 끝나지 않아 중단
+INFO    crex.ground: [clang-tidy] 건너뜀 — 120초 내에 끝나지 않아 중단
 ```
 
 clang-tidy 는 헤더가 많은 C++ 에서 쉽게 몇 분을 먹습니다.
@@ -211,7 +211,7 @@ clang-tidy 는 헤더가 많은 C++ 에서 쉽게 몇 분을 먹습니다.
 컴파일 DB 를 만들어주거나, clang-tidy 를 빼고 cppcheck 만 쓰세요.
 
 ```
-INFO    crx.ground: [roslyn] 0건 보고
+INFO    crex.ground: [roslyn] 0건 보고
 ```
 
 `dotnet build` 는 돌았는데 경고가 없습니다. 프로젝트에 분석기가 활성화되어
@@ -255,16 +255,16 @@ Zed 에서 서버가 안 뜬다면 대개 **경로 문제**입니다. 가상환�
 fastmcp 가 없습니다. 가상환경의 절대 경로를 주세요.
 
 ```json
-{ "command": "/work/venv/bin/python", "args": ["-m", "crx.mcp"] }
+{ "command": "/work/venv/bin/python", "args": ["-m", "crex.mcp"] }
 ```
 
-현재 상태는 `python -m crx doctor` 의 마지막 절에서 확인합니다.
+현재 상태는 `python -m crex doctor` 의 마지막 절에서 확인합니다.
 
 ---
 
 ## GitPython 이 없다는데 괜찮은가
 
-괜찮습니다. `crx/gitio.py` 가 subprocess 로 폴백하고, 두 경로 모두 같은
+괜찮습니다. `crex/gitio.py` 가 subprocess 로 폴백하고, 두 경로 모두 같은
 unified diff 를 돌려줍니다. `doctor` 가 어느 쪽을 쓰는지 알려줍니다.
 
 ---
@@ -275,7 +275,7 @@ unified diff 를 돌려줍니다. `doctor` 가 어느 쪽을 쓰는지 알려줍
 python tests/run_all.py
 ```
 
-64개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
+79개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
 특히 `rules/taxonomy.toml` 이 빠지면 여러 모듈이 한꺼번에 터집니다.
 
 ```
@@ -293,5 +293,5 @@ SKIP: git 이 없어 파이프라인 테스트를 건너뛴다
 이 둘이면 파이프라인의 어느 단계에서 무엇이 사라졌는지 대부분 추적됩니다.
 
 ```bash
-python -m crx review --staged --out reports/ -v 2> debug.log
+python -m crex review --staged --out reports/ -v 2> debug.log
 ```

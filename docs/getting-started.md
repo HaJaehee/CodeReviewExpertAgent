@@ -29,7 +29,7 @@ pip install -r requirements.txt
 예시를 복사해서 씁니다.
 
 ```bash
-cp crx.example.toml crx.toml
+cp crex.example.toml crex.toml
 ```
 
 처음에는 엔드포인트 주소와 모델 이름만 고치면 됩니다. 나머지 기본값은 그대로
@@ -50,19 +50,19 @@ vLLM 인스턴스가 하나뿐이라면 `[llm.verifier]` 블록을 통째로 지
 생성 쪽 설정을 재사용합니다. 교차 모델 검증의 이점은 사라지지만 파이프라인은
 돕니다. GPU 가 확보되는 대로 두 번째 인스턴스를 띄우는 걸 권합니다.
 
-`crx.toml` 은 현재 디렉터리에서 위로 올라가며 찾습니다. 저장소 루트에 두면
+`crex.toml` 은 현재 디렉터리에서 위로 올라가며 찾습니다. 저장소 루트에 두면
 하위 어디서 실행해도 잡힙니다.
 
 ## 첫 점검
 
 ```bash
-python -m crx doctor
+python -m crex doctor
 ```
 
 이게 첫 명령입니다. 무엇이 준비됐고 무엇이 빠졌는지 한 화면에 보여줍니다.
 
 ```
-설정 파일: D:\work\myrepo\crx.toml
+설정 파일: D:\work\myrepo\crex.toml
   모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000/v1 검증=gemma-4-26b-it@... 입력상한=8192토큰 그라운딩=on
 
 택소노미
@@ -99,7 +99,7 @@ tree-sitter (선택)
 작업 트리에 변경이 있는 상태에서:
 
 ```bash
-python -m crx review
+python -m crex review
 ```
 
 인자 없이 쓰면 `git diff HEAD` 를 봅니다. 커밋 전 변경 전체입니다.
@@ -107,13 +107,13 @@ python -m crx review
 스테이징된 것만 보려면:
 
 ```bash
-python -m crx review --staged
+python -m crex review --staged
 ```
 
 두 커밋 사이를 보려면:
 
 ```bash
-python -m crx review --from main --to HEAD
+python -m crex review --from main --to HEAD
 ```
 
 MR 리뷰라면 이 형태를 씁니다. `--from` 에는 병합 기준점을 넣으세요.
@@ -121,7 +121,7 @@ MR 리뷰라면 이 형태를 씁니다. `--from` 에는 병합 기준점을 넣
 정확합니다. 안 그러면 남이 main 에 넣은 변경까지 리뷰 대상에 들어옵니다.
 
 ```bash
-python -m crx review --from $(git merge-base main HEAD) --to HEAD
+python -m crex review --from $(git merge-base main HEAD) --to HEAD
 ```
 
 ## 결과 읽기
@@ -166,12 +166,12 @@ raw[0] = 42;
 내는지 의심하세요), 너무 높으면 생성 쪽 프롬프트나 룰이 헛돌고 있는 겁니다.
 
 지적이 하나도 없으면 "지적 사항 없음"만 나옵니다. 이건 정상이고 흔합니다.
-crx 는 확신이 없으면 침묵하도록 만들어져 있습니다.
+CREX 는 확신이 없으면 침묵하도록 만들어져 있습니다.
 
 ## 파일로 받기
 
 ```bash
-python -m crx review --from main --to HEAD --out reports/
+python -m crex review --from main --to HEAD --out reports/
 ```
 
 ```
@@ -194,7 +194,7 @@ json: reports\review.json
 게이트로 쓸 수 있습니다.
 
 ```bash
-python -m crx review --staged --out reports/ || echo "심각한 지적이 있습니다"
+python -m crex review --staged --out reports/ || echo "심각한 지적이 있습니다"
 ```
 
 도입 초기에는 이걸 강제하지 마세요. 신뢰가 쌓이기 전에 커밋을 막으면 사람들이
@@ -205,7 +205,7 @@ python -m crx review --staged --out reports/ || echo "심각한 지적이 있습
 diff 없이 기존 코드를 통째로 볼 때 씁니다.
 
 ```bash
-python -m crx scan src/legacy.cpp src/parser.cpp
+python -m crex scan src/legacy.cpp src/parser.cpp
 ```
 
 파일을 400줄 창으로 자르되 함수 중간을 자르지 않도록 경계를 맞춥니다.

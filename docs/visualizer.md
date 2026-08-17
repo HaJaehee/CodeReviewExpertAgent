@@ -3,7 +3,7 @@
 생성 모델과 검증 모델이 실제로 무슨 일을 하는지 웹에서 지켜보는 화면입니다.
 
 ```bash
-python -m crx.viz
+python -m crex.viz
 ```
 
 띄운 뒤 `http://127.0.0.1:8765` 로 들어가면 됩니다.
@@ -83,7 +83,7 @@ DB 를 세우고 그 백업·권한·반입 승인을 떠안을 이유가 없습
 ## 옵션
 
 ```bash
-python -m crx.viz --port 9000 --repo D:\work\myproject --config crx.toml
+python -m crex.viz --port 9000 --repo D:\work\myproject --config crex.toml
 ```
 
 | 옵션 | 뜻 | 기본값 |
@@ -91,11 +91,11 @@ python -m crx.viz --port 9000 --repo D:\work\myproject --config crx.toml
 | `--host` | 바인드 주소 | `127.0.0.1` |
 | `--port` | 포트 | `8765` |
 | `--repo` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
-| `--config` | 설정 파일 | `crx.toml` 상위 탐색 |
+| `--config` | 설정 파일 | `crex.toml` 상위 탐색 |
 | `--out` | 리포트 저장 위치 | `<repo>/reports` |
 | `--stdlib` | uvicorn 이 있어도 stdlib 서버를 쓴다 | 꺼짐 |
 
-환경변수 `CRX_REPO`, `CRX_CONFIG`, `CRX_REPORTS` 도 MCP 서버와 똑같이 읽습니다.
+환경변수 `CREX_REPO`, `CREX_CONFIG`, `CREX_REPORTS` 도 MCP 서버와 똑같이 읽습니다.
 
 ### 바인드 주소
 
@@ -121,7 +121,7 @@ python -m crx.viz --port 9000 --repo D:\work\myproject --config crx.toml
 
 **화면은 뜨는데 실행이 바로 실패한다**
 `엔드포인트 점검` 을 눌러 보세요. 두 칩이 빨개지면 vLLM 이 안 떠 있거나 모델
-이름이 다릅니다. `python -m crx doctor` 와 같은 점검입니다.
+이름이 다릅니다. `python -m crex doctor` 와 같은 점검입니다.
 
 **청크가 0개다**
 리뷰할 변경이 없거나, 지원하지 않는 언어이거나, diff 와 작업본이 어긋나
@@ -129,7 +129,7 @@ python -m crx.viz --port 9000 --repo D:\work\myproject --config crx.toml
 
 **호출 카드가 안 생긴다**
 청크는 있는데 생성 호출이 없다면 그 언어에 적용할 룰이 없는 것입니다.
-`python -m crx.rules` 로 택소노미를 확인하세요.
+`python -m crex.rules` 로 택소노미를 확인하세요.
 
 **중단을 눌렀는데 바로 안 멈춘다**
 이미 나간 호출은 응답을 기다립니다. 다음 호출부터 멈춥니다. 중단된 실행도

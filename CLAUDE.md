@@ -4,9 +4,11 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-`crx` — an AI code review pipeline for C++/C#/Python that runs entirely inside a
-corporate **air-gapped network** against **small local LLMs** (25–40B: Qwen3.6-27B
-for generation, Gemma 4 26B for verification) served by vLLM.
+**CREX** (Code Review EXpert) — an AI code review pipeline for C++/C#/Python that
+runs entirely inside a corporate **air-gapped network** against **small local LLMs**
+(25–40B: Qwen3.6-27B for generation, Gemma 4 26B for verification) served by vLLM.
+
+The Python package, CLI, and config file are lowercase `crex`; `CREX` is the name.
 
 Every design choice serves one goal: **suppressing hallucination**. Small models
 confidently invent line numbers, APIs, and defects. A review tool with a high
@@ -48,32 +50,32 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 78 tests, no LLM or network needed
+python tests/run_all.py                     # 79 tests, no LLM or network needed
 ```
 
 ```bash
-python -m crx doctor                        # endpoints, analyzers, tree-sitter status
+python -m crex doctor                        # endpoints, analyzers, tree-sitter status
 ```
 
 ```bash
-python -m crx review --from main --to HEAD  # diff review
-python -m crx review --staged --out reports/
-python -m crx scan src/legacy.cpp           # whole-file audit, no diff
+python -m crex review --from main --to HEAD  # diff review
+python -m crex review --staged --out reports/
+python -m crex scan src/legacy.cpp           # whole-file audit, no diff
 ```
 
 ```bash
-python -m crx.mcp                        # MCP stdio server (Zed context_servers)
-                                         # needs `pip install -r requirements.txt`
+python -m crex.mcp  # MCP stdio server (Zed context_servers)
+                    # needs `pip install -r requirements.txt`
 ```
 
 ```bash
-python -m crx.viz                        # pipeline dashboard, http://127.0.0.1:8765
-                                         # uvicorn if installed, stdlib otherwise
+python -m crex.viz  # pipeline dashboard, http://127.0.0.1:8765
+                    # uvicorn if installed, stdlib otherwise
 ```
 
 ```bash
-python -m crx.rules                                   # validate taxonomy
-python -m crx.rules --out .opencodereview/rule.json   # emit OCR rule file
+python -m crex.rules                                   # validate taxonomy
+python -m crex.rules --out .opencodereview/rule.json   # emit OCR rule file
 ```
 
 ```bash
@@ -90,26 +92,26 @@ Exit code 1 from `review` means at least one `high` severity finding.
 git diff → chunk → ground → generate → filter → report
 ```
 
-- **chunk** (`crx/chunk.py`) — parse diff, expand each hunk to the enclosing symbol
+- **chunk** (`crex/chunk.py`) — parse diff, expand each hunk to the enclosing symbol
   (capped at 4× hunk size, truncated to 3×), annotate every line as
   `[added @142]`. Verifies diff matches on-disk source and skips the file if not.
-- **ground** (`crx/ground.py`) — run static analyzers in parallel (6 by default, 8 available); missing tools
+- **ground** (`crex/ground.py`) — run static analyzers in parallel (6 by default, 8 available); missing tools
   skip silently. Findings go into the prompt so the LLM's job becomes *verify these
   and add what tools can't catch*, not *find defects*.
-- **generate** (`crx/generate.py`) — one LLM call per chunk with a JSON Schema whose
+- **generate** (`crex/generate.py`) — one LLM call per chunk with a JSON Schema whose
   `enum`s restrict `line` to the chunk's changed lines and `rule_id` to the taxonomy.
-- **filter** (`crx/filter.py`) — deterministic checks first (no LLM call), then a
+- **filter** (`crex/filter.py`) — deterministic checks first (no LLM call), then a
   *different* model returns yes/no in Conclusion-First order.
-- **report** (`crx/report.py`) — Markdown / SARIF 2.1.0 / JSON.
+- **report** (`crex/report.py`) — Markdown / SARIF 2.1.0 / JSON.
 
-`crx/service.py` + `crx/mcp.py` expose the same pipeline to Zed's agent panel over
+`crex/service.py` + `crex/mcp.py` expose the same pipeline to Zed's agent panel over
 MCP. All logic lives in `service.py` (no FastMCP import, fully testable); `mcp.py`
 is a thin FastMCP binding. 5 tools, returning a **compact summary**, not the full report —
 tool results land in the agent's context, and the whole design is about spending
 context carefully. Full reports go to disk. The agent decides *when* to review;
 the pipeline still decides *how*.
 
-`crx/viz/` is a 3-tier dashboard over the same pipeline: engine (`trace.py`,
+`crex/viz/` is a 3-tier dashboard over the same pipeline: engine (`trace.py`,
 `engine.py`) subclasses `Pipeline`/`LLMClient` to emit events, application
 (`api.py`, `server.py`) is a transport-agnostic router with uvicorn and stdlib
 backends, presentation (`web/`) is dependency-free HTML/CSS/JS storing history in
@@ -135,12 +137,12 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **`on_mismatch` default stays `"raise"`** — a line-shifted review is entirely wrong.
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
   appears not to work.
-- **Core stays dependency-free** — only `crx/mcp.py` may require a wheel (FastMCP).
-  `python -m crx review|scan|doctor`, `python -m crx.viz`, and `tests/run_all.py`
+- **Core stays dependency-free** — only `crex/mcp.py` may require a wheel (FastMCP).
+  `python -m crex review|scan|doctor`, `python -m crex.viz`, and `tests/run_all.py`
   must work with nothing installed; each wheel costs a security review on every
   air-gapped transfer. The dashboard's front end loads no CDN, font, or framework
   for the same reason — in an air-gapped browser those hang rather than fail.
-- **Instrumentation must not change results** — `crx/viz/` observes the pipeline by
+- **Instrumentation must not change results** — `crex/viz/` observes the pipeline by
   subclassing it, never by re-implementing it.
 - **Tests run without network, LLM, or pip install** — `tests/fake_vllm.py` stands
   in for vLLM; FastMCP-dependent tests skip cleanly. This is how post-transfer
@@ -168,8 +170,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 78 tests passing.
-~5,377 lines of Python in `crx/`, plus ~1,800 lines of front end in `crx/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 79 tests passing.
+~5,377 lines of Python in `crex/`, plus ~1,800 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 

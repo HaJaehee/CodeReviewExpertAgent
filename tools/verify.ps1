@@ -6,10 +6,10 @@
     세 가지를 확인한다.
 
       1. 무결성  — MANIFEST.txt 의 SHA256 과 실제 파일을 대조
-      2. 실행    — Python 이 뜨고 crx 가 import 되는가
+      2. 실행    — Python 이 뜨고 CREX 가 import 되는가
       3. 테스트  — tests/run_all.py 전부 통과 (LLM·네트워크·pip 불필요)
 
-    여기까지 통과하면 파일은 온전하다. 그다음은 crx.toml 에 vLLM 주소를 넣고
+    여기까지 통과하면 파일은 온전하다. 그다음은 crex.toml 에 vLLM 주소를 넣고
     doctor 를 돌릴 차례다.
 
 .PARAMETER SkipManifest
@@ -109,14 +109,14 @@ if ($python) {
         Write-Bad "Python $version — 3.11 이상이 필요하다 (tomllib)"
     }
 
-    # crx 가 import 되는가. 임베더블에서 ._pth 가 잘못되면 여기서 걸린다.
+    # CREX 가 import 되는가. 임베더블에서 ._pth 가 잘못되면 여기서 걸린다.
     Push-Location $BundleRoot
     try {
-        $probe = & $python -c "import crx; print(crx.__version__)" 2>&1
+        $probe = & $python -c "import crex; print(crex.__version__)" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Ok "crx $probe import 성공"
+            Write-Ok "crex $probe import 성공"
         } else {
-            Write-Bad "crx import 실패: $probe"
+            Write-Bad "crex import 실패: $probe"
             Write-Note "임베더블이면 runtime\python*._pth 에 '..' 가 있는지 확인하라"
         }
     } finally {
@@ -132,7 +132,7 @@ if ($python) {
                 Write-Ok "$mod"
             } else {
                 $label = if ($mod -eq "git") { "GitPython — subprocess 폴백으로 동작한다" }
-                         else { "fastmcp — python -m crx.mcp (Zed 연동) 를 쓸 수 없다" }
+                         else { "fastmcp — python -m crex.mcp (Zed 연동) 를 쓸 수 없다" }
                 Write-Note "없음 $label"
             }
         }
@@ -179,9 +179,9 @@ if ($failed -eq 0) {
     Write-Host "번들 검증 완료" -ForegroundColor Green
     Write-Host ""
     Write-Host "다음:" -ForegroundColor Yellow
-    Write-Host "  1. copy crx.example.toml crx.toml"
-    Write-Host "  2. crx.toml 에 사내 vLLM 주소와 모델명을 넣는다"
-    Write-Host "  3. crx.cmd doctor"
+    Write-Host "  1. copy crex.example.toml crex.toml"
+    Write-Host "  2. crex.toml 에 사내 vLLM 주소와 모델명을 넣는다"
+    Write-Host "  3. crex.cmd doctor"
     Write-Host ""
     Write-Host "  자세한 절차: docs\transfer.md"
     exit 0

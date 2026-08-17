@@ -5,30 +5,30 @@
 ```
 git diff (or file list for scan mode)
    │
-   ▼  crx/chunk.py :: parse_unified_diff()
+   ▼  crex/chunk.py :: parse_unified_diff()
 FileDiff[]              hunks with per-line status + line numbers
    │
-   ▼  crx/chunk.py :: Chunker.chunk_file()
+   ▼  crex/chunk.py :: Chunker.chunk_file()
    │    1. verify diff matches on-disk source  → DiffSourceMismatch
    │    2. expand each hunk to enclosing symbol → capped at 4×, truncated to 3×
    │    3. merge overlapping ranges
    │    4. render with [added @142] line annotations
 ReviewChunk[]
    │
-   ▼  crx/ground.py :: GroundingGate.collect() + attach()
+   ▼  crex/ground.py :: GroundingGate.collect() + attach()
    │    analyzers run in parallel (6 default, 8 available); missing tools skip silently
 StaticFinding[] attached to chunks by line range
    │
-   ▼  crx/generate.py :: RuleChecker.review()
+   ▼  crex/generate.py :: RuleChecker.review()
    │    one LLM call per chunk, JSON Schema with enum constraints
 Finding[]
    │
-   ▼  crx/filter.py :: ReviewFilter.filter()
+   ▼  crex/filter.py :: ReviewFilter.filter()
    │    1. deterministic checks (no LLM call)
    │    2. surviving items → cross-model verdict, Conclusion-First
 Finding[] kept  +  FilterVerdict[] rejected
    │
-   ▼  crx/report.py :: write_all()
+   ▼  crex/report.py :: write_all()
 Markdown / SARIF / JSON
 ```
 
@@ -58,28 +58,28 @@ builds or a misconfigured `structured_output_mode` silently drop the constraint.
 
 | Module | Lines | Responsibility |
 |---|---|---|
-| `crx/schema.py` | 316 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
-| `crx/llm.py` | 250 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
-| `crx/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
-| `crx/ground.py` | 509 | 8 static-analyzer adapters + output normalization + attachment |
-| `crx/generate.py` | 243 | RuleChecker: enum-constrained schema, prompt, parsing |
-| `crx/filter.py` | 283 | ReviewFilter: deterministic checks + cross-model verdict |
-| `crx/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
-| `crx/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
-| `crx/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
-| `crx/config.py` | 164 | TOML config loading with unknown-key rejection |
-| `crx/cli.py` | 187 | `review` / `scan` / `doctor` subcommands |
-| `crx/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
-| `crx/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
-| `crx/service.py` | 209 | `ReviewService` — the 5 MCP operations. **No FastMCP import** |
-| `crx/mcp.py` | 211 | FastMCP binding only. Tool schemas from type hints + docstrings |
+| `crex/schema.py` | 316 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
+| `crex/llm.py` | 250 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
+| `crex/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
+| `crex/ground.py` | 509 | 8 static-analyzer adapters + output normalization + attachment |
+| `crex/generate.py` | 243 | RuleChecker: enum-constrained schema, prompt, parsing |
+| `crex/filter.py` | 283 | ReviewFilter: deterministic checks + cross-model verdict |
+| `crex/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
+| `crex/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
+| `crex/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
+| `crex/config.py` | 164 | TOML config loading with unknown-key rejection |
+| `crex/cli.py` | 187 | `review` / `scan` / `doctor` subcommands |
+| `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
+| `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
+| `crex/service.py` | 209 | `ReviewService` — the 5 MCP operations. **No FastMCP import** |
+| `crex/mcp.py` | 211 | FastMCP binding only. Tool schemas from type hints + docstrings |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.
 `cli` sits alongside `service`. `schema.py` imports nothing from the package.
 FastMCP appears in `mcp.py` and nowhere else.
 
-### `crx/viz/` — the observability surface
+### `crex/viz/` — the observability surface
 
 A separate 3-tier package that runs the same pipeline under instrumentation and
 streams it to a browser. It adds no required wheel; see
@@ -93,7 +93,7 @@ streams it to a browser. It adds no required wheel; see
 | Application | `viz/server.py` | 252 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
 | Presentation | `viz/web/*` | 1792 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
 
-Dependencies point down and never back: `server → api → engine → trace → crx.*`.
+Dependencies point down and never back: `server → api → engine → trace → crex.*`.
 `api.py` never imports `Pipeline`; `engine.py` never imports HTTP.
 
 Three instrumentation points, chosen so that **no pipeline logic is duplicated**:

@@ -7,9 +7,9 @@ Python 런타임까지 담은 zip 하나를 만들어 들고 들어갑니다. Py
 ```
 인터넷 되는 장비                 반입              폐쇄망
 ─────────────────                ────              ──────
-tools\package.ps1  ──▶  crx-YYYYMMDD.zip  ──▶  압축 해제
+tools\package.ps1  ──▶  crex-YYYYMMDD.zip  ──▶  압축 해제
                         + .sha256                tools\verify.ps1
-                                                 crx.cmd doctor
+                                                 crex.cmd doctor
 ```
 
 ---
@@ -21,7 +21,7 @@ cd <저장소>
 .\tools\package.ps1
 ```
 
-`dist\crx-<날짜>.zip` 과 `dist\crx-<날짜>.zip.sha256` 이 나옵니다. 약 54MB,
+`dist\crex-<날짜>.zip` 과 `dist\crex-<날짜>.zip.sha256` 이 나옵니다. 약 54MB,
 5~10분 걸립니다.
 
 ### 옵션
@@ -34,20 +34,20 @@ cd <저장소>
 ```
 
 `-SkipDeps` 를 쓰면 번들이 약 10MB 로 줄어듭니다. 코어(`review` / `scan` /
-`doctor` / 테스트)는 표준 라이브러리만 쓰므로 그대로 동작하고, `crx-mcp.cmd`
+`doctor` / 테스트)는 표준 라이브러리만 쓰므로 그대로 동작하고, `crex-mcp.cmd`
 만 못 씁니다. **보안 검토 대상을 최소화하고 싶으면 이쪽이 낫습니다** — fastmcp
 하나가 wheel 70개를 끌고 옵니다.
 
 ### 번들 안에 뭐가 들어가나
 
 ```
-crx-20260817/
+crex-20260817/
   runtime/          Python 임베더블 — 설치 불필요, 레지스트리·PATH 안 건드림
   pylibs/           fastmcp, GitPython 등을 미리 풀어둔 것 (pip 실행 불필요)
   wheels/           원본 wheel — 사내 다른 Python 에 직접 설치할 때만
-  crx/ docs/ wiki/ rules/ eval/ tests/ tools/
-  crx.cmd           리뷰 실행
-  crx-mcp.cmd       MCP 서버 (Zed)
+  crex/ docs/ wiki/ rules/ eval/ tests/ tools/
+  crex.cmd           리뷰 실행
+  crex-mcp.cmd       MCP 서버 (Zed)
   테스트.cmd         반입 무결성 확인
   MANIFEST.txt      전 파일 SHA256
 ```
@@ -63,14 +63,14 @@ zip 과 `.sha256` 을 **함께** 제출합니다. 심사에서 물어볼 만한 
 |---|---|
 | 실행 파일이 있나 | Python 임베더블(`runtime\python.exe`)만. 나머지는 전부 텍스트 소스 |
 | 설치 스크립트를 돌리나 | 아니오. 압축만 풀면 됩니다. `pip` 도 안 돌립니다 |
-| 외부로 나가나 | 아니오. `crx.toml` 에 적은 사내 vLLM 주소로만 HTTP 를 보냅니다 |
+| 외부로 나가나 | 아니오. `crex.toml` 에 적은 사내 vLLM 주소로만 HTTP 를 보냅니다 |
 | 네트워크 포트를 여나 | 아니오. MCP 는 stdio 라 리스너가 생기지 않습니다 |
 | 서드파티는 | `requirements.txt` 두 줄과 그 의존성. `wheels\` 에 원본이 그대로 있습니다 |
 
 번들은 자체 무결성 확인이 가능합니다 — `MANIFEST.txt` 에 파일별 SHA256 이
 들어 있고 `tools\verify.ps1` 이 대조합니다.
 
-> FastMCP 는 기동할 때 pypi.org 로 새 버전을 확인하러 나갑니다. crx 는
+> FastMCP 는 기동할 때 pypi.org 로 새 버전을 확인하러 나갑니다. CREX 는
 > import 전에 이 기능을 꺼둡니다(`FASTMCP_CHECK_FOR_UPDATES=off`). 설정으로
 > 미루지 않고 코드에서 못 박아 두었습니다.
 
@@ -81,7 +81,7 @@ zip 과 `.sha256` 을 **함께** 제출합니다. 심사에서 물어볼 만한 
 압축을 풀고 번들 안에서 실행합니다.
 
 ```powershell
-cd crx-20260817
+cd crex-20260817
 .\tools\verify.ps1
 ```
 
@@ -94,7 +94,7 @@ cd crx-20260817
 ==> Python 확인
     번들 런타임 사용
     OK   Python 3.12.10
-    OK   crx 0.1.0 import 성공
+    OK   crex 0.1.0 import 성공
     OK   fastmcp
     OK   git
 
@@ -111,39 +111,39 @@ cd crx-20260817
 ## 4. 설정과 첫 실행
 
 ```powershell
-copy crx.example.toml crx.toml
-notepad crx.toml       # vLLM 주소와 모델명을 넣는다
-.\crx.cmd doctor
+copy crex.example.toml crex.toml
+notepad crex.toml       # vLLM 주소와 모델명을 넣는다
+.\crex.cmd doctor
 ```
 
-`crx.cmd` 는 번들 안의 Python 을 씁니다. PATH 를 건드릴 필요가 없고, 장비에
+`crex.cmd` 는 번들 안의 Python 을 씁니다. PATH 를 건드릴 필요가 없고, 장비에
 다른 Python 이 있어도 섞이지 않습니다.
 
 ```powershell
-.\crx.cmd review --staged
-.\crx.cmd review --from main --out reports\
+.\crex.cmd review --staged
+.\crex.cmd review --from main --out reports\
 ```
 
 ### Zed 연동
 
-`settings.json` 의 `command` 에 번들의 `crx-mcp.cmd` 를 지정합니다.
+`settings.json` 의 `command` 에 번들의 `crex-mcp.cmd` 를 지정합니다.
 
 ```json
 {
   "context_servers": {
-    "crx": {
-      "command": "D:\\tools\\crx-20260817\\crx-mcp.cmd",
+    "crex": {
+      "command": "D:\\tools\\crex-20260817\\crex-mcp.cmd",
       "env": {
-        "CRX_REPO": "D:\\work\\myrepo",
-        "CRX_CONFIG": "D:\\work\\myrepo\\crx.toml",
-        "CRX_REPORTS": "D:\\work\\myrepo\\reports"
+        "CREX_REPO": "D:\\work\\myrepo",
+        "CREX_CONFIG": "D:\\work\\myrepo\\crex.toml",
+        "CREX_REPORTS": "D:\\work\\myrepo\\reports"
       }
     }
   }
 }
 ```
 
-`crx-mcp.cmd` 가 번들 Python 을 부르므로 가상환경 경로 문제가 생기지 않습니다.
+`crex-mcp.cmd` 가 번들 Python 을 부르므로 가상환경 경로 문제가 생기지 않습니다.
 `AGENTS.md` 를 리뷰 대상 저장소로 복사하는 것도 잊지 마세요 —
 [Zed 연동](operations.md#zed-연동-mcp) 참고.
 
@@ -157,7 +157,7 @@ notepad crx.toml       # vLLM 주소와 모델명을 넣는다
 .\tools\package.ps1 -SkipRuntime -SkipDeps
 ```
 
-몇 MB 짜리 zip 이 나옵니다. 폐쇄망에서 기존 번들 위에 `crx\`, `rules\`,
+몇 MB 짜리 zip 이 나옵니다. 폐쇄망에서 기존 번들 위에 `crex\`, `rules\`,
 `docs\`, `wiki\`, `tests\` 만 덮어쓰면 됩니다. `runtime\` 과 `pylibs\` 는
 그대로 둡니다.
 
@@ -190,10 +190,10 @@ Get-Content tools\package.ps1 -Encoding Byte -TotalCount 3
 # 239 187 191 이 나와야 정상 (EF BB BF)
 ```
 
-### `crx import 실패`
+### `crex import 실패`
 
 임베더블 Python 의 `sys.path` 는 `runtime\python*._pth` 가 결정합니다.
-번들 루트(`..`)가 없으면 `crx` 를 못 찾습니다.
+번들 루트(`..`)가 없으면 `crex` 를 못 찾습니다.
 
 ```
 python312.zip

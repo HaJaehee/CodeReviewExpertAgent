@@ -14,10 +14,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
-from crx.llm import EndpointConfig  # noqa: E402
-from crx.pipeline import Pipeline  # noqa: E402
-from crx.report import to_markdown, to_sarif  # noqa: E402
+from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
+from crex.llm import EndpointConfig  # noqa: E402
+from crex.pipeline import Pipeline  # noqa: E402
+from crex.report import to_markdown, to_sarif  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 
 BEFORE = """\
@@ -203,7 +203,7 @@ def test_input_stays_within_token_budget() -> None:
             config = _config(server.base_url)
             Pipeline(config).run_diff(diff, repo)
 
-        from crx.llm import estimate_tokens
+        from crex.llm import estimate_tokens
 
         for request in server.requests:
             total = sum(estimate_tokens(m["content"]) for m in request["messages"])
@@ -270,7 +270,7 @@ def test_min_severity_hides_low_findings() -> None:
 
 def test_unimplemented_mode_is_rejected_loudly() -> None:
     """구현되지 않은 모드를 조용히 무시하면 안 된다."""
-    from crx.config import ReviewConfig
+    from crex.config import ReviewConfig
 
     try:
         ReviewConfig(mode="ocr")
@@ -301,7 +301,7 @@ TESTS = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     if shutil.which("git") is None:

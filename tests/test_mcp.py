@@ -16,12 +16,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.chunk import parse_unified_diff  # noqa: E402
-from crx.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
-from crx.gitio import GitError, diff_staged, gitpython_available, merge_base  # noqa: E402
-from crx.llm import EndpointConfig  # noqa: E402
-from crx.paths import TooManyFiles, expand_paths, filter_file_diffs, is_excluded  # noqa: E402
-from crx.service import ReviewRequestError, ReviewService  # noqa: E402
+from crex.chunk import parse_unified_diff  # noqa: E402
+from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
+from crex.gitio import GitError, diff_staged, gitpython_available, merge_base  # noqa: E402
+from crex.llm import EndpointConfig  # noqa: E402
+from crex.paths import TooManyFiles, expand_paths, filter_file_diffs, is_excluded  # noqa: E402
+from crex.service import ReviewRequestError, ReviewService  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 from tests.test_pipeline import AFTER, BEFORE, _git  # noqa: E402
 
@@ -265,7 +265,7 @@ def test_expand_paths_rejects_outside_repo() -> None:
 
 
 def test_exclude_patterns() -> None:
-    from crx.rules import DEFAULT_EXCLUDE
+    from crex.rules import DEFAULT_EXCLUDE
 
     for path in ("src/generated/x.py", "generated/x.py", "obj/a.cs", "src/a_pb2.py"):
         _check(is_excluded(path, DEFAULT_EXCLUDE), f"제외되어야 함: {path}")
@@ -311,7 +311,7 @@ def test_fastmcp_bindings_registered() -> None:
 
     import asyncio
 
-    from crx import mcp as mcp_module
+    from crex import mcp as mcp_module
 
     # FastMCP 3.x 는 list_tools() 를 쓴다 (2.x 의 get_tools() 는 없다).
     tools = asyncio.run(mcp_module.mcp.list_tools())
@@ -366,7 +366,7 @@ TESTS = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     if shutil.which("git") is None:

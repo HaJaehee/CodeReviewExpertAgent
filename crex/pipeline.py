@@ -282,7 +282,7 @@ class Pipeline:
 
         모듈 함수가 아니라 메서드인 이유: 이 구문이 파이프라인의 유일한 단계
         경계다. 하위 클래스가 여기만 감싸면 단계 시작·종료를 그대로 관찰할 수
-        있고, `_review` 를 복제할 필요가 없다 (`crx/viz/engine.py`).
+        있고, `_review` 를 복제할 필요가 없다 (`crex/viz/engine.py`).
         """
         started = time.perf_counter()
         try:

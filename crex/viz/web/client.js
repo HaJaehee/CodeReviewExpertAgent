@@ -8,9 +8,9 @@
  * 요청 하나를 끊어도 화면이 어긋나지 않는다.
  */
 
-window.CRX = window.CRX || {};
+window.CREX = window.CREX || {};
 
-CRX.client = (function () {
+CREX.client = (function () {
   const POLL_MS = 400;
 
   async function request(method, path, body) {

@@ -63,13 +63,13 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | CLI: `review` / `scan` / `doctor` | Complete |
 | `ReviewService` (5 MCP operations) | Complete, 13 tests, no FastMCP needed |
 | FastMCP binding (`mcp.py`) | Written; binding test skips when FastMCP absent |
-| Visualizer (`crx/viz/`, `python -m crx.viz`) | Complete, 14 tests. Runs on stdlib; uvicorn optional |
+| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 15 tests. Runs on stdlib; uvicorn optional |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-78 tests total, all runnable offline.
+79 tests total, all runnable offline.
 
 ## What does not exist
 
@@ -82,10 +82,10 @@ The pipeline has never touched actual Qwen3.6 or Gemma 4. Prompt quality, real
 reject rates, and latency are all unmeasured. Treat every quality number in the docs
 as a target from literature, not an observed result.
 
-**Verified FastMCP binding.** `crx/mcp.py` was written against the documented
+**Verified FastMCP binding.** `crex/mcp.py` was written against the documented
 FastMCP API but never executed — the library is not installed on the development
 machine. `ReviewService` beneath it is fully tested. First run inside the network
-should be `python -m crx.mcp` plus a Zed connection check.
+should be `python -m crex.mcp` plus a Zed connection check.
 
 **OCR comparison.** `review.mode = "ocr"` raises rather than running.
 
@@ -102,7 +102,7 @@ native mode applies rules by language only. Workaround is the rule's `counter` f
 
 **Phase 0 — golden set (1 week).** 50–100 past MRs, defects only (not praise,
 questions, or style comments), 20–30% clean MRs to measure FAR. Needs a repo
-snapshot per case (git worktree) because `crx` reads source from disk, not just
+snapshot per case (git worktree) because CREX reads source from disk, not just
 the diff.
 
 **Phase 1 — baseline (1–2 weeks).** Import OCR, disable its telemetry, block egress
@@ -139,7 +139,7 @@ KBI dropping in Phase 3 is intended. The filter trades recall for precision.
 
 **"Should we add more rules?"** Per-chunk rules are capped at 15. All three
 languages currently sit at or under that, so new rules displace existing ones by
-severity ordering. Check `python -m crx.rules` output — a gap between "전체" and
+severity ordering. Check `python -m crex.rules` output — a gap between "전체" and
 "활성" means prune before adding.
 
 **"Why not just use OCR?"** Possibly you should. That is exactly the Phase 1

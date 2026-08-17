@@ -1,6 +1,6 @@
 # 룰 작성법
 
-crx 를 팀에 맞게 길들이는 작업의 90%는 룰을 쓰는 일입니다. 모델을 바꾸거나
+CREX 를 팀에 맞게 길들이는 작업의 90%는 룰을 쓰는 일입니다. 모델을 바꾸거나
 프롬프트를 손보는 것보다 여기서 얻는 게 훨씬 큽니다.
 
 룰은 `rules/taxonomy.toml` 한 파일에 모여 있습니다. 여기가 유일한 원본이고,
@@ -126,7 +126,7 @@ counter = "필드에 저장하고 클래스가 IDisposable 을 구현해 소유�
 ## `severity` 는 택소노미가 정합니다
 
 모델이 심각도를 매기게 두면 자기가 찾은 걸 전부 `high` 로 올립니다.
-그래서 crx 는 모델이 보고한 심각도를 택소노미 값의 **상한 안에서만** 받습니다.
+그래서 CREX 는 모델이 보고한 심각도를 택소노미 값의 **상한 안에서만** 받습니다.
 룰이 `medium` 인데 모델이 `high` 라고 하면 `medium` 이 됩니다.
 `low` 라고 하면 `low` 를 받습니다 (스스로 낮추는 건 신뢰할 만합니다).
 
@@ -151,7 +151,7 @@ counter = "필드에 저장하고 클래스가 IDisposable 을 구현해 소유�
 vim rules/taxonomy.toml
 
 # 2. 문법 검증
-python -m crx.rules
+python -m crex.rules
 
 # 3. 골든셋 재측정
 python eval/run_eval.py run --out reports/rule-42.json
@@ -184,7 +184,7 @@ reports\rule-41.json  →  reports\rule-42.json
 잘려서 뒤쪽 룰은 아예 안 쓰입니다.
 
 ```bash
-python -m crx.rules
+python -m crex.rules
 ```
 
 ```
@@ -198,7 +198,7 @@ python -m crx.rules
 "전체"와 "활성"이 벌어지기 시작하면 룰을 더 넣기 전에 기존 룰부터 정리해야
 한다는 신호입니다. 정밀도 낮은 것부터 빼세요 — 평가 리포트가 순위를 매겨줍니다.
 
-상한을 올리고 싶다면 `crx/rules.py` 의 `MAX_RULES_PER_CHUNK` 를 고치면 되지만,
+상한을 올리고 싶다면 `crex/rules.py` 의 `MAX_RULES_PER_CHUNK` 를 고치면 되지만,
 올리기 전에 FAR 변화를 재세요. 룰이 많아질수록 프롬프트가 길어지고, 프롬프트가
 길어질수록 소형 모델의 정밀도가 떨어집니다.
 
@@ -229,7 +229,7 @@ counter = "플랫폼 추상화 계층(hal/, platform/)에서는 허용된다. pl
 ## 문법 오류 잡기
 
 ```bash
-python -m crx.rules
+python -m crex.rules
 ```
 
 이 명령이 택소노미를 읽고 검증합니다. 걸리는 것들:
@@ -249,7 +249,7 @@ python -m crx.rules
 뽑을 수 있습니다.
 
 ```bash
-python -m crx.rules --out .opencodereview/rule.json --include "src/**"
+python -m crex.rules --out .opencodereview/rule.json --include "src/**"
 ```
 
 언어별로 한 항목씩 만들고, 그 안에 룰을 번호 매겨 넣습니다. OCR 은 선언 순서대로

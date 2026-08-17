@@ -198,7 +198,7 @@ def _collapse(text: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m crx.rules",
+        prog="python -m crex.rules",
         description="룰 택소노미를 검증하고 OCR rule.json 을 생성한다.",
     )
     parser.add_argument("--taxonomy", type=Path, default=DEFAULT_TAXONOMY)

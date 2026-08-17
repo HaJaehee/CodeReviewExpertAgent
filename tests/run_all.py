@@ -28,7 +28,7 @@ MODULES = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     failed: list[str] = []

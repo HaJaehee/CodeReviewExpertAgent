@@ -1,4 +1,6 @@
-# crx — 폐쇄망 sLLM 코드리뷰 파이프라인
+# CREX — 폐쇄망 sLLM 코드리뷰 파이프라인
+
+**C**ode **R**eview **EX**pert Agent. 명령과 패키지는 소문자 `crex` 를 쓴다.
 
 25~40B급 로컬 모델(Qwen3.6, Gemma4)로 C++/C#/Python 코드를 리뷰한다.
 설계의 전부는 하나의 목표로 수렴한다 — **환각을 구조적으로 막는 것**.
@@ -68,7 +70,7 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 ```
 맞다   → 고친다
 애매   → 코드 재확인 → 여전히 애매하면 무시해도 된다
-        (crx 는 확신 없으면 침묵한다. 애매한 지적이 나온 것 자체가 신호다)
+        (CREX 는 확신 없으면 침묵한다. 애매한 지적이 나온 것 자체가 신호다)
 틀렸다 → 룰 ID 를 담당자에게 전달 → counter 보강 → 팀 전체에서 사라진다
 ```
 
@@ -91,7 +93,7 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 |---|---|
 | [시작하기](docs/getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
 | [워크플로](docs/workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
-| [설정](docs/configuration.md) | `crx.toml` 전체 항목 |
+| [설정](docs/configuration.md) | `crex.toml` 전체 항목 |
 | [룰 작성법](docs/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](docs/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
 | [관제 화면](docs/visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 보기 |
@@ -103,24 +105,24 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 ## 빠른 시작
 
 ```bash
-cp crx.example.toml crx.toml     # 엔드포인트·모델명 수정
-python -m crx doctor             # 무엇이 되고 무엇이 안 되는지 확인
-python -m crx review --from HEAD~1 --to HEAD
+cp crex.example.toml crex.toml  # 엔드포인트·모델명 수정
+python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
+python -m crex review --from HEAD~1 --to HEAD
 ```
 
 ```bash
-python -m crx review --staged --out reports/
+python -m crex review --staged --out reports/
 ```
 
 ```bash
-python -m crx scan src/legacy.cpp    # diff 없이 전체 파일 감사
+python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 ```
 
 리뷰가 왜 그런 결과를 냈는지 들여다보려면 관제 화면을 띄웁니다. 생성 모델이 받은
 프롬프트, 강제된 스키마, 검증 모델의 판정과 그 근거가 그대로 보입니다.
 
 ```bash
-python -m crx.viz                    # http://127.0.0.1:8765
+python -m crex.viz                    # http://127.0.0.1:8765
 ```
 
 테스트 (외부 의존 없음, LLM 불필요):
@@ -138,10 +140,10 @@ CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `re
 필요하다.
 
 - [ ] Python 3.11 이상 확인 (`tomllib` 이 3.11부터 stdlib)
-- [ ] `crx/`, `rules/`, `eval/`, `tests/`, `wiki/`, `docs/` 디렉터리 복사
-- [ ] `crx.example.toml` → `crx.toml` 로 복사 후 엔드포인트 수정
+- [ ] `crex/`, `rules/`, `eval/`, `tests/`, `wiki/`, `docs/` 디렉터리 복사
+- [ ] `crex.example.toml` → `crex.toml` 로 복사 후 엔드포인트 수정
 - [ ] `python tests/run_all.py` 로 반입 무결성 확인
-- [ ] `python -m crx doctor` 로 엔드포인트·분석기 상태 확인
+- [ ] `python -m crex doctor` 로 엔드포인트·분석기 상태 확인
 - [ ] vLLM 이 guided decoding 을 지원하는지 확인 — `doctor` 의 LLM 항목이 실패하면
       `structured_output_mode` 를 `"guided_json"` 으로 바꿔 재시도
 - [ ] (선택) MCP 서버를 쓸 장비에만 `pip install -r requirements.txt`
@@ -206,8 +208,8 @@ diff 생성 이후 작업 트리가 바뀌면 모든 라인 번호가 밀린다.
 FAR 관리의 상당 부분이 여기서 이뤄진다.
 
 ```bash
-python -m crx.rules                                      # 택소노미 검증·통계
-python -m crx.rules --out .opencodereview/rule.json      # OCR 용 rule.json 생성
+python -m crex.rules                                      # 택소노미 검증·통계
+python -m crex.rules --out .opencodereview/rule.json      # OCR 용 rule.json 생성
 ```
 
 룰을 추가할 때는 **한 번에 하나씩** 넣고 골든셋을 재측정하라. FAR 을 올리는 룰은
@@ -258,7 +260,7 @@ CI 게이트로 쓰려면 `--max-far 0.25` 를 붙인다. 초과 시 종료 코�
 native 모드와 비교한다. `.opencodereview/rule.json` 생성기는 이미 있으므로
 OCR 쪽 룰 설정은 바로 쓸 수 있다.
 
-- OCR 이 더 낫다 → `crx/pipeline.py` 에 OCR 어댑터를 추가하고
+- OCR 이 더 낫다 → `crex/pipeline.py` 에 OCR 어댑터를 추가하고
   ground/filter 는 그대로 재사용한다 (`review.mode = "ocr"` 자리는 비워 두었다)
 - native 가 더 낫다 → 이미 완성되어 있다
 
@@ -269,7 +271,7 @@ OCR 쪽 룰 설정은 바로 쓸 수 있다.
 ## 구조
 
 ```
-crx/
+crex/
   schema.py     데이터 모델 (dataclass, 외부 의존 없음)
   llm.py        vLLM 클라이언트 (stdlib urllib) + guided decoding + 토큰 예산
   chunk.py      diff 파싱, tree-sitter 청킹, 라인 상태 주석, 정합성 검사

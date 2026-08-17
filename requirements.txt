@@ -1,13 +1,13 @@
-#  crx 런타임 의존성
+#  CREX 런타임 의존성
 #
 #  ## 코어는 이것들이 없어도 돌아간다
 #
-#  청킹·생성·검증·리포트·평가 하네스와 `python -m crx review|scan|doctor` 는
+#  청킹·생성·검증·리포트·평가 하네스와 `python -m crex review|scan|doctor` 는
 #  전부 표준 라이브러리만 쓴다. 아래는 **MCP 서버(Zed 연동)** 를 위한 것이다.
 #
 #      python tests/run_all.py     # 의존성 없이 전부 통과해야 한다
-#      python -m crx review        # 의존성 없이 동작한다
-#      python -m crx.mcp           # fastmcp 필요
+#      python -m crex review        # 의존성 없이 동작한다
+#      python -m crex.mcp           # fastmcp 필요
 #
 #  이 구분을 유지하는 이유: 폐쇄망 반입 직후 무결성 확인이 pip install 을
 #  전제하면 곤란하다. 소스만 옮겨도 테스트가 돌아야 한다.
@@ -30,5 +30,5 @@
 # MCP 서버 — 프로토콜 처리, 타입 힌트/docstring 에서 도구 스키마 자동 생성
 fastmcp>=2.0
 
-# git 접근 — 없으면 subprocess 폴백으로 동작한다 (crx/gitio.py)
+# git 접근 — 없으면 subprocess 폴백으로 동작한다 (crex/gitio.py)
 GitPython>=3.1.40

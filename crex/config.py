@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .llm import EndpointConfig
 
-DEFAULT_CONFIG_NAMES = ("crx.toml", ".crx.toml")
+DEFAULT_CONFIG_NAMES = ("crex.toml", ".crex.toml")
 
 
 @dataclass

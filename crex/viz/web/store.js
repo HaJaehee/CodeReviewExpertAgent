@@ -18,12 +18,12 @@
  * 않는다 — 조용히 기록이 멈추는 쪽이 잘린 프롬프트보다 나쁘다.
  */
 
-window.CRX = window.CRX || {};
+window.CREX = window.CREX || {};
 
-CRX.store = (function () {
-  const RUNS_KEY = 'crx.viz.runs.v1';
-  const PREFS_KEY = 'crx.viz.prefs.v1';
-  const RUN_PREFIX = 'crx.viz.run.v1.';
+CREX.store = (function () {
+  const RUNS_KEY = 'crex.viz.runs.v1';
+  const PREFS_KEY = 'crex.viz.prefs.v1';
+  const RUN_PREFIX = 'crex.viz.run.v1.';
 
   const MAX_RUNS = 25;        // 목록에 남길 실행 수
   const MAX_EVENTS = 1200;    // 실행 하나당 저장할 이벤트 수
@@ -33,8 +33,8 @@ CRX.store = (function () {
 
   let available = true;
   try {
-    window.localStorage.setItem('crx.viz.probe', '1');
-    window.localStorage.removeItem('crx.viz.probe');
+    window.localStorage.setItem('crex.viz.probe', '1');
+    window.localStorage.removeItem('crex.viz.probe');
   } catch (err) {
     // 사생활 보호 모드나 정책으로 막힌 브라우저. 화면은 그대로 돌아가고
     // 기록만 남지 않는다.

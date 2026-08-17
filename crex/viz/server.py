@@ -1,6 +1,6 @@
 """전송 계층 — Application 계층의 바깥쪽 껍질.
 
-    python -m crx.viz --port 8765
+    python -m crex.viz --port 8765
 
 uvicorn 이 있으면 ASGI 로, 없으면 stdlib `http.server` 로 뜬다. 두 경로 모두
 `api.handle()` 하나만 부르므로 동작은 같다.
@@ -52,13 +52,13 @@ def build_context(
     out_dir: Path | None = None,
 ) -> Context:
     """MCP 서버와 같은 환경변수를 읽는다 — 두 곳을 따로 설정하게 두지 않는다."""
-    repo_env = os.environ.get("CRX_REPO")
+    repo_env = os.environ.get("CREX_REPO")
     repo_root = repo or (Path(repo_env).resolve() if repo_env else resolve_repo_root(Path.cwd()))
 
-    config_env = os.environ.get("CRX_CONFIG")
+    config_env = os.environ.get("CREX_CONFIG")
     config = load_config(config_path or (Path(config_env) if config_env else None))
 
-    reports_env = os.environ.get("CRX_REPORTS")
+    reports_env = os.environ.get("CREX_REPORTS")
     reports = out_dir or (Path(reports_env) if reports_env else repo_root / "reports")
 
     taxonomy = load_taxonomy(config.taxonomy_path) if config.taxonomy_path else load_taxonomy()
@@ -140,7 +140,7 @@ def serve_stdlib(ctx: Context, host: str, port: int) -> None:
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
-        server_version = "crx-viz"
+        server_version = "crex-viz"
 
         def log_message(self, fmt, *args):  # noqa: A002 - 규약상 이름 고정
             log.debug("%s - %s", self.address_string(), fmt % args)
@@ -189,12 +189,12 @@ def main(argv: list[str] | None = None) -> int:
     force_utf8_output()
 
     parser = argparse.ArgumentParser(
-        prog="python -m crx.viz", description="crx 리뷰 파이프라인 관제 화면"
+        prog="python -m crex.viz", description="CREX 리뷰 파이프라인 관제 화면"
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"바인드 주소 (기본 {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"포트 (기본 {DEFAULT_PORT})")
     parser.add_argument("--repo", type=Path, default=None, help="리뷰할 저장소 루트")
-    parser.add_argument("--config", type=Path, default=None, help="crx.toml 경로")
+    parser.add_argument("--config", type=Path, default=None, help="crex.toml 경로")
     parser.add_argument("--out", type=Path, default=None, help="리포트 저장 위치")
     parser.add_argument("--stdlib", action="store_true", help="uvicorn 이 있어도 stdlib 서버를 쓴다")
     parser.add_argument("-v", "--verbose", action="store_true")

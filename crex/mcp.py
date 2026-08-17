@@ -1,11 +1,11 @@
 """MCP 서버 — Zed 에이전트 패널에서 리뷰를 부르기 위한 얇은 바인딩.
 
-    python -m crx.mcp
+    python -m crex.mcp
 
 FastMCP 가 프로토콜을 담당한다. 타입 힌트와 docstring 에서 도구 스키마가
 자동 생성되므로 여기서는 그것만 정확히 쓰면 된다.
 
-**이 파일에는 로직이 없다.** 실제 동작은 `crx/service.py` 의 `ReviewService` 에
+**이 파일에는 로직이 없다.** 실제 동작은 `crex/service.py` 의 `ReviewService` 에
 있고, 그쪽은 FastMCP 를 import 하지 않는다. 프로토콜 없이도 로직 전체를 테스트할
 수 있고, MCP 사양이 바뀌어도 여기만 고치면 된다.
 
@@ -13,9 +13,9 @@ FastMCP 가 프로토콜을 담당한다. 타입 힌트와 docstring 에서 도�
 
 | 변수 | 뜻 | 기본값 |
 |---|---|---|
-| `CRX_REPO` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
-| `CRX_CONFIG` | 설정 파일 경로 | `crx.toml` 상위 탐색 |
-| `CRX_REPORTS` | 리포트 저장 위치 | `<repo>/reports` |
+| `CREX_REPO` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
+| `CREX_CONFIG` | 설정 파일 경로 | `crex.toml` 상위 탐색 |
+| `CREX_REPORTS` | 리포트 저장 위치 | `<repo>/reports` |
 
 Zed `settings.json` 예시는 `docs/operations.md` 의 Zed 연동 절에 있다.
 """
@@ -43,7 +43,7 @@ from .service import MAX_SCAN_FILES, ReviewRequestError, ReviewService
 log = logging.getLogger(__name__)
 
 mcp = FastMCP(
-    "crx",
+    "crex",
     instructions=(
         "C++/C#/Python 코드 리뷰 도구다. 사용자가 변경사항 리뷰를 요청하면 "
         "review_staged 를, 브랜치 비교를 요청하면 review_diff 를 부른다. "
@@ -166,13 +166,13 @@ def review_directory(path: str, recursive: bool = True) -> str:
 
 
 def build_service() -> ReviewService:
-    repo_env = os.environ.get("CRX_REPO")
+    repo_env = os.environ.get("CREX_REPO")
     repo_root = Path(repo_env).resolve() if repo_env else resolve_repo_root(Path.cwd())
 
-    config_path = os.environ.get("CRX_CONFIG")
+    config_path = os.environ.get("CREX_CONFIG")
     config = load_config(Path(config_path) if config_path else None)
 
-    reports = os.environ.get("CRX_REPORTS")
+    reports = os.environ.get("CREX_REPORTS")
     out_dir = Path(reports) if reports else repo_root / "reports"
 
     return ReviewService(repo_root, config, out_dir=out_dir)

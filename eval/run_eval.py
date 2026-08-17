@@ -27,9 +27,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.config import load_config  # noqa: E402
-from crx.pipeline import Pipeline  # noqa: E402
-from crx.schema import Finding, ReviewResult  # noqa: E402
+from crex.config import load_config  # noqa: E402
+from crex.pipeline import Pipeline  # noqa: E402
+from crex.schema import Finding, ReviewResult  # noqa: E402
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 

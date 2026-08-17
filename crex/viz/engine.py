@@ -320,7 +320,7 @@ class RunRegistry:
             while len(self._order) > self.max_runs:
                 self._runs.pop(self._order.pop(0), None)
 
-        threading.Thread(target=self._execute, args=(run,), name=f"crx-run-{run.id}", daemon=True).start()
+        threading.Thread(target=self._execute, args=(run,), name=f"crex-run-{run.id}", daemon=True).start()
         return run
 
     def _execute(self, run: Run) -> None:

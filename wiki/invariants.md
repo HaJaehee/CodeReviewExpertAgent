@@ -8,7 +8,7 @@ output is worse.
 
 ## Conclusion-First property order
 
-**`VERDICT_SCHEMA` in `crx/filter.py` must list `verdict` first.**
+**`VERDICT_SCHEMA` in `crex/filter.py` must list `verdict` first.**
 
 ```python
 VERDICT_SCHEMA = {
@@ -28,7 +28,7 @@ measured as both slower and less accurate. Nothing will fail; it will just get w
 
 ## The `line` enum must contain only the chunk's changed lines
 
-In `crx/generate.py :: build_findings_schema()`:
+In `crex/generate.py :: build_findings_schema()`:
 
 ```python
 line_schema = {"type": "integer", "enum": allowed_lines}
@@ -69,7 +69,7 @@ To rename: add new, delete old.
 
 ## `RejectReason` values are append-only
 
-`crx/schema.py`. Reject reasons are the tuning evidence for the filter. Changing
+`crex/schema.py`. Reject reasons are the tuning evidence for the filter. Changing
 what an existing value means breaks comparison with past reports. Add new members;
 don't repurpose existing ones.
 
@@ -77,7 +77,7 @@ don't repurpose existing ones.
 
 ## Verification failure must reject, not pass
 
-`crx/filter.py :: _verify_llm()` returns `kept=False` with
+`crex/filter.py :: _verify_llm()` returns `kept=False` with
 `RejectReason.FILTER_ERROR` when the LLM call raises.
 
 Flipping this to fail-open would let unverified findings ship whenever the verifier
@@ -105,7 +105,7 @@ itself wavered. Pinned by `test_code_not_present_rejects_even_if_verdict_yes`.
 
 ## Severity may only be lowered, never raised
 
-`crx/generate.py :: _severity_of()` caps the model's reported severity at the
+`crex/generate.py :: _severity_of()` caps the model's reported severity at the
 taxonomy value. Left free, small models mark everything `high` and priority
 ordering becomes meaningless.
 
@@ -113,7 +113,7 @@ ordering becomes meaningless.
 
 ## Line annotation format is `[status @lineno] text`
 
-`crx/schema.py :: DiffLine.annotate()`. The filter's deterministic line checks and
+`crex/schema.py :: DiffLine.annotate()`. The filter's deterministic line checks and
 the whole prompt contract depend on this shape. `test_line_annotation_is_unambiguous`
 pins it.
 
@@ -121,7 +121,7 @@ pins it.
 
 ## `on_mismatch` default stays `"raise"`
 
-`crx/config.py :: ChunkingConfig`. If the diff and the on-disk file disagree, line
+`crex/config.py :: ChunkingConfig`. If the diff and the on-disk file disagree, line
 numbers have shifted and every finding for that file is wrong. Skipping the file is
 correct; proceeding produces confidently false output.
 
@@ -131,7 +131,7 @@ correct; proceeding produces confidently false output.
 
 ## Config must reject unknown keys
 
-`crx/config.py :: _subset()` raises on unrecognized keys. A silently ignored typo
+`crex/config.py :: _subset()` raises on unrecognized keys. A silently ignored typo
 means someone changes a setting, sees no effect, and concludes the setting doesn't
 work.
 
@@ -144,7 +144,7 @@ reintroduce a declared-but-unused setting.
 
 ## Missing static analyzers skip, never fail
 
-`crx/ground.py :: Analyzer.run()` converts missing executables, timeouts, `OSError`,
+`crex/ground.py :: Analyzer.run()` converts missing executables, timeouts, `OSError`,
 and parser exceptions into `AnalyzerResult(skipped=True)`. In an air-gapped network
 tool availability differs per machine; one absent binary must not stop a review.
 
@@ -154,7 +154,7 @@ Pinned by `test_missing_tool_is_skipped_not_fatal`.
 
 ## Instrumentation must not change review results
 
-`crx/viz/engine.py`. `TracedPipeline` and `TracedLLMClient` subclass the real
+`crex/viz/engine.py`. `TracedPipeline` and `TracedLLMClient` subclass the real
 pipeline and client and add observation only. If watching a review changes its
 outcome, there is nothing worth watching.
 
@@ -172,7 +172,7 @@ boundary, so wrapping it is enough.
 
 ## Rejected findings stay out of Markdown, stay in JSON
 
-`crx/report.py`. Reviewers should not read rejected items. But the JSON must retain
+`crex/report.py`. Reviewers should not read rejected items. But the JSON must retain
 them with reasons — that is the only evidence available for filter tuning.
 
 Pinned by `test_rejected_finding_does_not_reach_report`.
@@ -210,17 +210,17 @@ Two properties must survive any change here:
 1. **`python tests/run_all.py` passes with nothing installed.** Post-transfer
    integrity verification inside the air-gapped network cannot presuppose a working
    `pip install`. Tests that need FastMCP must skip cleanly, not fail.
-2. **`python -m crx review|scan|doctor` works with nothing installed.** Only
-   `python -m crx.mcp` may require a wheel.
+2. **`python -m crex review|scan|doctor` works with nothing installed.** Only
+   `python -m crex.mcp` may require a wheel.
 
-`crx/viz/` is deliberately in the same position as `gitio.py`, not `mcp.py`: it is
+`crex/viz/` is deliberately in the same position as `gitio.py`, not `mcp.py`: it is
 a convenience surface, and a convenience surface must not lengthen the transfer
-manifest. `python -m crx.viz` runs on stdlib alone; uvicorn is used when present.
+manifest. `python -m crex.viz` runs on stdlib alone; uvicorn is used when present.
 For the same reason the page loads no CDN script, web font, or icon service — in
 an air-gapped browser those do not fail fast, they hang. Do not "modernize" the
 front end by adding a framework or a build step.
 
-This is why `crx/service.py` exists separately from `crx/mcp.py` — all review logic
+This is why `crex/service.py` exists separately from `crex/mcp.py` — all review logic
 lives in the service and imports no FastMCP, so the bulk stays testable without it.
 `mcp.py` is a thin binding and should stay that way.
 

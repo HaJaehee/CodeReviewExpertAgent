@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from crx.cli import _build_parser, _emit, force_utf8_output  # noqa: E402
-from crx.report import to_markdown  # noqa: E402
-from crx.schema import Dimension, Finding, ReviewResult, Severity  # noqa: E402
+from crex.cli import _build_parser, _emit, force_utf8_output  # noqa: E402
+from crex.report import to_markdown  # noqa: E402
+from crex.schema import Dimension, Finding, ReviewResult, Severity  # noqa: E402
 
 
 def _check(condition: bool, message: str) -> None:
@@ -23,7 +23,7 @@ def _check(condition: bool, message: str) -> None:
 
 
 def test_global_flags_accepted_after_subcommand() -> None:
-    """`crx review --staged --repo X` 가 동작해야 한다.
+    """`crex review --staged --repo X` 가 동작해야 한다.
 
     argparse 기본 동작은 전역 옵션을 서브커맨드 *앞*에만 허용한다. 사람은
     자연스럽게 뒤에 쓰고, 문서에도 그렇게 적힌 예시가 있었다.
@@ -134,7 +134,7 @@ TESTS = [
 def main() -> int:
     # 한국어 Windows 콘솔은 cp949 다. 출력에 한글과 기호가 섞여 있어
     # 맞춰주지 않으면 테스트 러너 자체가 UnicodeEncodeError 로 죽는다.
-    from crx.cli import force_utf8_output
+    from crex.cli import force_utf8_output
 
     force_utf8_output()
     failures = 0
