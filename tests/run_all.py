@@ -21,6 +21,7 @@ MODULES = [
     "tests.test_mcp",
     "tests.test_viz",
     "tests.test_cli",
+    "tests.test_workspace",
     "tests.test_eval",
 ]
 

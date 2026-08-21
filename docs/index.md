@@ -32,6 +32,14 @@ python -m crex review --staged  # 스테이징된 변경 리뷰
 리뷰 결과는 기본적으로 stdout 에 마크다운으로 나옵니다. 파일로 받으려면
 `--out reports/` 를 붙이세요. 마크다운, SARIF, JSON 세 가지가 함께 나옵니다.
 
+CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은 한 자리에 두고
+`--workspace` 로 대상만 가리킵니다 —
+[시작하기](getting-started.md#crex-는-어디에-두나) 참고.
+
+```bash
+python -m crex review --workspace D:\work\myrepo --staged
+```
+
 Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 —
 [운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 보세요.
 
@@ -39,7 +47,7 @@ Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 �
 두 모델이 주고받은 프롬프트와 응답이 그대로 보입니다.
 
 ```bash
-python -m crex.viz               # http://127.0.0.1:8765
+python -m crex.viz               # http://127.0.0.1:18765
 ```
 
 ## 이 도구가 하지 않는 것

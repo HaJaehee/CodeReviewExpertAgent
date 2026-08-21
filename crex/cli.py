@@ -4,6 +4,11 @@
     python -m crex review --staged
     python -m crex scan src/buffer.cpp src/service.cs
     python -m crex doctor
+
+CREX 를 리뷰 대상 저장소 안에 둘 필요는 없다. 작업 디렉터리는 CREX 루트로 두고
+대상만 지정한다 — 우선순위와 이유는 `crex/workspace.py` 에 있다.
+
+    python -m crex review --workspace D:\\work\\myrepo --staged
 """
 
 from __future__ import annotations
@@ -13,12 +18,12 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import Config, load_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
 from .ground import GroundingGate
 from .pipeline import Pipeline
 from .report import to_markdown, write_all
 from .rules import load_taxonomy
+from .workspace import Workspace, resolve
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,13 +39,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        config = load_config(args.config)
+        # 워크스페이스와 설정은 서로를 참조하므로 한 번에 정한다.
+        workspace = resolve(getattr(args, "workspace", None), args.config)
     except (OSError, ValueError) as exc:
         print(f"설정 오류: {exc}", file=sys.stderr)
         return 2
 
     handlers = {"review": _cmd_review, "scan": _cmd_scan, "doctor": _cmd_doctor}
-    return handlers[args.command](args, config)
+    return handlers[args.command](args, workspace)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -100,12 +106,17 @@ def _add_global_args(parser: argparse.ArgumentParser, *, suppress: bool = False)
     그래야 서브커맨드 파서가 앞에서 받은 값을 기본값으로 덮어쓰지 않는다.
     """
     default_config = argparse.SUPPRESS if suppress else None
-    default_repo = argparse.SUPPRESS if suppress else Path.cwd()
+    default_workspace = argparse.SUPPRESS if suppress else None
     default_verbose = argparse.SUPPRESS if suppress else False
 
     parser.add_argument("--config", type=Path, default=default_config,
-                        help="설정 파일 경로 (기본: crex.toml 탐색)")
-    parser.add_argument("--repo", type=Path, default=default_repo, help="저장소 루트")
+                        help="설정 파일 경로 (기본: 워크스페이스 → 현재 디렉터리 순으로 탐색)")
+    # --repo 는 예전 이름이다. 문서와 스크립트에 이미 퍼져 있어 계속 받는다.
+    parser.add_argument("--workspace", "--repo", dest="workspace", type=Path,
+                        default=default_workspace,
+                        help="리뷰 대상 저장소 루트 (.git 이 있는 폴더). "
+                             "생략하면 CREX_WORKSPACE → crex.toml 의 workspace → "
+                             "현재 디렉터리 순으로 찾는다")
     parser.add_argument("-v", "--verbose", action="store_true", default=default_verbose)
 
 
@@ -117,27 +128,38 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
 # --------------------------------------------------------------------------
 
 
-def _cmd_review(args: argparse.Namespace, config: Config) -> int:
-    diff_text = _collect_diff(args)
+def _cmd_review(args: argparse.Namespace, workspace: Workspace) -> int:
+    diff_text = _collect_diff(args, workspace)
     if diff_text is None:
         return 2
     if not diff_text.strip():
         print("변경된 내용이 없다.", file=sys.stderr)
         return 0
 
-    logging.getLogger(__name__).info("설정: %s", config.describe())
-    result = Pipeline(config).run_diff(diff_text, args.repo)
+    log = logging.getLogger(__name__)
+    log.info("워크스페이스: %s", workspace.describe())
+    log.info("설정: %s", workspace.config.describe())
+    result = Pipeline(workspace.config).run_diff(diff_text, workspace.root)
     return _emit(result, args)
 
 
-def _cmd_scan(args: argparse.Namespace, config: Config) -> int:
-    logging.getLogger(__name__).info("설정: %s", config.describe())
-    result = Pipeline(config).run_scan(args.paths, args.repo)
+def _cmd_scan(args: argparse.Namespace, workspace: Workspace) -> int:
+    log = logging.getLogger(__name__)
+    log.info("워크스페이스: %s", workspace.describe())
+    log.info("설정: %s", workspace.config.describe())
+    result = Pipeline(workspace.config).run_scan(args.paths, workspace.root)
     return _emit(result, args)
 
 
-def _cmd_doctor(args: argparse.Namespace, config: Config) -> int:
+def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     """폐쇄망 반입 직후 무엇이 되고 무엇이 안 되는지 한 번에 보여준다."""
+    config = workspace.config
+
+    print(f"워크스페이스: {workspace.root}")
+    print(f"  출처={workspace.origin} "
+          f"git={'OK' if workspace.is_git else '없음 — diff 리뷰 불가, scan 만 가능'} "
+          f"리포트={workspace.reports}\n")
+
     print(f"설정 파일: {config.source or '(없음 — 기본값 사용 중)'}")
     print(f"  {config.describe()}\n")
 
@@ -160,7 +182,7 @@ def _cmd_doctor(args: argparse.Namespace, config: Config) -> int:
         ok = ok and client_ok
 
     print("\n정적분석 도구")
-    gate = GroundingGate(cwd=args.repo)
+    gate = GroundingGate(cwd=workspace.root)
     for analyzer in gate.analyzers:
         available = analyzer.available()
         print(f"  {'OK ' if available else '없음'} {analyzer.name} ({analyzer.executable})")
@@ -195,7 +217,7 @@ def _probe(endpoint) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 
 
-def _collect_diff(args: argparse.Namespace) -> str | None:
+def _collect_diff(args: argparse.Namespace, workspace: Workspace) -> str | None:
     if args.diff_file:
         try:
             return args.diff_file.read_text(encoding="utf-8", errors="replace")
@@ -203,12 +225,18 @@ def _collect_diff(args: argparse.Namespace) -> str | None:
             print(f"diff 파일을 읽을 수 없다: {exc}", file=sys.stderr)
             return None
 
+    if not workspace.is_git:
+        print(f"{workspace.root} 는 git 저장소가 아니다 (.git 이 없다). "
+              f"--workspace 로 프로젝트 루트를 지정하거나, diff 없이 볼 것이면 "
+              f"scan 을 쓰라.", file=sys.stderr)
+        return None
+
     try:
         if args.staged:
-            return diff_staged(args.repo)
+            return diff_staged(workspace.root)
         if args.from_ref:
-            return diff_range(args.repo, args.from_ref, args.to_ref)
-        return diff_working_tree(args.repo)
+            return diff_range(workspace.root, args.from_ref, args.to_ref)
+        return diff_working_tree(workspace.root)
     except GitError as exc:
         print(f"{exc}", file=sys.stderr)
         return None

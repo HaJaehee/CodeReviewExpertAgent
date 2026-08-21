@@ -99,7 +99,7 @@ cd crex-20260817
     OK   git
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
-    64/64 통과
+    94/94 통과
     OK   전체 통과
 ```
 
@@ -124,6 +124,15 @@ notepad crex.toml       # vLLM 주소와 모델명을 넣는다
 .\crex.cmd review --from main --out reports\
 ```
 
+번들은 리뷰 대상 저장소 밖에 두고 씁니다. 저장소마다 번들을 복사하면 어느 것이
+반입 심사를 통과한 사본인지 알 수 없게 되므로, 반입본은 한 벌만 두고 대상만
+가리키세요. 번들 Python 은 자기 위치를 기준으로 `crex` 를 찾으므로 현재 디렉터리가
+어디든 상관없습니다.
+
+```powershell
+D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
+```
+
 ### Zed 연동
 
 `settings.json` 의 `command` 에 번들의 `crex-mcp.cmd` 를 지정합니다.
@@ -134,7 +143,7 @@ notepad crex.toml       # vLLM 주소와 모델명을 넣는다
     "crex": {
       "command": "D:\\tools\\crex-20260817\\crex-mcp.cmd",
       "env": {
-        "CREX_REPO": "D:\\work\\myrepo",
+        "CREX_WORKSPACE": "D:\\work\\myrepo",
         "CREX_CONFIG": "D:\\work\\myrepo\\crex.toml",
         "CREX_REPORTS": "D:\\work\\myrepo\\reports"
       }

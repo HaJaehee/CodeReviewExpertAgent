@@ -29,7 +29,7 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 79개 전부 통과해야 합니다
+python tests/run_all.py         # 반입 무결성 — 94개 전부 통과해야 합니다
 cp crex.example.toml crex.toml  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```
@@ -218,7 +218,7 @@ Zed 에이전트 패널에서 "내 변경사항 리뷰해줘"로 부를 수 있�
       "command": "python",
       "args": ["-m", "crex.mcp"],
       "env": {
-        "CREX_REPO": "/work/myrepo",
+        "CREX_WORKSPACE": "/work/myrepo",
         "CREX_CONFIG": "/work/myrepo/crex.toml",
         "CREX_REPORTS": "/work/myrepo/reports"
       }
@@ -235,8 +235,20 @@ FastMCP 를 씁니다. CLI 와 테스트는 그대로 의존성 없이 돕니다
 넣으세요. 가상환경에 설치했다면 그 환경의 `python` 절대 경로를 줘야 합니다 —
 이게 제일 흔한 실패 원인입니다.
 
-환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 `crex.toml` 을 찾고
-`reports/` 에 리포트를 씁니다.
+환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 git 루트와 `crex.toml` 을
+찾고 `reports/` 에 리포트를 씁니다.
+
+| 변수 | 뜻 |
+|---|---|
+| `CREX_WORKSPACE` | 리뷰 대상 저장소 루트. 이전 이름 `CREX_REPO` 도 그대로 받습니다 |
+| `CREX_CONFIG` | 설정 파일. 생략하면 `<워크스페이스>/crex.toml` 을 먼저 봅니다 |
+| `CREX_REPORTS` | 리포트 저장 위치. 기본은 `<워크스페이스>/reports` |
+
+**CREX 설치본은 한 벌이면 됩니다.** 저장소마다 복사하지 말고 프로젝트별
+`.zed/settings.json` 에서 `CREX_WORKSPACE` 만 다르게 주세요. `args` 의 `-m crex.mcp`
+를 찾으려면 CREX 가 `PYTHONPATH` 에 있거나 `command` 를 CREX 루트의 파이썬으로
+지정하면 됩니다. 자세한 우선순위는
+[설정](configuration.md#workspace--리뷰-대상-저장소)에 있습니다.
 
 설정을 바꾸면 Zed 을 재시작하거나 창을 새로 고쳐야 반영됩니다.
 

@@ -50,7 +50,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 79 tests, no LLM or network needed
+python tests/run_all.py                     # 94 tests, no LLM or network needed
 ```
 
 ```bash
@@ -61,6 +61,7 @@ python -m crex doctor                        # endpoints, analyzers, tree-sitter
 python -m crex review --from main --to HEAD  # diff review
 python -m crex review --staged --out reports/
 python -m crex scan src/legacy.cpp           # whole-file audit, no diff
+python -m crex review --workspace D:/work/repo --staged   # target a repo elsewhere
 ```
 
 ```bash
@@ -69,7 +70,7 @@ python -m crex.mcp  # MCP stdio server (Zed context_servers)
 ```
 
 ```bash
-python -m crex.viz  # pipeline dashboard, http://127.0.0.1:8765
+python -m crex.viz  # pipeline dashboard, http://127.0.0.1:18765
                     # uvicorn if installed, stdlib otherwise
 ```
 
@@ -104,6 +105,14 @@ git diff → chunk → ground → generate → filter → report
   *different* model returns yes/no in Conclusion-First order.
 - **report** (`crex/report.py`) — Markdown / SARIF 2.1.0 / JSON.
 
+`crex/workspace.py` decides *which* repository is being reviewed. CREX does not have
+to sit inside the target repo — one installed copy (one import bundle to keep intact)
+serves many repositories. CLI, MCP server, and dashboard all resolve it here so they
+cannot drift apart: `--workspace` > `CREX_WORKSPACE`/`CREX_REPO` > `crex.toml`'s
+`workspace` > git root of the current directory. When the workspace is set that way and
+no config is named, `<workspace>/crex.toml` wins over the one next to CREX — per-repo
+`compile_commands_dir` and `dotnet_project` differ.
+
 `crex/service.py` + `crex/mcp.py` expose the same pipeline to Zed's agent panel over
 MCP. All logic lives in `service.py` (no FastMCP import, fully testable); `mcp.py`
 is a thin FastMCP binding. 5 tools, returning a **compact summary**, not the full report —
@@ -136,7 +145,8 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **Verification failure rejects** — never fail-open.
 - **`on_mismatch` default stays `"raise"`** — a line-shifted review is entirely wrong.
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
-  appears not to work.
+  appears not to work. This now covers top-level keys too: `workspase` must fail
+  loudly, because silently ignoring it points the review at a different repository.
 - **Core stays dependency-free** — only `crex/mcp.py` may require a wheel (FastMCP).
   `python -m crex review|scan|doctor`, `python -m crex.viz`, and `tests/run_all.py`
   must work with nothing installed; each wheel costs a security review on every
@@ -170,8 +180,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 79 tests passing.
-~5,377 lines of Python in `crex/`, plus ~1,800 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 94 tests passing.
+~5,677 lines of Python in `crex/`, plus ~1,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 

@@ -33,6 +33,12 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  // 경로의 마지막 조각. 윈도우와 POSIX 구분자를 함께 받는다.
+  function baseName(path) {
+    const parts = String(path || '').replace(/[\\/]+$/, '').split(/[\\/]/);
+    return parts[parts.length - 1] || String(path || '—');
+  }
+
   function clip(text, limit) {
     const value = String(text || '');
     return value.length > limit ? value.slice(0, limit - 1) + '…' : value;
@@ -676,8 +682,12 @@
       return;
     }
 
-    $('chip-repo').textContent = config.repo_root;
-    $('chip-repo').title = config.repo_root;
+    const ws = config.workspace || { root: config.repo_root, origin: '', is_git: true };
+
+    // 헤더 칩은 한 줄짜리라 폴더 이름만 쓴다. 전체 경로는 왼쪽 패널에 접혀서 나온다.
+    $('chip-repo').textContent = '저장소 ' + baseName(ws.root);
+    $('chip-repo').title = ws.root + (ws.origin ? '\n출처: ' + ws.origin : '');
+    $('chip-repo').dataset.ok = ws.is_git ? 'true' : 'false';
     $('chip-generator').textContent = '생성 ' + config.config.generator.model;
     $('chip-generator').title = config.config.generator.base_url;
     $('chip-verifier').textContent = '검증 ' + config.config.verifier.model;
@@ -685,8 +695,16 @@
     $('run-hint').innerHTML =
       '룰 ' + config.taxonomy.rules + '개 · 최소 심각도 <code>' +
       escapeHtml(config.config.min_severity) + '</code> · 동시 실행 ' +
-      config.config.max_workers + ' · 설정 <code>' +
-      escapeHtml(config.config.source || '기본값') + '</code>';
+      config.config.max_workers;
+
+    $('where-workspace').textContent =
+      ws.root + (ws.origin ? '  (' + ws.origin + ')' : '');
+    $('where-workspace').dataset.warn = ws.is_git ? 'false' : 'true';
+    $('where-workspace').title = ws.is_git
+      ? ws.root
+      : ws.root + ' — .git 이 없다. diff 리뷰는 못 하고 파일·폴더 감사만 된다.';
+    $('where-config').textContent = config.config.source || '(없음 — 기본값)';
+    $('where-reports').textContent = config.out_dir || '—';
 
     // 서버가 아직 들고 있는 실행이 있으면 이어서 본다. 새로고침으로 화면이
     // 죽어도 진행 중인 리뷰는 서버에서 계속 돌고 있다.

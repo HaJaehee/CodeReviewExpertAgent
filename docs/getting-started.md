@@ -51,7 +51,9 @@ vLLM 인스턴스가 하나뿐이라면 `[llm.verifier]` 블록을 통째로 지
 돕니다. GPU 가 확보되는 대로 두 번째 인스턴스를 띄우는 걸 권합니다.
 
 `crex.toml` 은 현재 디렉터리에서 위로 올라가며 찾습니다. 저장소 루트에 두면
-하위 어디서 실행해도 잡힙니다.
+하위 어디서 실행해도 잡힙니다. `--workspace` 로 다른 저장소를 지정했다면 그
+저장소 안의 `crex.toml` 을 먼저 봅니다 — 아래 [CREX 는 어디에 두나](#crex-는-어디에-두나)를
+보세요.
 
 ## 첫 점검
 
@@ -62,6 +64,9 @@ python -m crex doctor
 이게 첫 명령입니다. 무엇이 준비됐고 무엇이 빠졌는지 한 화면에 보여줍니다.
 
 ```
+워크스페이스: D:\work\myrepo
+  출처=--workspace git=OK 리포트=D:\work\myrepo\reports
+
 설정 파일: D:\work\myrepo\crex.toml
   모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000/v1 검증=gemma-4-26b-it@... 입력상한=8192토큰 그라운딩=on
 
@@ -94,9 +99,44 @@ tree-sitter (선택)
 `doctor` 는 엔드포인트가 하나라도 실패하면 종료 코드 1을 냅니다. 설치 스크립트에
 넣어두면 유용합니다.
 
+## CREX 는 어디에 두나
+
+**리뷰 대상 저장소 안에 둘 필요가 없습니다.** 설치본은 한 자리에 두고 대상만
+가리킵니다. 폐쇄망에서는 이게 중요합니다 — 저장소마다 복사해 두면 어느 것이
+반입 심사를 통과한 사본인지 알 수 없게 됩니다.
+
+```
+D:\tools\crex\        ← 설치본. 여기서 실행합니다
+D:\work\myrepo\.git   ← 리뷰 대상
+D:\work\other\.git    ← 이것도 같은 설치본으로 봅니다
+```
+
+```bash
+cd D:\tools\crex
+python -m crex review --workspace D:\work\myrepo --staged
+```
+
+매번 치기 싫으면 `crex.toml` 에 적거나 환경변수를 씁니다.
+
+```toml
+workspace = "D:/work/myrepo"
+```
+
+```powershell
+$env:CREX_WORKSPACE = "D:\work\myrepo"
+```
+
+저장소마다 설정이 다르다면(C++ 프로젝트의 `compile_commands_dir`, C# 의
+`dotnet_project` 등) 각 저장소 루트에 `crex.toml` 을 두세요. `--workspace` 로
+지정하면 그 파일을 먼저 씁니다. 전체 규칙은 [설정](configuration.md#workspace--리뷰-대상-저장소)에
+있습니다.
+
+물론 예전처럼 저장소 안에서 실행해도 됩니다. 아무것도 지정하지 않으면 현재
+디렉터리에서 git 루트를 찾습니다.
+
 ## 첫 리뷰
 
-작업 트리에 변경이 있는 상태에서:
+리뷰 대상 저장소의 작업 트리에 변경이 있는 상태에서:
 
 ```bash
 python -m crex review

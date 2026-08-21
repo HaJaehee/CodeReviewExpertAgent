@@ -23,26 +23,46 @@ def _check(condition: bool, message: str) -> None:
 
 
 def test_global_flags_accepted_after_subcommand() -> None:
-    """`crex review --staged --repo X` 가 동작해야 한다.
+    """`crex review --staged --workspace X` 가 동작해야 한다.
 
     argparse 기본 동작은 전역 옵션을 서브커맨드 *앞*에만 허용한다. 사람은
     자연스럽게 뒤에 쓰고, 문서에도 그렇게 적힌 예시가 있었다.
     """
     parser = _build_parser()
 
-    after = parser.parse_args(["review", "--staged", "--repo", "/tmp/x", "--config", "/tmp/c.toml"])
-    _check(str(after.repo) in ("/tmp/x", "\\tmp\\x"), f"repo: {after.repo}")
+    after = parser.parse_args(
+        ["review", "--staged", "--workspace", "/tmp/x", "--config", "/tmp/c.toml"]
+    )
+    _check(str(after.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {after.workspace}")
     _check(after.config is not None and "c.toml" in str(after.config), f"config: {after.config}")
     _check(after.staged, "staged 플래그 손실")
 
-    before = parser.parse_args(["--repo", "/tmp/x", "review", "--staged"])
-    _check(str(before.repo) in ("/tmp/x", "\\tmp\\x"), f"repo: {before.repo}")
+    before = parser.parse_args(["--workspace", "/tmp/x", "review", "--staged"])
+    _check(str(before.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {before.workspace}")
+
+
+def test_repo_is_accepted_as_alias() -> None:
+    """`--repo` 는 예전 이름이다. 문서와 스크립트에 퍼져 있어 계속 받아야 한다."""
+    args = _build_parser().parse_args(["review", "--repo", "/tmp/x"])
+    _check(str(args.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {args.workspace}")
 
 
 def test_subcommand_flag_wins_over_global() -> None:
     """양쪽에 주면 서브커맨드 쪽(나중에 쓴 것)이 이겨야 한다."""
-    args = _build_parser().parse_args(["--repo", "/tmp/a", "review", "--repo", "/tmp/b"])
-    _check(str(args.repo).endswith("b"), f"repo: {args.repo}")
+    args = _build_parser().parse_args(
+        ["--workspace", "/tmp/a", "review", "--workspace", "/tmp/b"]
+    )
+    _check(str(args.workspace).endswith("b"), f"workspace: {args.workspace}")
+
+
+def test_workspace_defaults_to_none() -> None:
+    """지정하지 않으면 None 이어야 한다.
+
+    예전에는 기본값이 `Path.cwd()` 여서, 설정 파일의 `workspace` 나 환경변수가
+    있어도 '사용자가 현재 디렉터리를 명시했다'와 구분되지 않았다.
+    """
+    args = _build_parser().parse_args(["review", "--staged"])
+    _check(args.workspace is None, f"workspace: {args.workspace}")
 
 
 def test_global_flag_not_clobbered_by_subparser_default() -> None:
@@ -125,6 +145,8 @@ TESTS = [
     test_subcommand_flag_wins_over_global,
     test_global_flag_not_clobbered_by_subparser_default,
     test_verbose_from_either_position,
+    test_repo_is_accepted_as_alias,
+    test_workspace_defaults_to_none,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,
     test_exit_code_signals_high_severity,

@@ -6,7 +6,7 @@
 python -m crex.viz
 ```
 
-띄운 뒤 `http://127.0.0.1:8765` 로 들어가면 됩니다.
+띄운 뒤 `http://127.0.0.1:18765` 로 들어가면 됩니다.
 
 ## 왜 있나
 
@@ -83,19 +83,26 @@ DB 를 세우고 그 백업·권한·반입 승인을 떠안을 이유가 없습
 ## 옵션
 
 ```bash
-python -m crex.viz --port 9000 --repo D:\work\myproject --config crex.toml
+python -m crex.viz --port 9000 --workspace D:\work\myproject --config crex.toml
 ```
 
 | 옵션 | 뜻 | 기본값 |
 |---|---|---|
 | `--host` | 바인드 주소 | `127.0.0.1` |
-| `--port` | 포트 | `8765` |
-| `--repo` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
-| `--config` | 설정 파일 | `crex.toml` 상위 탐색 |
-| `--out` | 리포트 저장 위치 | `<repo>/reports` |
+| `--port` | 포트 | `18765` |
+| `--workspace` | 리뷰 대상 저장소 루트 (`--repo` 는 예전 이름) | 현재 디렉터리에서 git 루트 탐색 |
+| `--config` | 설정 파일 | 워크스페이스 → 현재 디렉터리 순 탐색 |
+| `--out` | 리포트 저장 위치 | `<워크스페이스>/reports` |
 | `--stdlib` | uvicorn 이 있어도 stdlib 서버를 쓴다 | 꺼짐 |
 
-환경변수 `CREX_REPO`, `CREX_CONFIG`, `CREX_REPORTS` 도 MCP 서버와 똑같이 읽습니다.
+환경변수 `CREX_WORKSPACE`(이전 이름 `CREX_REPO`), `CREX_CONFIG`, `CREX_REPORTS` 도
+CLI·MCP 서버와 똑같이 읽습니다. 세 진입점이 서로 다른 저장소를 보고 있으면 화면의
+의미가 없으므로 규칙을 한 곳에 모아 뒀습니다 —
+[설정](configuration.md#workspace--리뷰-대상-저장소) 참고.
+
+화면 왼쪽 "리뷰 실행" 패널 아래에 지금 보고 있는 워크스페이스·설정 파일·리포트
+경로가 그대로 표시됩니다. 워크스페이스에 `.git` 이 없으면 붉게 표시되고, 그때는
+diff 리뷰(스테이징·두 참조 비교)는 못 하고 파일·폴더 감사만 됩니다.
 
 ### 바인드 주소
 

@@ -61,23 +61,43 @@ builds or a misconfigured `structured_output_mode` silently drop the constraint.
 | `crex/schema.py` | 316 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
 | `crex/llm.py` | 250 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
 | `crex/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
-| `crex/ground.py` | 509 | 8 static-analyzer adapters + output normalization + attachment |
+| `crex/ground.py` | 548 | 8 static-analyzer adapters + output normalization + attachment |
 | `crex/generate.py` | 243 | RuleChecker: enum-constrained schema, prompt, parsing |
 | `crex/filter.py` | 283 | ReviewFilter: deterministic checks + cross-model verdict |
 | `crex/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
 | `crex/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
 | `crex/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
-| `crex/config.py` | 164 | TOML config loading with unknown-key rejection |
-| `crex/cli.py` | 187 | `review` / `scan` / `doctor` subcommands |
+| `crex/config.py` | 212 | TOML config loading with unknown-key rejection (sections *and* top level) |
+| `crex/cli.py` | 258 | `review` / `scan` / `doctor` subcommands |
+| `crex/workspace.py` | 227 | Which repository is under review. One resolution rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
 | `crex/service.py` | 209 | `ReviewService` — the 5 MCP operations. **No FastMCP import** |
-| `crex/mcp.py` | 211 | FastMCP binding only. Tool schemas from type hints + docstrings |
+| `crex/mcp.py` | 207 | FastMCP binding only. Tool schemas from type hints + docstrings |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.
-`cli` sits alongside `service`. `schema.py` imports nothing from the package.
-FastMCP appears in `mcp.py` and nowhere else.
+`cli` sits alongside `service`; both reach `workspace`, which sits directly above
+`config` and `gitio`. `schema.py` imports nothing from the package. FastMCP appears
+in `mcp.py` and nowhere else.
+
+### Workspace resolution
+
+CREX does not have to live inside the repository it reviews, and in an air-gapped
+setup it should not: one imported copy stays verifiable, many copies do not. The
+working directory is CREX's own root; the target is named separately.
+
+    --workspace  >  CREX_WORKSPACE / CREX_REPO  >  crex.toml `workspace`  >  git root of cwd
+
+`crex/workspace.py` returns a `Workspace` (root, config, reports dir, origin,
+`is_git`) and is the *only* place that reads those environment variables — CLI, MCP
+server, and dashboard used to each read them separately, which is exactly how three
+entry points end up reviewing three different repositories. A subdirectory argument
+is promoted to the git root, because every path in a chunk and every static-analyzer
+finding is relative to that root. When the workspace comes from an argument or the
+environment and no config file is named, `<workspace>/crex.toml` wins over CREX's own
+— per-repository `compile_commands_dir` and `dotnet_project` differ — and the search
+never walks above the workspace.
 
 ### `crex/viz/` — the observability surface
 

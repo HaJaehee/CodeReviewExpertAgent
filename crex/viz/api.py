@@ -86,6 +86,9 @@ class Context:
     registry: RunRegistry
     taxonomy: Taxonomy
     version: str = "0.1.0"
+    #: 워크스페이스를 어디서 얻었는지, git 저장소인지. 화면 왼쪽에 그대로 보인다.
+    workspace_origin: str = "현재 디렉터리"
+    workspace_is_git: bool = True
 
 
 # --------------------------------------------------------------------------
@@ -141,6 +144,11 @@ def _config(request: Request, ctx: Context, rest: str) -> Response:
         {
             "version": ctx.version,
             "repo_root": str(registry.repo_root),
+            "workspace": {
+                "root": str(registry.repo_root),
+                "origin": ctx.workspace_origin,
+                "is_git": ctx.workspace_is_git,
+            },
             "out_dir": str(registry.out_dir),
             "kinds": list(KINDS),
             "config": describe_config(registry.config),

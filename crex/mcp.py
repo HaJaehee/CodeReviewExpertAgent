@@ -13,11 +13,14 @@ FastMCP 가 프로토콜을 담당한다. 타입 힌트와 docstring 에서 도�
 
 | 변수 | 뜻 | 기본값 |
 |---|---|---|
-| `CREX_REPO` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
-| `CREX_CONFIG` | 설정 파일 경로 | `crex.toml` 상위 탐색 |
-| `CREX_REPORTS` | 리포트 저장 위치 | `<repo>/reports` |
+| `CREX_WORKSPACE` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
+| `CREX_REPO` | 위의 이전 이름. 계속 받는다 | — |
+| `CREX_CONFIG` | 설정 파일 경로 | 워크스페이스 → 현재 디렉터리 순 탐색 |
+| `CREX_REPORTS` | 리포트 저장 위치 | `<워크스페이스>/reports` |
 
-Zed `settings.json` 예시는 `docs/operations.md` 의 Zed 연동 절에 있다.
+MCP 서버는 저장소마다 하나씩 띄운다. Zed 프로젝트별로 `CREX_WORKSPACE` 를 주면
+CREX 설치본은 한 벌만 두고 여러 저장소를 볼 수 있다. `settings.json` 예시는
+`docs/operations.md` 의 Zed 연동 절에 있다.
 """
 
 from __future__ import annotations
@@ -25,7 +28,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from pathlib import Path
 
 # FastMCP 는 기동할 때 pypi.org 에 새 버전이 있는지 물어본다. 폐쇄망에서는
 # 나가지도 못하고, 나가려 시도하는 것 자체가 반입 심사에서 걸린다.
@@ -36,9 +38,9 @@ os.environ.setdefault("FASTMCP_CHECK_FOR_UPDATES", "off")
 from fastmcp import FastMCP  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
 
-from .config import load_config
-from .gitio import gitpython_available, resolve_repo_root
+from .gitio import gitpython_available
 from .service import MAX_SCAN_FILES, ReviewRequestError, ReviewService
+from .workspace import resolve
 
 log = logging.getLogger(__name__)
 
@@ -166,16 +168,10 @@ def review_directory(path: str, recursive: bool = True) -> str:
 
 
 def build_service() -> ReviewService:
-    repo_env = os.environ.get("CREX_REPO")
-    repo_root = Path(repo_env).resolve() if repo_env else resolve_repo_root(Path.cwd())
-
-    config_path = os.environ.get("CREX_CONFIG")
-    config = load_config(Path(config_path) if config_path else None)
-
-    reports = os.environ.get("CREX_REPORTS")
-    out_dir = Path(reports) if reports else repo_root / "reports"
-
-    return ReviewService(repo_root, config, out_dir=out_dir)
+    # 워크스페이스·설정·리포트 위치를 정하는 규칙은 CLI 와 완전히 같다.
+    workspace = resolve()
+    log.info("워크스페이스: %s", workspace.describe())
+    return ReviewService(workspace.root, workspace.config, out_dir=workspace.reports)
 
 
 def main(argv: list[str] | None = None) -> int:

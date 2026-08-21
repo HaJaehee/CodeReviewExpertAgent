@@ -110,6 +110,15 @@ python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확�
 python -m crex review --from HEAD~1 --to HEAD
 ```
 
+CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은 한 자리에 두고
+`--workspace` 로 대상만 가리킵니다. 매번 치기 싫으면 `crex.toml` 에
+`workspace = "D:/work/myrepo"` 를 적거나 `CREX_WORKSPACE` 를 씁니다.
+
+```bash
+cd D:\tools\crex
+python -m crex review --workspace D:\work\myrepo --staged
+```
+
 ```bash
 python -m crex review --staged --out reports/
 ```
@@ -282,6 +291,7 @@ crex/
   pipeline.py   오케스트레이션 (diff / scan)
   report.py     Markdown / SARIF / JSON
   cli.py        review / scan / doctor
+  workspace.py  리뷰 대상 저장소 해석 — CLI·MCP·관제 화면이 공유하는 규칙
   paths.py      디렉터리 확장, exclude glob, diff 경로 필터
   gitio.py      git diff / merge-base (GitPython, 없으면 subprocess)
   service.py    ReviewService — MCP 도구 5종의 실제 동작 (FastMCP 미의존)

@@ -109,11 +109,11 @@ python -m crex review --from v1.0 --to v1.1     # 작업 트리는 main 최신
 ```
 
 `--to v1.1` 의 코드가 디스크에 없습니다. 그 시점을 체크아웃한 사본을 만들고
-`--repo` 로 가리키세요.
+`--workspace` 로 가리키세요.
 
 ```bash
 git worktree add ../snap-v1.1 v1.1
-python -m crex review --from v1.0 --to v1.1 --repo ../snap-v1.1
+python -m crex review --from v1.0 --to v1.1 --workspace ../snap-v1.1
 ```
 
 **개행 문자 문제.** 파일이 CRLF 인데 git 설정이 어긋나서 diff 는 LF 로 나오는
@@ -223,6 +223,52 @@ INFO    crex.ground: [roslyn] 0건 보고
 
 ---
 
+## 엉뚱한 저장소를 리뷰한다
+
+실행 로그 둘째 줄을 보세요. 어디를 보고 있는지, 그 값을 어디서 얻었는지가
+그대로 찍힙니다.
+
+```
+INFO    crex.cli: 워크스페이스: D:\work\other [CREX_WORKSPACE]
+```
+
+대괄호 안이 출처입니다. 우선순위는 이렇고, 위가 이깁니다.
+
+1. `--workspace` (`--repo` 도 같습니다)
+2. 환경변수 `CREX_WORKSPACE`, `CREX_REPO`
+3. `crex.toml` 의 `workspace`
+4. 현재 디렉터리에서 git 루트 탐색
+
+셸에 예전 `CREX_REPO` 가 남아 있어서 `crex.toml` 의 `workspace` 가 안 먹는 경우가
+제일 흔합니다. `echo %CREX_REPO%` / `echo $CREX_REPO` 로 확인하세요.
+
+---
+
+## `워크스페이스 경로가 없다`
+
+```
+설정 오류: 워크스페이스 경로가 없다: D:\work\myrepo
+  .git 이 있는 프로젝트 루트를 지정하라. 예: --workspace D:\work\myrepo
+```
+
+경로 오타이거나, `crex.toml` 의 상대경로를 실행 위치 기준으로 쓴 경우입니다.
+**설정 파일 안의 상대경로는 그 설정 파일이 있는 디렉터리 기준**입니다. 확실하게
+하려면 절대경로를 쓰세요.
+
+---
+
+## `... 는 git 저장소가 아니다 (.git 이 없다)`
+
+`review` 는 `git diff` 가 있어야 동작합니다. 워크스페이스로 지정한 폴더에 `.git`
+이 없으면 거부합니다. 두 가지 중 하나입니다.
+
+- 프로젝트 루트가 아니라 그 위나 옆 폴더를 지정했다 → 경로를 고치세요.
+  하위 폴더를 지정한 경우는 자동으로 루트까지 올라가므로 문제되지 않습니다.
+- 애초에 git 저장소가 아니다 → `review` 대신 `scan` 을 쓰세요. 파일·폴더 감사는
+  git 없이 동작합니다.
+
+---
+
 ## `설정 오류: ... 알 수 없는 설정 키`
 
 ```
@@ -232,6 +278,9 @@ INFO    crex.ground: [roslyn] 0건 보고
 
 오타입니다. 조용히 무시하지 않고 알려주는 게 맞습니다 — 무시하면 설정을 바꿨는데
 아무 일도 안 일어나는 상황이 되니까요.
+
+최상위 키도 검사합니다. `workspase` 처럼 쓰면 오류가 납니다. 이건 조용히
+무시되면 리뷰 대상 저장소가 말없이 바뀌므로 특히 위험한 오타입니다.
 
 ---
 
@@ -275,7 +324,7 @@ unified diff 를 돌려줍니다. `doctor` 가 어느 쪽을 쓰는지 알려줍
 python tests/run_all.py
 ```
 
-79개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
+94개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
 특히 `rules/taxonomy.toml` 이 빠지면 여러 모듈이 한꺼번에 터집니다.
 
 ```

@@ -112,7 +112,9 @@ code, pre, .mono { font-family: var(--mono); }
   align-items: start;
 }
 
-.side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; }
+/* min-width:0 이 없으면 320px 트랙 안에서 긴 경로가 칸을 밀고 나간다.
+   그리드 아이템의 기본 min-width 는 auto(=내용 너비)라 축소되지 않는다. */
+.side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; min-width: 0; }
 .main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 .panel {
@@ -143,8 +145,40 @@ code, pre, .mono { font-family: var(--mono); }
 }
 .panel-head h2 { margin: 0; }
 
-.hint { margin: 0 0 10px; font-size: 12px; color: var(--fg-faint); }
+/* 경로에는 띄어쓰기가 없다. 기본 줄바꿈 규칙은 공백에서만 끊으므로
+   `D:\work\...\crex.toml` 같은 값이 패널 밖으로 그대로 삐져나간다.
+   anywhere 를 줘서 어디서든 접히게 한다. */
+.hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .hint code { color: var(--fg-dim); }
+
+/* 위치 정보 — 워크스페이스·설정·리포트 경로. 전부 길고 전부 접혀야 한다. */
+.paths {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  font-size: 11.5px;
+}
+.paths dt {
+  color: var(--fg-faint);
+  letter-spacing: 0.04em;
+}
+.paths dd {
+  margin: 0 0 7px;
+  font-family: var(--mono);
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  line-height: 1.45;
+}
+.paths dd:last-child { margin-bottom: 0; }
+.paths dd[data-warn="true"] { color: var(--drop); }
 
 .badge {
   font-family: var(--mono);

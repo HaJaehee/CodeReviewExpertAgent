@@ -25,15 +25,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from ..cli import force_utf8_output
-from ..config import load_config
-from ..gitio import resolve_repo_root
 from ..rules import load_taxonomy
+from ..workspace import resolve
 from .api import Context, Request, Response, error_response, handle
 from .engine import RunRegistry
 
@@ -47,22 +45,24 @@ MAX_BODY = 1 << 20
 
 
 def build_context(
-    repo: Path | None = None,
+    workspace: Path | None = None,
     config_path: Path | None = None,
     out_dir: Path | None = None,
 ) -> Context:
-    """MCP 서버와 같은 환경변수를 읽는다 — 두 곳을 따로 설정하게 두지 않는다."""
-    repo_env = os.environ.get("CREX_REPO")
-    repo_root = repo or (Path(repo_env).resolve() if repo_env else resolve_repo_root(Path.cwd()))
+    """CLI·MCP 서버와 같은 규칙으로 워크스페이스를 정한다.
 
-    config_env = os.environ.get("CREX_CONFIG")
-    config = load_config(config_path or (Path(config_env) if config_env else None))
-
-    reports_env = os.environ.get("CREX_REPORTS")
-    reports = out_dir or (Path(reports_env) if reports_env else repo_root / "reports")
-
+    세 진입점이 각자 환경변수를 읽던 것을 `crex/workspace.py` 하나로 모았다 —
+    관제 화면과 CLI 가 서로 다른 저장소를 보고 있으면 화면의 의미가 없다.
+    """
+    resolved = resolve(workspace, config_path, reports=out_dir)
+    config = resolved.config
     taxonomy = load_taxonomy(config.taxonomy_path) if config.taxonomy_path else load_taxonomy()
-    return Context(RunRegistry(repo_root, config, reports), taxonomy)
+    return Context(
+        RunRegistry(resolved.root, config, resolved.reports),
+        taxonomy,
+        workspace_origin=resolved.origin,
+        workspace_is_git=resolved.is_git,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -193,7 +193,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"바인드 주소 (기본 {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"포트 (기본 {DEFAULT_PORT})")
-    parser.add_argument("--repo", type=Path, default=None, help="리뷰할 저장소 루트")
+    # --repo 는 예전 이름이다. 계속 받는다.
+    parser.add_argument("--workspace", "--repo", dest="workspace", type=Path, default=None,
+                        help="리뷰 대상 저장소 루트 (.git 이 있는 폴더). 생략하면 "
+                             "CREX_WORKSPACE → crex.toml 의 workspace → 현재 디렉터리 순")
     parser.add_argument("--config", type=Path, default=None, help="crex.toml 경로")
     parser.add_argument("--out", type=Path, default=None, help="리포트 저장 위치")
     parser.add_argument("--stdlib", action="store_true", help="uvicorn 이 있어도 stdlib 서버를 쓴다")
@@ -207,13 +210,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        ctx = build_context(args.repo, args.config, args.out)
+        ctx = build_context(args.workspace, args.config, args.out)
     except (OSError, ValueError) as exc:
         print(f"설정 오류: {exc}", file=sys.stderr)
         return 2
 
     registry = ctx.registry
-    log.info("저장소 %s", registry.repo_root)
+    log.info("워크스페이스 %s [%s]", registry.repo_root, ctx.workspace_origin)
+    if not ctx.workspace_is_git:
+        log.warning("%s 에 .git 이 없다 — diff 리뷰는 못 하고 파일·폴더 감사만 된다.",
+                    registry.repo_root)
     log.info("%s", registry.config.describe())
     log.info("리포트 %s", registry.out_dir)
 
