@@ -5,15 +5,19 @@
 
 from __future__ import annotations
 
+import inspect
 import io
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from crex import __version__  # noqa: E402
 from crex.cli import _build_parser, _emit, force_utf8_output  # noqa: E402
-from crex.report import to_markdown  # noqa: E402
+from crex.report import to_markdown, to_sarif  # noqa: E402
+from crex.viz.api import Context  # noqa: E402
 from crex.schema import Dimension, Finding, ReviewResult, Severity  # noqa: E402
 
 
@@ -23,26 +27,46 @@ def _check(condition: bool, message: str) -> None:
 
 
 def test_global_flags_accepted_after_subcommand() -> None:
-    """`crex review --staged --repo X` 가 동작해야 한다.
+    """`crex review --staged --workspace X` 가 동작해야 한다.
 
     argparse 기본 동작은 전역 옵션을 서브커맨드 *앞*에만 허용한다. 사람은
     자연스럽게 뒤에 쓰고, 문서에도 그렇게 적힌 예시가 있었다.
     """
     parser = _build_parser()
 
-    after = parser.parse_args(["review", "--staged", "--repo", "/tmp/x", "--config", "/tmp/c.toml"])
-    _check(str(after.repo) in ("/tmp/x", "\\tmp\\x"), f"repo: {after.repo}")
+    after = parser.parse_args(
+        ["review", "--staged", "--workspace", "/tmp/x", "--config", "/tmp/c.toml"]
+    )
+    _check(str(after.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {after.workspace}")
     _check(after.config is not None and "c.toml" in str(after.config), f"config: {after.config}")
     _check(after.staged, "staged 플래그 손실")
 
-    before = parser.parse_args(["--repo", "/tmp/x", "review", "--staged"])
-    _check(str(before.repo) in ("/tmp/x", "\\tmp\\x"), f"repo: {before.repo}")
+    before = parser.parse_args(["--workspace", "/tmp/x", "review", "--staged"])
+    _check(str(before.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {before.workspace}")
+
+
+def test_repo_is_accepted_as_alias() -> None:
+    """`--repo` 는 예전 이름이다. 문서와 스크립트에 퍼져 있어 계속 받아야 한다."""
+    args = _build_parser().parse_args(["review", "--repo", "/tmp/x"])
+    _check(str(args.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {args.workspace}")
 
 
 def test_subcommand_flag_wins_over_global() -> None:
     """양쪽에 주면 서브커맨드 쪽(나중에 쓴 것)이 이겨야 한다."""
-    args = _build_parser().parse_args(["--repo", "/tmp/a", "review", "--repo", "/tmp/b"])
-    _check(str(args.repo).endswith("b"), f"repo: {args.repo}")
+    args = _build_parser().parse_args(
+        ["--workspace", "/tmp/a", "review", "--workspace", "/tmp/b"]
+    )
+    _check(str(args.workspace).endswith("b"), f"workspace: {args.workspace}")
+
+
+def test_workspace_defaults_to_none() -> None:
+    """지정하지 않으면 None 이어야 한다.
+
+    예전에는 기본값이 `Path.cwd()` 여서, 설정 파일의 `workspace` 나 환경변수가
+    있어도 '사용자가 현재 디렉터리를 명시했다'와 구분되지 않았다.
+    """
+    args = _build_parser().parse_args(["review", "--staged"])
+    _check(args.workspace is None, f"workspace: {args.workspace}")
 
 
 def test_global_flag_not_clobbered_by_subparser_default() -> None:
@@ -60,6 +84,52 @@ def test_verbose_from_either_position() -> None:
     _check(parser.parse_args(["-v", "doctor"]).verbose, "앞쪽 -v 손실")
     _check(parser.parse_args(["doctor", "-v"]).verbose, "뒤쪽 -v 손실")
     _check(not parser.parse_args(["doctor"]).verbose, "-v 없이 참이 됨")
+
+
+def test_version_declared_in_one_place() -> None:
+    """버전 문자열은 crex/__init__.py 와 README 두 곳에만 있어야 한다.
+
+    리포트에 찍힌 버전으로 "그때 뭘로 돌렸나"를 되짚는 것이 목적인데, 소스
+    어딘가에 숫자를 또 적어 두면 그 값이 거짓이 될 수 있다. 사람이 맞추는 곳은
+    README 하나뿐이고, 그것도 여기서 대조한다.
+    """
+    root = Path(__file__).resolve().parents[1]
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    _check(f"버전 {__version__}" in readme, f"README 에 '버전 {__version__}' 이 없다")
+
+    # 소스에서 __init__.py 말고 버전을 또 적은 곳이 있는가.
+    literal = re.compile(r'"' + re.escape(__version__) + r'(\.\d+)*"')
+    offenders = []
+    for path in sorted((root / "crex").rglob("*.py")):
+        if path.name == "__init__.py" and path.parent.name == "crex":
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "version" in line.lower() and literal.search(line):
+                offenders.append(f"{path.relative_to(root)}:{number}")
+    _check(not offenders, f"버전을 직접 적은 곳이 있다: {offenders}")
+
+    # 실제로 파생되는지도 본다 — import 만 해 두고 안 쓰면 위 검사를 통과한다.
+    _check(Context.__dataclass_fields__["version"].default == __version__,
+           "관제 화면이 다른 버전을 알린다")
+    _check(
+        inspect.signature(to_sarif).parameters["version"].default == __version__,
+        "SARIF 리포트가 다른 버전을 적는다",
+    )
+
+
+def test_workspace_command_parses() -> None:
+    """확인·고정·해제 세 형태를 다 받아야 한다."""
+    parser = _build_parser()
+
+    show = parser.parse_args(["workspace"])
+    _check(show.command == "workspace", f"command: {show.command}")
+    _check(show.path is None and not show.clear, "인자 없는 형태가 깨졌다")
+
+    setter = parser.parse_args(["workspace", "/tmp/x"])
+    _check(str(setter.path) in ("/tmp/x", "\\tmp\\x"), f"path: {setter.path}")
+
+    _check(parser.parse_args(["workspace", "--clear"]).clear, "--clear 손실")
 
 
 def test_scan_paths_still_parse() -> None:
@@ -125,6 +195,10 @@ TESTS = [
     test_subcommand_flag_wins_over_global,
     test_global_flag_not_clobbered_by_subparser_default,
     test_verbose_from_either_position,
+    test_repo_is_accepted_as_alias,
+    test_workspace_defaults_to_none,
+    test_version_declared_in_one_place,
+    test_workspace_command_parses,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,
     test_exit_code_signals_high_severity,

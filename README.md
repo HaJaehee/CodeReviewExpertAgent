@@ -1,6 +1,7 @@
 # CREX — 폐쇄망 sLLM 코드리뷰 파이프라인
 
-**C**ode **R**eview **EX**pert Agent. 명령과 패키지는 소문자 `crex` 를 쓴다.
+**버전 0.1** · **C**ode **R**eview **EX**pert Agent. 명령과 패키지는 소문자
+`crex` 를 쓴다.
 
 25~40B급 로컬 모델(Qwen3.6, Gemma4)로 C++/C#/Python 코드를 리뷰한다.
 설계의 전부는 하나의 목표로 수렴한다 — **환각을 구조적으로 막는 것**.
@@ -94,6 +95,7 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 | [시작하기](docs/getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
 | [워크플로](docs/workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
 | [설정](docs/configuration.md) | `crex.toml` 전체 항목 |
+| [정적분석 도구](docs/analyzers.md) | clang-tidy·cppcheck·ruff 설치, 라이선스, 반입 |
 | [룰 작성법](docs/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](docs/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
 | [관제 화면](docs/visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 보기 |
@@ -105,10 +107,26 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 ## 빠른 시작
 
 ```bash
+python -m crex --version        # crex 0.1
 cp crex.example.toml crex.toml  # 엔드포인트·모델명 수정
 python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
 python -m crex review --from HEAD~1 --to HEAD
 ```
+
+CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은 한 자리에 두고
+`--workspace` 로 대상만 가리킵니다. 매번 치기 싫으면 `crex.toml` 에
+`workspace = "D:/work/myrepo"` 를 적거나 `CREX_WORKSPACE` 를 씁니다.
+
+```bash
+cd D:\tools\crex
+python -m crex review --workspace D:\work\myrepo --staged
+
+python -m crex workspace D:\work\myrepo   # crex.toml 에 고정 (--clear 로 해제)
+python -m crex workspace                  # 지금 무엇을 보고 있나
+```
+
+대상은 돌고 있는 중에도 바꿉니다 — 관제 화면 왼쪽의 **변경** 버튼, Zed 에이전트의
+`set_workspace` 도구. 둘 다 설정 파일은 건드리지 않습니다.
 
 ```bash
 python -m crex review --staged --out reports/
@@ -125,11 +143,67 @@ python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 python -m crex.viz --port 18765       # http://127.0.0.1:18765
 ```
 
+Zed 등 에이전트 패널에서 부르려면 MCP 서버를 씁니다. 기본은 stdio(에디터가
+프로세스를 자식으로 띄움)이고, 여러 사람이 한 서버를 같이 쓰거나 클라이언트가 다른
+장비에 있을 때만 HTTP 로 엽니다.
+
+```bash
+python -m crex.mcp                    # stdio (권장)
+python -m crex.mcp --transport http   # Streamable HTTP — http://127.0.0.1:18766/mcp
+```
+
+HTTP 엔드포인트에는 인증이 없습니다. 루프백에 묶어 두거나 접근 제어가 있는 망
+안에서만 여세요 — [운영](docs/operations.md#streamable-http-엔드포인트) 참고.
+
 테스트 (외부 의존 없음, LLM 불필요):
 
 ```bash
 python tests/run_all.py
 ```
+
+---
+
+## 정적분석 도구 (선택이지만 권장)
+
+CREX 는 LLM 을 부르기 **전에** clang-tidy·cppcheck·ruff 같은 서드파티 분석기를
+돌리고, 그 결과를 프롬프트에 넣습니다. 모델의 역할이 "결함을 찾아라"에서
+**"이 도구 결과를 검증하고 도구가 못 잡는 것만 추가하라"**로 바뀝니다. 환각을
+막는 첫 번째 겹입니다.
+
+**없어도 리뷰는 됩니다.** PATH 에서 못 찾으면 그 분석기만 조용히 건너뜁니다 —
+폐쇄망에서는 장비마다 설치 상태가 다르므로 하나가 없다고 멈춰선 안 됩니다.
+대신 그만큼 근거 없는 지적이 늘어납니다.
+
+| 언어 | 기본으로 도는 것 | 설치 |
+|---|---|---|
+| C++ | `clang-tidy`, `cppcheck` | LLVM 인스톨러 / cppcheck MSI |
+| C# | `roslyn` (= `dotnet build`) | .NET SDK 만 있으면 됩니다 |
+| Python | `ruff`, `mypy`, `bandit` | `pip install ruff mypy bandit` |
+
+`roslynator` 와 `semgrep` 은 이름을 적어야 켜지는 선택 항목입니다.
+
+전부 무료 오픈소스입니다 — LLVM Apache-2.0 with LLVM-exception, cppcheck
+**GPL-3.0**, ruff·mypy MIT, bandit·roslynator Apache-2.0, .NET SDK MIT.
+구독형도 셰어웨어도 없습니다. cppcheck 만 카피레프트인데, CREX 가 별도 프로세스로
+실행할 뿐이라 회사 소스에 전염되지 않습니다.
+
+```bash
+python -m crex doctor    # 무엇이 있고 무엇이 없는지 한 화면에
+```
+
+```
+정적분석 도구
+  OK  clang-tidy (clang-tidy)
+  없음 cppcheck (cppcheck)
+  OK  ruff (ruff)
+```
+
+내려받는 곳, 폐쇄망 반입 절차(해시 대조 포함), `compile_commands.json` 이 왜
+필요한지, semgrep 룰팩의 별도 라이선스까지는
+**[정적분석 도구 문서](docs/analyzers.md)** 에 있습니다.
+
+하나만 고르라면 쓰는 언어의 도구 하나입니다 — C++ 은 cppcheck, Python 은 ruff 가
+설치 비용 대비 효과가 가장 큽니다.
 
 ---
 
@@ -148,6 +222,8 @@ CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `re
       `structured_output_mode` 를 `"guided_json"` 으로 바꿔 재시도
 - [ ] (선택) MCP 서버를 쓸 장비에만 `pip install -r requirements.txt`
 - [ ] (선택) tree-sitter wheel 반입 — `requirements-optional.txt` 참고
+- [ ] (선택) 정적분석 도구 반입 — clang-tidy / cppcheck / ruff 등,
+      [설치 가이드](docs/analyzers.md) 참고. 없으면 그 분석기만 건너뛴다
 - [ ] (선택) Semgrep 룰팩 반입 — `"auto"` 는 폐쇄망에서 동작하지 않는다
 - [ ] C++ 이라면 `compile_commands.json` 생성
       (`cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build`)
@@ -282,9 +358,10 @@ crex/
   pipeline.py   오케스트레이션 (diff / scan)
   report.py     Markdown / SARIF / JSON
   cli.py        review / scan / doctor
+  workspace.py  리뷰 대상 저장소 해석 — CLI·MCP·관제 화면이 공유하는 규칙
   paths.py      디렉터리 확장, exclude glob, diff 경로 필터
   gitio.py      git diff / merge-base (GitPython, 없으면 subprocess)
-  service.py    ReviewService — MCP 도구 5종의 실제 동작 (FastMCP 미의존)
+  service.py    ReviewService — MCP 도구 7종의 실제 동작 (FastMCP 미의존)
   mcp.py        FastMCP 바인딩 — Zed 에이전트 패널 연동
   viz/          관제 화면 — 3계층
     trace.py      이벤트 모델, 프롬프트↔청크↔지적 상관관계      ┐ Engine

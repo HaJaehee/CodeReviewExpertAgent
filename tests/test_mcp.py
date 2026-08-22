@@ -22,6 +22,7 @@ from crex.gitio import GitError, diff_staged, gitpython_available, merge_base  #
 from crex.llm import EndpointConfig  # noqa: E402
 from crex.paths import TooManyFiles, expand_paths, filter_file_diffs, is_excluded  # noqa: E402
 from crex.service import ReviewRequestError, ReviewService  # noqa: E402
+from crex.workspace import resolve  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 from tests.test_pipeline import AFTER, BEFORE, _git  # noqa: E402
 
@@ -298,6 +299,81 @@ diff --git a/src/ui/view.cs b/src/ui/view.cs
 
 
 # --------------------------------------------------------------------------
+# 워크스페이스 변경
+# --------------------------------------------------------------------------
+
+
+def test_set_workspace_moves_repo_config_and_reports() -> None:
+    """대상만 바뀌고 설정·리포트가 남으면 A 를 리뷰하고 B 에 리포트를 쓰게 된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        first = _make_repo(Path(tmp) / "first")
+        second = _make_repo(Path(tmp) / "second")
+        (second / "crex.toml").write_text(
+            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        )
+
+        workspace = resolve(first, start=Path(tmp), env={})
+        service = ReviewService(
+            workspace.root, workspace.config, out_dir=workspace.reports, workspace=workspace
+        )
+
+        message = service.set_workspace(str(second))
+
+        _check(service.repo_root == second.resolve(), f"대상: {service.repo_root}")
+        _check(service.out_dir == second.resolve() / "reports", f"리포트: {service.out_dir}")
+        _check(
+            service.config.generator.model == "두번째-모델",
+            f"설정이 안 따라왔다: {service.config.generator.model}",
+        )
+        _check(str(second.resolve()) in message, f"요약에 새 경로가 없다: {message}")
+        # 설정 파일을 조용히 고쳐 쓰지 않는다는 것을 사용자가 알아야 한다.
+        _check("설정 파일은 바뀌지 않았다" in message, f"요약: {message}")
+
+
+def test_set_workspace_rejects_bad_path_as_user_error() -> None:
+    """에이전트가 그대로 전달할 수 있는 오류여야 한다 (ToolError 로 올라간다)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        workspace = resolve(repo, start=Path(tmp), env={})
+        service = ReviewService(repo, workspace.config, workspace=workspace)
+
+        for bad in (str(Path(tmp) / "없는폴더"), "", "   "):
+            try:
+                service.set_workspace(bad)
+            except ReviewRequestError:
+                pass
+            else:
+                raise AssertionError(f"{bad!r} 를 받아들였다")
+        _check(service.repo_root == repo, "실패했는데 대상이 바뀌었다")
+
+
+def test_set_workspace_flags_non_git_directory() -> None:
+    """scan 은 되고 diff 리뷰는 안 된다는 것을 에이전트가 알아야 한다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        plain = Path(tmp) / "plain"
+        plain.mkdir()
+
+        workspace = resolve(repo, start=Path(tmp), env={})
+        service = ReviewService(repo, workspace.config, workspace=workspace)
+
+        message = service.set_workspace(str(plain))
+        _check(".git 이 없다" in message, f"경고가 없다: {message}")
+        _check("감사" in message, f"대안 안내가 없다: {message}")
+
+
+def test_describe_workspace_reports_origin() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        workspace = resolve(repo, start=Path(tmp), env={})
+        service = ReviewService(repo, workspace.config, workspace=workspace)
+
+        described = service.describe_workspace()
+        _check(str(repo) in described, f"경로가 없다: {described}")
+        _check("--workspace" in described, f"출처가 없다: {described}")
+
+
+# --------------------------------------------------------------------------
 # FastMCP 바인딩 (라이브러리가 있을 때만)
 # --------------------------------------------------------------------------
 
@@ -319,6 +395,7 @@ def test_fastmcp_bindings_registered() -> None:
     expected = {
         "review_diff", "review_staged", "review_working_tree",
         "review_file", "review_directory",
+        "get_workspace", "set_workspace",
     }
     _check(names == expected, f"도구 목록 불일치: {sorted(names)}")
 
@@ -344,6 +421,56 @@ def test_fastmcp_bindings_registered() -> None:
     staged_props = schema_of(by_name["review_staged"]).get("properties", {})
     _check("paths" in staged_props, f"review_staged paths 누락: {sorted(staged_props)}")
 
+    # 도구 설명은 에이전트가 읽는 유일한 근거다. AGENTS.md 와 같은 언어여야 한다.
+    for tool in tools:
+        _check(
+            not any("\uac00" <= ch <= "\ud7a3" for ch in tool.description),
+            f"{tool.name} 설명에 한글이 섞였다 — 도구 스키마는 영어다",
+        )
+
+
+def test_transport_arguments() -> None:
+    """stdio 가 기본이어야 한다. HTTP 는 명시적으로 켜는 것이다."""
+    try:
+        import fastmcp  # noqa: F401
+    except ImportError:
+        print("     (fastmcp 미설치 — 전송 인자 검사 건너뜀)")
+        return
+
+    from crex.mcp import DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, LOOPBACK, build_parser
+
+    default = build_parser().parse_args([])
+    _check(default.transport == "stdio", f"기본 전송: {default.transport}")
+
+    http = build_parser().parse_args(["--transport", "http", "--port", "9000"])
+    _check(http.transport == "http", f"전송: {http.transport}")
+    _check(http.port == 9000, f"포트: {http.port}")
+    _check(http.path == DEFAULT_HTTP_PATH, f"경로: {http.path}")
+    _check(http.host in LOOPBACK, f"기본 바인드가 루프백이 아니다: {http.host}")
+    _check(DEFAULT_HTTP_PORT != 18765, "관제 화면과 같은 포트를 기본값으로 쓰고 있다")
+
+
+def test_remote_http_bind_blocks_workspace_change() -> None:
+    """인증 없는 원격 엔드포인트에서 대상 변경은 임의 디렉터리 열기가 된다."""
+    try:
+        from fastmcp.exceptions import ToolError
+    except ImportError:
+        print("     (fastmcp 미설치 — 원격 바인드 검사 건너뜀)")
+        return
+
+    from crex import mcp as mcp_module
+
+    previous = mcp_module._workspace_switchable  # noqa: SLF001
+    mcp_module._workspace_switchable = False  # noqa: SLF001
+    try:
+        mcp_module.set_workspace("/anywhere")
+    except ToolError as exc:
+        _check("바꿀 수 없다" in str(exc), f"메시지: {exc}")
+    else:
+        raise AssertionError("원격 바인드인데 변경을 받아들였다")
+    finally:
+        mcp_module._workspace_switchable = previous  # noqa: SLF001
+
 
 TESTS = [
     test_git_diff_produces_parseable_output,
@@ -359,7 +486,13 @@ TESTS = [
     test_expand_paths_rejects_outside_repo,
     test_exclude_patterns,
     test_filter_file_diffs,
+    test_set_workspace_moves_repo_config_and_reports,
+    test_set_workspace_rejects_bad_path_as_user_error,
+    test_set_workspace_flags_non_git_directory,
+    test_describe_workspace_reports_origin,
     test_fastmcp_bindings_registered,
+    test_transport_arguments,
+    test_remote_http_bind_blocks_workspace_change,
 ]
 
 

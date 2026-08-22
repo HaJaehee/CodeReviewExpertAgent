@@ -40,8 +40,16 @@ Do not "clean these up" by translating.
 | LLM prompt templates | **Korean** |
 | Log messages, CLI output, errors | **Korean** |
 | `docs/` user manual | **Korean** |
-| `wiki/`, this file | English |
+| `crex/viz/` UI strings and the errors it raises | **Korean, 합쇼체 (~니다)** |
+| MCP tool docstrings and server instructions | English |
+| `wiki/`, `AGENTS.md`, this file | English |
 | Identifiers, type names, rule IDs | English |
+
+Two of those look like exceptions but aren't. MCP tool docstrings *are* the tool
+schema the agent reads, and `AGENTS.md` is written for the same reader — both are
+addressed to a model, not to the user. The dashboard is the one surface a user reads
+as a product rather than as a terminal, so it uses 합쇼체 while CLI and log output
+keep the terse 해라체.
 
 The user is a Korean-speaking engineer. Match the surrounding comment style:
 direct, explaining *why* rather than restating *what*, willing to state trade-offs
@@ -50,7 +58,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 79 tests, no LLM or network needed
+python tests/run_all.py                     # 113 tests, no LLM or network needed
 ```
 
 ```bash
@@ -61,15 +69,18 @@ python -m crex doctor                        # endpoints, analyzers, tree-sitter
 python -m crex review --from main --to HEAD  # diff review
 python -m crex review --staged --out reports/
 python -m crex scan src/legacy.cpp           # whole-file audit, no diff
+python -m crex review --workspace D:/work/repo --staged   # target a repo elsewhere
+python -m crex workspace D:/work/repo         # pin it in crex.toml (--clear to unpin)
 ```
 
 ```bash
-python -m crex.mcp  # MCP stdio server (Zed context_servers)
-                    # needs `pip install -r requirements.txt`
+python -m crex.mcp                    # MCP stdio server (Zed context_servers)
+python -m crex.mcp --transport http   # Streamable HTTP, 127.0.0.1:18766/mcp
+                                      # needs `pip install -r requirements.txt`
 ```
 
 ```bash
-python -m crex.viz  # pipeline dashboard, http://127.0.0.1:8765
+python -m crex.viz  # pipeline dashboard, http://127.0.0.1:18765
                     # uvicorn if installed, stdlib otherwise
 ```
 
@@ -104,9 +115,25 @@ git diff → chunk → ground → generate → filter → report
   *different* model returns yes/no in Conclusion-First order.
 - **report** (`crex/report.py`) — Markdown / SARIF 2.1.0 / JSON.
 
+`crex/workspace.py` decides *which* repository is being reviewed. CREX does not have
+to sit inside the target repo — one installed copy (one import bundle to keep intact)
+serves many repositories. CLI, MCP server, and dashboard all resolve it here so they
+cannot drift apart: `--workspace` > `CREX_WORKSPACE`/`CREX_REPO` > `crex.toml`'s
+`workspace` > git root of the current directory. When the workspace is set that way and
+no config is named, `<workspace>/crex.toml` wins over the one next to CREX — per-repo
+`compile_commands_dir` and `dotnet_project` differ.
+
+It can also be changed mid-run — `switch()` behind the dashboard's 변경 button and the
+MCP `set_workspace` tool, `persist_workspace()` behind `python -m crex workspace`. Only
+the CLI command writes to `crex.toml`; a click or an agent turn must not change what the
+next person's run targets. The dashboard refuses a switch while a review is in flight
+(one report would mix two repositories) and when bound to a non-loopback address (the
+page has no auth, and switching turns "this repo" into "any directory").
+
 `crex/service.py` + `crex/mcp.py` expose the same pipeline to Zed's agent panel over
 MCP. All logic lives in `service.py` (no FastMCP import, fully testable); `mcp.py`
-is a thin FastMCP binding. 5 tools, returning a **compact summary**, not the full report —
+is a thin FastMCP binding. 7 tools (5 reviews + `get_workspace`/`set_workspace`),
+returning a **compact summary**, not the full report —
 tool results land in the agent's context, and the whole design is about spending
 context carefully. Full reports go to disk. The agent decides *when* to review;
 the pipeline still decides *how*.
@@ -136,7 +163,8 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **Verification failure rejects** — never fail-open.
 - **`on_mismatch` default stays `"raise"`** — a line-shifted review is entirely wrong.
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
-  appears not to work.
+  appears not to work. This now covers top-level keys too: `workspase` must fail
+  loudly, because silently ignoring it points the review at a different repository.
 - **Core stays dependency-free** — only `crex/mcp.py` may require a wheel (FastMCP).
   `python -m crex review|scan|doctor`, `python -m crex.viz`, and `tests/run_all.py`
   must work with nothing installed; each wheel costs a security review on every
@@ -163,6 +191,13 @@ development. `tests/test_pipeline.py` builds a real temporary git repo and uses 
 five means you can't tell which one raised FAR. See
 [`docs/writing-rules.md`](docs/writing-rules.md).
 
+**The version lives in exactly two places.** `crex/__init__.py :: __version__` is
+the source; `README.md` is the one copy a human maintains. CLI (`--version`,
+`doctor`), SARIF output, `/api/config`, the MCP server identity, and the transfer
+bundle's manifest all derive from it, and `test_version_declared_in_one_place`
+fails if anyone writes the number down again. The taxonomy's own version in
+`rules/taxonomy.toml` is deliberately separate — rules outlive releases.
+
 **Don't add settings that do nothing.** `min_severity` and `review.mode` were
 declared but never read; both were made real (filtering, and validation that
 rejects unimplemented modes). A dead setting is worse than a missing one.
@@ -170,8 +205,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 79 tests passing.
-~5,377 lines of Python in `crex/`, plus ~1,800 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 113 tests passing.
+~6,137 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 
@@ -180,6 +215,10 @@ evaluation harness, MCP server, visualizer. 41 rules. 79 tests passing.
 - **Never run against a real LLM.** All verification is against a fake vLLM server.
   Prompt quality, actual reject rates, and latency are unmeasured. Quality numbers in
   the docs are targets drawn from literature, not observations from this system.
+- **Zed has never connected.** The MCP binding itself now runs against FastMCP 3.4.7
+  (tools list, a review over Streamable HTTP with a real client), but the editor side
+  — `context_servers` config, stdio spawn, the agent picking the right tool — is
+  unverified.
 - **`review.mode = "ocr"` raises.** OCR delegation is Phase 1 work, pending
   inspection of the real binary's output schema.
 - **Outdated Rate not implemented.** Phase 4 flywheel metric.

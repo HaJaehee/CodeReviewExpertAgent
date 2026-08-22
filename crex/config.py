@@ -86,6 +86,12 @@ class ReviewConfig:
             )
 
 
+#: 최상위에서 받는 키. 오타를 조용히 무시하면 "설정했는데 안 먹는다"가 된다.
+TOP_LEVEL_KEYS = frozenset(
+    {"llm", "review", "grounding", "chunking", "taxonomy_path", "workspace"}
+)
+
+
 @dataclass
 class Config:
     generator: EndpointConfig
@@ -94,6 +100,9 @@ class Config:
     grounding: GroundingConfig = field(default_factory=GroundingConfig)
     chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     taxonomy_path: Path | None = None
+    #: 리뷰 대상 저장소 루트. 비우면 현재 디렉터리에서 git 루트를 찾는다.
+    #: 명령줄 --workspace 와 환경변수가 이것보다 우선한다 (crex/workspace.py).
+    workspace: Path | None = None
     source: Path | None = None
 
     def describe(self) -> str:
@@ -118,13 +127,23 @@ def find_config(start: Path | None = None) -> Path | None:
     return None
 
 
-def load_config(path: Path | str | None = None) -> Config:
-    """설정 파일을 읽는다. 경로가 없으면 탐색하고, 그래도 없으면 기본값을 쓴다."""
-    resolved = Path(path) if path else find_config()
+def load_config(path: Path | str | None = None, *, search_from: Path | None = None) -> Config:
+    """설정 파일을 읽는다. 경로가 없으면 탐색하고, 그래도 없으면 기본값을 쓴다.
+
+    `search_from` 은 탐색 시작 위치다. 비우면 현재 디렉터리에서 시작한다.
+    """
+    resolved = Path(path) if path else find_config(search_from)
     data: dict = {}
     if resolved and resolved.is_file():
         with resolved.open("rb") as handle:
             data = tomllib.load(handle)
+
+    unknown = set(data) - TOP_LEVEL_KEYS
+    if unknown:
+        raise ValueError(
+            f"설정 파일 최상위에 알 수 없는 키: {sorted(unknown)}. "
+            f"사용 가능: {sorted(TOP_LEVEL_KEYS)}"
+        )
 
     llm = data.get("llm", {})
     generator = _endpoint(llm.get("generator", {}), default_model="Qwen3.6-27B")
@@ -150,8 +169,23 @@ def load_config(path: Path | str | None = None) -> Config:
         grounding=grounding,
         chunking=chunking,
         taxonomy_path=Path(taxonomy_path) if taxonomy_path else None,
+        workspace=_anchor(data.get("workspace"), resolved),
         source=resolved,
     )
+
+
+def _anchor(value: str | None, config_path: Path | None) -> Path | None:
+    """설정 파일 안의 상대경로는 **설정 파일이 있는 디렉터리** 기준이다.
+
+    현재 디렉터리 기준으로 두면 어디서 실행했느냐에 따라 대상 저장소가 바뀐다.
+    반입 번들을 통째로 옮겨도 설정이 그대로 살아 있어야 한다.
+    """
+    if not value:
+        return None
+    path = Path(str(value)).expanduser()
+    if path.is_absolute() or config_path is None:
+        return path
+    return (config_path.resolve().parent / path).resolve()
 
 
 def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:

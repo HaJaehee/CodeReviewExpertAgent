@@ -33,6 +33,12 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  // 경로의 마지막 조각. 윈도우와 POSIX 구분자를 함께 받는다.
+  function baseName(path) {
+    const parts = String(path || '').replace(/[\\/]+$/, '').split(/[\\/]/);
+    return parts[parts.length - 1] || String(path || '—');
+  }
+
   function clip(text, limit) {
     const value = String(text || '');
     return value.length > limit ? value.slice(0, limit - 1) + '…' : value;
@@ -279,7 +285,7 @@
       node.dataset.state = 'ok';
       node.querySelector('.call-body').textContent = findings.length
         ? findings.map((f) => '[' + f.rule_id + '] ' + clip(f.message, 60)).join(' · ')
-        : '지적 없음 — 빈 목록이 정상이며 바람직하다';
+        : '지적 없음 — 빈 목록이 정상이며 바람직합니다';
       tags.innerHTML = '<span class="tag ' + (findings.length ? 'tag-count' : 'tag-zero') + '">지적 '
         + findings.length + '건</span>';
       return;
@@ -360,7 +366,7 @@
 
     if (!rows.length) {
       body.innerHTML = '<tr class="empty"><td colspan="6">' +
-        (state.verdicts.length ? '이 조건에 맞는 항목이 없다.' : '아직 없다.') + '</td></tr>';
+        (state.verdicts.length ? '이 조건에 맞는 항목이 없습니다.' : '아직 없습니다.') + '</td></tr>';
       return;
     }
 
@@ -412,10 +418,10 @@
     else if (drawerPane === 'schema') text = pretty(request.schema);
     else if (drawerPane === 'parsed') {
       text = response ? pretty(response.parsed)
-        : (drawerCall.error ? drawerCall.error.error : '아직 응답이 없다.');
+        : (drawerCall.error ? drawerCall.error.error : '아직 응답이 없습니다.');
     } else if (drawerPane === 'raw') {
-      text = response ? (response.raw || '(원문이 기록되지 않았다)')
-        : (drawerCall.error ? drawerCall.error.error : '아직 응답이 없다.');
+      text = response ? (response.raw || '(원문이 기록되지 않았습니다)')
+        : (drawerCall.error ? drawerCall.error.error : '아직 응답이 없습니다.');
     }
     $('drawer-pre').textContent = text || '';
   }
@@ -437,10 +443,10 @@
       params.from_ref = $('from-ref').value.trim();
       params.to_ref = $('to-ref').value.trim() || 'HEAD';
       params.use_merge_base = $('merge-base').checked;
-      if (!params.from_ref) throw new Error('from 참조를 입력하라 (예: main)');
+      if (!params.from_ref) throw new Error('from 참조를 입력하세요 (예: main)');
     } else if (kind === 'file' || kind === 'directory') {
       params.path = $('path').value.trim();
-      if (!params.path) throw new Error('경로를 입력하라');
+      if (!params.path) throw new Error('경로를 입력하세요');
       if (kind === 'directory') params.recursive = $('recursive').checked;
       delete params.paths;
     }
@@ -493,7 +499,7 @@
         if (payload.run.dropped_events && !warnedDropped) {
           warnedDropped = true;
           toast('이벤트가 너무 많아 ' + payload.run.dropped_events +
-            '건이 화면에서 생략됐다. 전체 리포트는 파일로 나온다.', 'warn');
+            '건이 화면에서 생략됐습니다. 전체 리포트는 파일로 나옵니다.', 'warn');
         }
       },
       (payload) => {
@@ -527,7 +533,7 @@
     if (!state.runId) return;
     try {
       await client.cancel(state.runId);
-      toast('중단을 요청했다. 진행 중인 호출이 끝나면 멈춘다.', 'ok');
+      toast('중단을 요청했습니다. 진행 중인 호출이 끝나면 멈춥니다.', 'ok');
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -542,7 +548,7 @@
 
     if (!runs.length) {
       list.innerHTML = '<li class="empty-lane" style="cursor:default;border:none;background:none">' +
-        (store.available() ? '아직 없다.' : 'localStorage 를 쓸 수 없어 기록이 남지 않는다.') + '</li>';
+        (store.available() ? '아직 없습니다.' : 'localStorage 를 쓸 수 없어 기록이 남지 않습니다.') + '</li>';
       return;
     }
 
@@ -588,7 +594,7 @@
       return;
     }
     if (!events.length) {
-      toast('저장된 이벤트가 없다. 서버 기록도 이미 사라졌을 수 있다.', 'error');
+      toast('저장된 이벤트가 없습니다. 서버 기록도 이미 사라졌을 수 있습니다.', 'error');
       setStatus(head ? head.status : 'failed');
       return;
     }
@@ -603,15 +609,15 @@
     ['m-chunks', 'm-static', 'm-generated', 'm-deterministic', 'm-llm-reject', 'm-kept']
       .forEach((id) => { $(id).textContent = '0'; });
     $('m-reject-rate').textContent = '—';
-    $('calls-generator').innerHTML = '<li class="empty-lane">아직 호출이 없다.</li>';
-    $('calls-verifier').innerHTML = '<li class="empty-lane">아직 호출이 없다.</li>';
+    $('calls-generator').innerHTML = '<li class="empty-lane">아직 호출이 없습니다.</li>';
+    $('calls-verifier').innerHTML = '<li class="empty-lane">아직 호출이 없습니다.</li>';
     $('chunks').innerHTML = '';
     $('chunk-meta').textContent = '0개';
     $('gen-meta').textContent = '호출 0';
     $('ver-meta').textContent = '호출 0';
     $('agent-summary').textContent = '—';
     $('run-label').textContent = '';
-    $('verdicts').innerHTML = '<tr class="empty"><td colspan="6">아직 없다.</td></tr>';
+    $('verdicts').innerHTML = '<tr class="empty"><td colspan="6">아직 없습니다.</td></tr>';
     closeDrawer();
     setStatus('idle');
   }
@@ -662,6 +668,82 @@
     toastTimer = window.setTimeout(() => { node.hidden = true; }, 6000);
   }
 
+  // ── 워크스페이스 ──────────────────────────────────────────────────
+
+  /*
+   * /api/config 응답 하나로 화면 위쪽과 왼쪽 패널을 전부 다시 그린다.
+   * 워크스페이스를 바꾸면 서버가 같은 모양의 응답을 돌려주므로, 기동과 변경이
+   * 같은 코드를 탄다 — 한쪽만 갱신되어 화면이 거짓말하는 일이 없다.
+   */
+  function renderConfig(payload) {
+    config = payload;
+    const ws = payload.workspace ||
+      { root: payload.repo_root, origin: '', is_git: true, switchable: true };
+
+    // 헤더 칩은 한 줄짜리라 폴더 이름만 쓴다. 전체 경로는 왼쪽 패널에 접혀서 나온다.
+    $('chip-repo').textContent = '저장소 ' + baseName(ws.root);
+    $('chip-repo').title = ws.root + (ws.origin ? '\n출처: ' + ws.origin : '');
+    $('chip-repo').dataset.ok = ws.is_git ? 'true' : 'false';
+    $('chip-generator').textContent = '생성 ' + payload.config.generator.model;
+    $('chip-generator').title = payload.config.generator.base_url;
+    $('chip-verifier').textContent = '검증 ' + payload.config.verifier.model;
+    $('chip-verifier').title = payload.config.verifier.base_url;
+    $('run-hint').innerHTML =
+      '룰 ' + payload.taxonomy.rules + '개 · 최소 심각도 <code>' +
+      escapeHtml(payload.config.min_severity) + '</code> · 동시 실행 ' +
+      payload.config.max_workers;
+
+    $('where-workspace').textContent =
+      ws.root + (ws.origin ? '  (' + ws.origin + ')' : '');
+    $('where-workspace').dataset.warn = ws.is_git ? 'false' : 'true';
+    $('where-workspace').title = ws.is_git
+      ? ws.root
+      : ws.root + ' — .git 이 없습니다. diff 리뷰는 못 하고 파일·폴더 감사만 됩니다.';
+    $('where-config').textContent = payload.config.source || '(없음 — 기본값)';
+    $('where-reports').textContent = payload.out_dir || '—';
+
+    $('workspace-input').value = ws.root;
+    $('btn-workspace').disabled = ws.switchable === false;
+    $('btn-workspace').title = ws.switchable === false
+      ? '원격 주소에 바인드된 서버에서는 대상을 바꿀 수 없습니다'
+      : '리뷰 대상 저장소를 바꿉니다 (이 서버가 사는 동안만)';
+  }
+
+  function toggleWorkspaceEdit(open) {
+    $('workspace-edit').hidden = !open;
+    if (open) {
+      $('workspace-input').focus();
+      $('workspace-input').select();
+    }
+  }
+
+  async function applyWorkspace() {
+    const path = $('workspace-input').value.trim();
+    if (!path) {
+      toast('경로를 입력하세요.', 'warn');
+      return;
+    }
+    const button = $('btn-workspace-apply');
+    button.disabled = true;
+    button.textContent = '바꾸는 중…';
+    try {
+      const payload = await client.setWorkspace(path);
+      renderConfig(payload);
+      toggleWorkspaceEdit(false);
+      // 이전 저장소의 결과가 화면에 남아 있으면 다음 실행과 섞여 보인다.
+      resetView();
+      const ws = payload.workspace || {};
+      toast('워크스페이스를 바꿨습니다: ' + (ws.root || path) +
+        (ws.is_git === false ? ' — .git 이 없어 diff 리뷰는 안 됩니다.' : ''),
+        ws.is_git === false ? 'warn' : 'ok');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = '적용';
+    }
+  }
+
   // ── 기동 ──────────────────────────────────────────────────────────
 
   async function boot() {
@@ -670,23 +752,11 @@
     renderHistory();
 
     try {
-      config = await client.config();
+      renderConfig(await client.config());
     } catch (err) {
-      toast('설정을 읽지 못했다: ' + err.message, 'error');
+      toast('설정을 읽지 못했습니다: ' + err.message, 'error');
       return;
     }
-
-    $('chip-repo').textContent = config.repo_root;
-    $('chip-repo').title = config.repo_root;
-    $('chip-generator').textContent = '생성 ' + config.config.generator.model;
-    $('chip-generator').title = config.config.generator.base_url;
-    $('chip-verifier').textContent = '검증 ' + config.config.verifier.model;
-    $('chip-verifier').title = config.config.verifier.base_url;
-    $('run-hint').innerHTML =
-      '룰 ' + config.taxonomy.rules + '개 · 최소 심각도 <code>' +
-      escapeHtml(config.config.min_severity) + '</code> · 동시 실행 ' +
-      config.config.max_workers + ' · 설정 <code>' +
-      escapeHtml(config.config.source || '기본값') + '</code>';
 
     // 서버가 아직 들고 있는 실행이 있으면 이어서 본다. 새로고침으로 화면이
     // 죽어도 진행 중인 리뷰는 서버에서 계속 돌고 있다.
@@ -697,7 +767,7 @@
         $('run-label').textContent = running[0].label;
         setStatus('running');
         followRun(running[0].id, true);
-        toast('진행 중인 실행에 다시 붙었다.', 'ok');
+        toast('진행 중인 실행에 다시 붙었습니다.', 'ok');
       }
     } catch (err) {
       /* 목록을 못 읽어도 화면은 쓸 수 있다 */
@@ -712,7 +782,19 @@
   $('btn-clear').addEventListener('click', () => {
     store.clearAll();
     renderHistory();
-    toast('기록을 비웠다.', 'ok');
+    toast('기록을 비웠습니다.', 'ok');
+  });
+
+  $('btn-workspace').addEventListener('click', () => {
+    toggleWorkspaceEdit($('workspace-edit').hidden);
+  });
+  $('btn-workspace-cancel').addEventListener('click', () => {
+    toggleWorkspaceEdit(false);
+    if (config && config.workspace) $('workspace-input').value = config.workspace.root;
+  });
+  $('btn-workspace-apply').addEventListener('click', applyWorkspace);
+  $('workspace-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') applyWorkspace();
   });
 
   $('btn-health').addEventListener('click', async () => {
@@ -726,8 +808,8 @@
         chip.dataset.ok = result.checks[role].ok;
         chip.title = result.checks[role].base_url + ' — ' + result.checks[role].detail;
       });
-      toast(result.ok ? '두 엔드포인트 모두 응답했다.'
-        : '응답하지 않는 엔드포인트가 있다. 칩에 마우스를 올려 사유를 보라.',
+      toast(result.ok ? '두 엔드포인트 모두 응답했습니다.'
+        : '응답하지 않는 엔드포인트가 있습니다. 칩에 마우스를 올리면 사유가 보입니다.',
         result.ok ? 'ok' : 'error');
     } catch (err) {
       toast(err.message, 'error');

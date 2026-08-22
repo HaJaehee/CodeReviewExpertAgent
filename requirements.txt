@@ -28,7 +28,11 @@
 #  MCP 연동이 실제로 필요한 장비에만 설치하는 것을 권한다.
 
 # MCP 서버 — 프로토콜 처리, 타입 힌트/docstring 에서 도구 스키마 자동 생성
-fastmcp>=2.0
+#
+#   stdio 전송만 쓸 것이면 2.0 으로도 충분하다. Streamable HTTP
+#   (`python -m crex.mcp --transport http`) 는 2.3 부터 있고, 전송 이름이
+#   2.9 에서 "streamable-http" → "http" 로 바뀌었다. crex/mcp.py 가 둘 다 받는다.
+fastmcp>=2.3
 
 # git 접근 — 없으면 subprocess 폴백으로 동작한다 (crex/gitio.py)
 GitPython>=3.1.40

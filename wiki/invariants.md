@@ -135,10 +135,50 @@ correct; proceeding produces confidently false output.
 means someone changes a setting, sees no effect, and concludes the setting doesn't
 work.
 
+`load_config()` applies the same rule to top-level keys against `TOP_LEVEL_KEYS`.
+That one matters more than it looks: a `workspase` typo silently ignored means the
+review runs against a different repository than the one the user named.
+
 Similarly, `ReviewConfig.__post_init__` rejects unimplemented `mode` values rather
 than falling back to `native`. Both `min_severity` and `mode` were previously dead
 settings — declared but never read — and were fixed for exactly this reason. Don't
 reintroduce a declared-but-unused setting.
+
+Pinned by `test_unknown_top_level_config_key_is_rejected`.
+
+---
+
+## One workspace resolution rule, shared by every entry point
+
+CLI, MCP server, and dashboard all call `crex/workspace.py :: resolve()`. They each
+used to read `CREX_REPO` and friends themselves, which is how three entry points end
+up pointed at three different repositories while every one of them looks correct in
+isolation. Don't re-read those environment variables anywhere else; add to `resolve()`
+instead.
+
+Two properties within it are load-bearing:
+
+- **A subdirectory argument is promoted to the git root.** Every chunk path and every
+  static-analyzer path is relative to that root. A shifted base makes grounding match
+  nothing, silently.
+- **Config discovery for a given workspace never walks above it.** Picking up a
+  `crex.toml` from some ancestor directory means nobody can tell which file applied.
+
+Changing the target later goes through the same door: `switch()` calls `resolve()`
+instead of re-checking anything itself. A second validation path is a second set of
+rules, and the looser one wins the moment they disagree.
+
+Two more, on who may change it:
+
+- **Only the CLI writes to `crex.toml`.** The dashboard button and the MCP
+  `set_workspace` tool change the running process and say so. A click or an agent
+  turn must not decide what the next person's run targets.
+- **No switching mid-run.** `RunRegistry.retarget()` refuses while a run is in
+  flight, holding the same lock `start()` uses. `_execute` reads `repo_root` and
+  `config` as it goes; swapping them halfway produces one report whose chunks came
+  from one repository and whose analyzer findings came from another.
+
+Pinned by `tests/test_workspace.py` and the workspace tests in `tests/test_viz.py`.
 
 ---
 

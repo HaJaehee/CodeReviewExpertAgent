@@ -94,12 +94,12 @@ cd crex-20260817
 ==> Python 확인
     번들 런타임 사용
     OK   Python 3.12.10
-    OK   crex 0.1.0 import 성공
+    OK   crex 0.1 import 성공
     OK   fastmcp
     OK   git
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
-    64/64 통과
+    113/113 통과
     OK   전체 통과
 ```
 
@@ -124,6 +124,20 @@ notepad crex.toml       # vLLM 주소와 모델명을 넣는다
 .\crex.cmd review --from main --out reports\
 ```
 
+번들에는 CREX 소스와 Python 런타임만 들어갑니다. clang-tidy·cppcheck·ruff 같은
+정적분석 도구는 **별도로 반입 신청**해야 합니다 — 내려받는 곳과 라이선스는
+[정적분석 도구](analyzers.md)에 정리해 두었습니다. 없어도 리뷰는 되므로 나중에
+채워도 됩니다.
+
+번들은 리뷰 대상 저장소 밖에 두고 씁니다. 저장소마다 번들을 복사하면 어느 것이
+반입 심사를 통과한 사본인지 알 수 없게 되므로, 반입본은 한 벌만 두고 대상만
+가리키세요. 번들 Python 은 자기 위치를 기준으로 `crex` 를 찾으므로 현재 디렉터리가
+어디든 상관없습니다.
+
+```powershell
+D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
+```
+
 ### Zed 연동
 
 `settings.json` 의 `command` 에 번들의 `crex-mcp.cmd` 를 지정합니다.
@@ -134,7 +148,7 @@ notepad crex.toml       # vLLM 주소와 모델명을 넣는다
     "crex": {
       "command": "D:\\tools\\crex-20260817\\crex-mcp.cmd",
       "env": {
-        "CREX_REPO": "D:\\work\\myrepo",
+        "CREX_WORKSPACE": "D:\\work\\myrepo",
         "CREX_CONFIG": "D:\\work\\myrepo\\crex.toml",
         "CREX_REPORTS": "D:\\work\\myrepo\\reports"
       }
@@ -144,6 +158,15 @@ notepad crex.toml       # vLLM 주소와 모델명을 넣는다
 ```
 
 `crex-mcp.cmd` 가 번들 Python 을 부르므로 가상환경 경로 문제가 생기지 않습니다.
+인자를 그대로 넘기므로 HTTP 엔드포인트도 이 런처로 엽니다.
+
+```powershell
+.\crex-mcp.cmd --transport http --port 18766
+```
+
+인증이 없는 엔드포인트입니다. 반입 신청서에 포트를 적어야 하고, 루프백 밖으로
+열려면 그만한 이유가 있어야 합니다 —
+[운영](operations.md#streamable-http-엔드포인트) 참고.
 `AGENTS.md` 를 리뷰 대상 저장소로 복사하는 것도 잊지 마세요 —
 [Zed 연동](operations.md#zed-연동-mcp) 참고.
 

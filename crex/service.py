@@ -24,6 +24,7 @@ from .paths import MAX_SCAN_FILES, TooManyFiles, expand_paths
 from .pipeline import Pipeline
 from .report import write_all
 from .schema import ReviewResult
+from .workspace import Workspace, WorkspaceError, switch
 
 log = logging.getLogger(__name__)
 
@@ -45,11 +46,15 @@ class ReviewService:
         *,
         out_dir: Path | None = None,
         pipeline_factory: Callable[[Config], Pipeline] = Pipeline,
+        workspace: Workspace | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.config = config
         self.out_dir = out_dir or (repo_root / "reports")
         self.pipeline_factory = pipeline_factory
+        #: 대상을 바꾸려면 어디서 왔는지 알아야 한다 (`set_workspace`).
+        #: 없어도 동작한다 — 그때는 전환이 처음 정하는 것과 같아진다.
+        self.workspace = workspace
         self._seq = 0
 
     # -- 도구 -------------------------------------------------------------
@@ -122,6 +127,53 @@ class ReviewService:
         log.info("%s 감사: %s", path, expansion.summary())
         result = self.pipeline_factory(self.config).run_scan(expansion.files, self.repo_root)
         return self.summarize(result, "review_directory")
+
+    def set_workspace(self, path: str) -> str:
+        """리뷰 대상 저장소를 바꾼다.
+
+        이 프로세스에서만 바뀐다 — 설정 파일은 건드리지 않는다. 서버를 다시
+        띄우면 원래 대상으로 돌아온다. 영구히 바꾸려면 `python -m crex workspace
+        <경로>` 를 쓰거나 `crex.toml` 의 `workspace` 를 고친다.
+
+        에이전트가 부르는 도구다. 설정 파일을 조용히 고쳐 쓰는 쪽으로 만들면
+        대화 한 번이 다음 사람의 실행 대상까지 바꿔 놓는다.
+        """
+        if not path or not path.strip():
+            raise ReviewRequestError("path 가 필요하다")
+
+        previous = self.repo_root
+        try:
+            changed = switch(self.workspace, path.strip())
+        except WorkspaceError as exc:
+            raise ReviewRequestError(str(exc)) from exc
+
+        self.workspace = changed
+        self.repo_root = changed.root
+        self.config = changed.config
+        self.out_dir = changed.reports
+        log.info("워크스페이스 변경: %s → %s", previous, changed.root)
+
+        lines = [f"워크스페이스를 {changed.root} 로 바꿨다 (이전: {previous})."]
+        if not changed.is_git:
+            lines.append(
+                "다만 .git 이 없다. diff 리뷰(review_diff/review_staged/"
+                "review_working_tree)는 할 수 없고 파일·폴더 감사만 된다."
+            )
+        lines.append(f"설정: {changed.config.source or '기본값'}")
+        lines.append(f"리포트: {changed.reports}")
+        lines.append("이 서버가 살아 있는 동안만 유지된다. 설정 파일은 바뀌지 않았다.")
+        return "\n".join(lines)
+
+    def describe_workspace(self) -> str:
+        """지금 무엇을 보고 있는지. 바꾸기 전에 확인용으로 부른다."""
+        lines = [f"워크스페이스: {self.repo_root}"]
+        if self.workspace is not None:
+            lines[0] += f" (출처: {self.workspace.origin})"
+            if not self.workspace.is_git:
+                lines.append("경고: .git 이 없다 — diff 리뷰 불가, 파일·폴더 감사만 가능")
+        lines.append(f"설정: {self.config.source or '기본값'}")
+        lines.append(f"리포트: {self.out_dir}")
+        return "\n".join(lines)
 
     # -- 내부 -------------------------------------------------------------
 

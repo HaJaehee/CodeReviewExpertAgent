@@ -27,8 +27,9 @@ from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  #
 from crex.llm import EndpointConfig  # noqa: E402
 from crex.pipeline import Pipeline  # noqa: E402
 from crex.rules import load_taxonomy  # noqa: E402
+from crex.workspace import resolve  # noqa: E402
 from crex.viz.api import Context, Request, handle  # noqa: E402
-from crex.viz.engine import RunRegistry, TracedPipeline  # noqa: E402
+from crex.viz.engine import Run, RunRegistry, TracedPipeline  # noqa: E402
 from crex.viz.trace import MAX_TEXT, Tracer, clip  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 from tests.test_mcp import _make_repo  # noqa: E402
@@ -348,6 +349,102 @@ def test_routes_and_static_files() -> None:
         _check(bad_kind.status == 400, f"알 수 없는 종류 상태: {bad_kind.status}")
 
 
+# --------------------------------------------------------------------------
+# 워크스페이스 변경
+# --------------------------------------------------------------------------
+
+
+def _post_workspace(ctx: Context, path: str):
+    return handle(
+        Request("POST", "/api/workspace", body=json.dumps({"path": path}).encode()), ctx
+    )
+
+
+def test_workspace_switch_updates_everything_at_once() -> None:
+    """대상·설정·리포트 위치가 함께 움직여야 한다.
+
+    하나라도 안 따라오면 A 저장소를 리뷰하고 B 저장소에 리포트를 쓰는 상태가 된다.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        first = _make_repo(Path(tmp) / "first")
+        second = _make_repo(Path(tmp) / "second")
+        (second / "crex.toml").write_text(
+            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        )
+
+        ctx = _context(first, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.registry.workspace = resolve(first, start=Path(tmp), env={})
+
+        before = json.loads(handle(Request("GET", "/api/workspace"), ctx).body)
+        _check(before["root"] == str(first.resolve()), f"처음 대상: {before['root']}")
+
+        response = _post_workspace(ctx, str(second))
+        _check(response.status == 200, f"상태: {response.status}")
+
+        payload = json.loads(response.body)
+        _check(payload["workspace"]["root"] == str(second.resolve()), "대상이 안 바뀌었다")
+        _check(ctx.registry.repo_root == second.resolve(), "레지스트리 대상이 안 바뀌었다")
+        _check(ctx.registry.out_dir == second.resolve() / "reports", f"리포트: {ctx.registry.out_dir}")
+        # 새 저장소 안의 crex.toml 을 따라가야 한다.
+        _check(
+            ctx.registry.config.generator.model == "두번째-모델",
+            f"설정이 안 따라왔다: {ctx.registry.config.generator.model}",
+        )
+
+
+def test_workspace_switch_is_refused_while_running() -> None:
+    """실행 중 갈아 끼우면 한 리포트에 두 저장소의 결과가 섞인다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        other = _make_repo(Path(tmp) / "other")
+        _git(repo, "add", "-A")
+
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        run = Run(id="x", kind="staged", params={}, label="테스트", created_at=0.0)
+        ctx.registry._runs[run.id] = run  # noqa: SLF001 - 진행 중 상태를 만드는 가장 단순한 방법
+        ctx.registry._order.append(run.id)  # noqa: SLF001
+
+        refused = _post_workspace(ctx, str(other))
+        _check(refused.status == 400, f"상태: {refused.status}")
+        _check("실행 중" in json.loads(refused.body)["error"], json.loads(refused.body)["error"])
+        _check(ctx.registry.repo_root == repo, "거부했는데 대상이 바뀌었다")
+
+        run.status = "done"
+        _check(_post_workspace(ctx, str(other)).status == 200, "끝난 뒤에도 거부했다")
+
+
+def test_workspace_switch_validates_like_startup() -> None:
+    """없는 경로는 처음 정할 때와 똑같이 거부한다 — 여기만 느슨하면 우회로가 된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+
+        bad = _post_workspace(ctx, str(Path(tmp) / "없는폴더"))
+        _check(bad.status == 400, f"상태: {bad.status}")
+        _check("없다" in json.loads(bad.body)["error"], json.loads(bad.body)["error"])
+        _check(ctx.registry.repo_root == repo, "실패했는데 대상이 바뀌었다")
+
+        empty = _post_workspace(ctx, "   ")
+        _check(empty.status == 400, f"빈 경로 상태: {empty.status}")
+
+
+def test_workspace_switch_blocked_on_remote_bind() -> None:
+    """인증이 없는 화면이다. 원격 바인드에서 대상 변경은 임의 디렉터리 열기가 된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        other = _make_repo(Path(tmp) / "other")
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.workspace_switchable = False
+
+        blocked = _post_workspace(ctx, str(other))
+        _check(blocked.status == 403, f"상태: {blocked.status}")
+        _check(ctx.registry.repo_root == repo, "막았는데 대상이 바뀌었다")
+
+        # 화면이 버튼을 끌 수 있도록 상태에 실려 나가야 한다.
+        state = json.loads(handle(Request("GET", "/api/workspace"), ctx).body)
+        _check(state["switchable"] is False, "switchable 이 안 실렸다")
+
+
 def test_event_cursor_never_replays() -> None:
     """폴링이 같은 이벤트를 두 번 주면 화면의 지표가 부풀어 오른다."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -455,6 +552,10 @@ TESTS = [
     test_agent_summary_is_the_real_mcp_return_value,
     test_request_error_becomes_a_failed_run_not_a_crash,
     test_routes_and_static_files,
+    test_workspace_switch_updates_everything_at_once,
+    test_workspace_switch_is_refused_while_running,
+    test_workspace_switch_validates_like_startup,
+    test_workspace_switch_blocked_on_remote_bind,
     test_event_cursor_never_replays,
     test_stdlib_server_serves_over_real_http,
     test_asgi_app_answers_without_uvicorn,

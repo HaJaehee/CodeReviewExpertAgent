@@ -29,7 +29,7 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 79개 전부 통과해야 합니다
+python tests/run_all.py         # 반입 무결성 — 113개 전부 통과해야 합니다
 cp crex.example.toml crex.toml  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```
@@ -218,7 +218,7 @@ Zed 에이전트 패널에서 "내 변경사항 리뷰해줘"로 부를 수 있�
       "command": "python",
       "args": ["-m", "crex.mcp"],
       "env": {
-        "CREX_REPO": "/work/myrepo",
+        "CREX_WORKSPACE": "/work/myrepo",
         "CREX_CONFIG": "/work/myrepo/crex.toml",
         "CREX_REPORTS": "/work/myrepo/reports"
       }
@@ -235,16 +235,84 @@ FastMCP 를 씁니다. CLI 와 테스트는 그대로 의존성 없이 돕니다
 넣으세요. 가상환경에 설치했다면 그 환경의 `python` 절대 경로를 줘야 합니다 —
 이게 제일 흔한 실패 원인입니다.
 
-환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 `crex.toml` 을 찾고
-`reports/` 에 리포트를 씁니다.
+환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 git 루트와 `crex.toml` 을
+찾고 `reports/` 에 리포트를 씁니다.
+
+| 변수 | 뜻 |
+|---|---|
+| `CREX_WORKSPACE` | 리뷰 대상 저장소 루트. 이전 이름 `CREX_REPO` 도 그대로 받습니다 |
+| `CREX_CONFIG` | 설정 파일. 생략하면 `<워크스페이스>/crex.toml` 을 먼저 봅니다 |
+| `CREX_REPORTS` | 리포트 저장 위치. 기본은 `<워크스페이스>/reports` |
+
+**CREX 설치본은 한 벌이면 됩니다.** 저장소마다 복사하지 말고 프로젝트별
+`.zed/settings.json` 에서 `CREX_WORKSPACE` 만 다르게 주세요. `args` 의 `-m crex.mcp`
+를 찾으려면 CREX 가 `PYTHONPATH` 에 있거나 `command` 를 CREX 루트의 파이썬으로
+지정하면 됩니다. 자세한 우선순위는
+[설정](configuration.md#workspace--리뷰-대상-저장소)에 있습니다.
 
 설정을 바꾸면 Zed 을 재시작하거나 창을 새로 고쳐야 반영됩니다.
 
-### 왜 포트를 안 여나
+### 기본은 stdio 입니다
 
-Zed 은 로컬 MCP 서버를 stdio 로만 붙입니다. 에디터가 프로세스를 자식으로 띄우고
-stdin/stdout 으로 대화하며, 수명이 에디터 세션에 묶입니다. 데몬도 포트도 없고
-네트워크 리스너가 아예 안 생깁니다 — 폐쇄망 보안 검토에서 설명하기 쉬운 형태입니다.
+Zed 을 비롯한 대부분의 에디터는 로컬 MCP 서버를 stdio 로 붙입니다. 에디터가
+프로세스를 자식으로 띄우고 stdin/stdout 으로 대화하며, 수명이 에디터 세션에
+묶입니다. 데몬도 포트도 없고 네트워크 리스너가 아예 안 생깁니다 — 폐쇄망 보안
+검토에서 설명하기 가장 쉬운 형태이므로, 가능하면 이쪽을 쓰세요.
+
+### Streamable HTTP 엔드포인트
+
+stdio 로 안 되는 경우가 있습니다. 서버 한 대를 여러 사람이 같이 쓰거나, 클라이언트가
+다른 장비에 있거나, MCP 클라이언트가 stdio 를 지원하지 않는 경우입니다. 그때만
+엽니다.
+
+```bash
+python -m crex.mcp --transport http
+```
+
+```
+INFO    crex.mcp: Streamable HTTP — http://127.0.0.1:18766/mcp
+```
+
+| 옵션 | 뜻 | 기본값 |
+|---|---|---|
+| `--transport` | `stdio` 또는 `http` | `stdio` |
+| `--host` | 바인드 주소 | `127.0.0.1` |
+| `--port` | 포트 | `18766` |
+| `--path` | 엔드포인트 경로 | `/mcp` |
+
+워크스페이스·설정·리포트 위치는 stdio 와 똑같이 `CREX_WORKSPACE` 등 환경변수로
+정합니다. 전송 방식만 다르고 나머지는 전부 같습니다.
+
+클라이언트 쪽 설정은 URL 하나입니다.
+
+```json
+{
+  "context_servers": {
+    "crex": {
+      "source": "custom",
+      "url": "http://127.0.0.1:18766/mcp"
+    }
+  }
+}
+```
+
+키 이름은 클라이언트마다 다릅니다(`url` / `endpoint` / `serverUrl`). 쓰는 도구의
+"remote MCP server" 또는 "streamable HTTP" 항목을 보세요.
+
+**알아둘 것 세 가지.**
+
+- **인증이 없습니다.** 붙을 수 있는 사람은 누구나 이 저장소의 소스를 리뷰에 태울
+  수 있고, 리포트가 어디 있는지 알게 됩니다. 루프백에 묶어 두거나, 앞단에서 접근
+  제어를 하는 망 안에서만 여세요.
+- **루프백이 아닌 주소로 열면 `set_workspace` 가 막힙니다.** 대상 변경은 이 장비의
+  임의 디렉터리를 열 수 있게 하는 일이라, 인증 없는 원격 연결에서는 받지 않습니다.
+  다른 저장소를 보려면 `CREX_WORKSPACE` 를 주고 다시 띄우세요.
+- **서버 한 대는 저장소 하나를 봅니다.** 워크스페이스는 프로세스 전역 상태라
+  사용자별로 갈리지 않습니다. 여러 저장소를 동시에 서비스하려면 포트를 나눠
+  여러 개 띄우세요.
+
+포트를 여는 순간 반입 심사에서 설명할 것이 하나 늘어납니다. 그만한 이유가 있을
+때만 쓰고, 아니면 stdio 로 두세요.
 
 ### 에이전트 모델도 사내 vLLM 으로
 
@@ -262,9 +330,16 @@ LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩�
 | `review_diff` | 두 ref 사이 (MR 리뷰) |
 | `review_file` | 파일 하나 전체 감사 |
 | `review_directory` | 폴더 전체 감사 |
+| `get_workspace` | 지금 어느 저장소를 보고 있는지 |
+| `set_workspace` | 리뷰 대상 저장소를 바꾼다 (이 서버가 사는 동안만) |
 
 앞의 셋은 `paths` 로 범위를 좁힐 수 있습니다. 큰 MR 에서 "파서 쪽만 보자" 같은
 경우입니다.
+
+`set_workspace` 는 설정 파일을 고치지 않습니다 — 서버를 다시 띄우면 원래 대상으로
+돌아옵니다. 영구히 바꾸려면 `python -m crex workspace <경로>` 를 쓰거나
+`CREX_WORKSPACE` 를 고치세요. 에이전트와의 대화 한 번이 다음 사람의 실행 대상까지
+바꿔 놓으면 안 되기 때문입니다.
 
 ```
 파서 폴더 변경분만 리뷰해줘
@@ -300,8 +375,9 @@ cp <crex-설치경로>/AGENTS.md /work/myrepo/AGENTS.md
 cp <crex-설치경로>/AGENTS.md ~/.config/zed/AGENTS.md
 ```
 
-내용은 다섯 가지입니다 — 직접 리뷰하지 말고 도구를 부를 것, 어떤 말에 어떤
-도구인지, 요약을 각색하지 말 것, 룰 ID 를 지우지 말 것, 오류는 그대로 전달할 것.
+내용은 여섯 가지입니다 — 직접 리뷰하지 말고 도구를 부를 것, 어떤 말에 어떤
+도구인지, 대상 저장소는 사용자가 지목했을 때만 바꿀 것, 요약을 각색하지 말 것,
+룰 ID 를 지우지 말 것, 오류는 그대로 전달할 것.
 
 > **주의:** Zed 은 `.rules` → `.cursorrules` → … → `AGENTS.md` → `CLAUDE.md`
 > 순서로 읽고 **먼저 찾은 것 하나만** 씁니다. 대상 저장소에 `.rules` 가 이미
@@ -376,6 +452,25 @@ INFO    crex.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적
 ---
 
 ## 버전 관리
+
+### CREX 자체의 버전
+
+```bash
+python -m crex --version    # crex 0.1
+```
+
+`doctor` 의 첫 줄, SARIF 리포트의 `tool.driver.version`, 관제 화면의
+`/api/config`, MCP 서버가 클라이언트에 알리는 서버 버전, 반입 번들의
+`MANIFEST.txt` 가 전부 같은 값을 씁니다. 리포트만 보고 "이건 어느 버전이 낸
+지적인가"를 되짚을 수 있어야 하기 때문입니다.
+
+값은 `crex/__init__.py` 한 줄에서 옵니다. 올릴 때는 거기와 `README.md` 두 곳만
+고치면 되고, 소스 어딘가에 숫자를 또 적으면 테스트가 실패합니다.
+
+룰 택소노미의 버전(`rules/taxonomy.toml` 의 `meta.version`)은 이것과 별개입니다.
+룰은 평가 리포트를 몇 달에 걸쳐 잇는 키라 자기 수명을 따로 가집니다.
+
+### 설정 파일
 
 `crex.toml` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
 상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crex.toml` 에는 공통

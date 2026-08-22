@@ -271,7 +271,7 @@ if response.get("verdict") != "yes":
 
 `crex/service.py` 와 `crex/mcp.py` 가 나뉜 이유가 있습니다.
 
-- `service.py` — `ReviewService`. MCP 도구 5종의 실제 동작이 전부 여기 있습니다.
+- `service.py` — `ReviewService`. MCP 도구 7종의 실제 동작이 전부 여기 있습니다.
   **FastMCP 를 import 하지 않습니다.**
 - `mcp.py` — FastMCP 바인딩만. 타입 힌트와 docstring 에서 도구 스키마가
   자동 생성되므로 실질적인 코드가 거의 없습니다.
