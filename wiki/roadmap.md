@@ -63,15 +63,15 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | CLI: `review` / `scan` / `doctor` | Complete |
 | Workspace resolution (review a repo CREX does not live in) | Complete, 20 tests |
 | Changing the target at runtime (CLI command, dashboard button, MCP tool) | Complete |
-| `ReviewService` (7 MCP operations) | Complete, 18 tests, no FastMCP needed |
-| FastMCP binding (`mcp.py`) | Written; binding test skips when FastMCP absent |
+| `ReviewService` (7 MCP operations) | Complete, 20 tests, no FastMCP needed |
+| FastMCP binding (`mcp.py`), stdio + Streamable HTTP | Written; binding tests skip when FastMCP absent |
 | Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 19 tests. Runs on stdlib; uvicorn optional |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-110 tests total, all runnable offline.
+112 tests total, all runnable offline.
 
 ## What does not exist
 
@@ -84,10 +84,12 @@ The pipeline has never touched actual Qwen3.6 or Gemma 4. Prompt quality, real
 reject rates, and latency are all unmeasured. Treat every quality number in the docs
 as a target from literature, not an observed result.
 
-**Verified FastMCP binding.** `crex/mcp.py` was written against the documented
-FastMCP API but never executed — the library is not installed on the development
-machine. `ReviewService` beneath it is fully tested. First run inside the network
-should be `python -m crex.mcp` plus a Zed connection check.
+**A real editor on the other end.** The binding itself has now been exercised
+against FastMCP 3.4.7: tools list with their schemas, and a review runs end to end
+over the Streamable HTTP transport with a real MCP client. What has *not* happened is
+a connection from Zed — its `context_servers` config, stdio spawn, and the agent's
+tool selection are all unverified. First run inside the network should be
+`python -m crex.mcp` plus a Zed connection check.
 
 **OCR comparison.** `review.mode = "ocr"` raises rather than running.
 

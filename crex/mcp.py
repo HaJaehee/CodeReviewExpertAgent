@@ -1,30 +1,47 @@
-"""MCP 서버 — Zed 에이전트 패널에서 리뷰를 부르기 위한 얇은 바인딩.
+"""MCP server — a thin binding that lets an agent panel call the review pipeline.
 
-    python -m crex.mcp
+    python -m crex.mcp                       # stdio (Zed, Claude Desktop, ...)
+    python -m crex.mcp --transport http      # Streamable HTTP endpoint
 
-FastMCP 가 프로토콜을 담당한다. 타입 힌트와 docstring 에서 도구 스키마가
-자동 생성되므로 여기서는 그것만 정확히 쓰면 된다.
+FastMCP handles the protocol. Tool schemas are generated from the type hints and
+docstrings below, so those two have to be exact — they are the only thing the agent
+sees when it decides which tool to call.
 
-**이 파일에는 로직이 없다.** 실제 동작은 `crex/service.py` 의 `ReviewService` 에
-있고, 그쪽은 FastMCP 를 import 하지 않는다. 프로토콜 없이도 로직 전체를 테스트할
-수 있고, MCP 사양이 바뀌어도 여기만 고치면 된다.
+**There is no logic in this file.** The real work lives in `ReviewService`
+(`crex/service.py`), which does not import FastMCP. That split keeps the whole
+behaviour testable without the protocol, and confines MCP spec changes to this file.
 
-## 환경변수
+## Why the docstrings here are English
 
-| 변수 | 뜻 | 기본값 |
+Everything else user-facing in CREX is Korean. These are not user-facing: tool
+docstrings become the tool schema that the *agent* reads, alongside `AGENTS.md`,
+which is English for the same reason. Comments meant for maintainers stay Korean.
+
+## Environment variables
+
+| Variable | Meaning | Default |
 |---|---|---|
-| `CREX_WORKSPACE` | 리뷰할 저장소 루트 | 현재 디렉터리에서 git 루트 탐색 |
-| `CREX_REPO` | 위의 이전 이름. 계속 받는다 | — |
-| `CREX_CONFIG` | 설정 파일 경로 | 워크스페이스 → 현재 디렉터리 순 탐색 |
-| `CREX_REPORTS` | 리포트 저장 위치 | `<워크스페이스>/reports` |
+| `CREX_WORKSPACE` | Repository to review | git root found from the current directory |
+| `CREX_REPO` | Former name of the above. Still accepted | — |
+| `CREX_CONFIG` | Config file path | workspace, then current directory |
+| `CREX_REPORTS` | Where reports are written | `<workspace>/reports` |
 
-MCP 서버는 저장소마다 하나씩 띄운다. Zed 프로젝트별로 `CREX_WORKSPACE` 를 주면
-CREX 설치본은 한 벌만 두고 여러 저장소를 볼 수 있다. `settings.json` 예시는
-`docs/operations.md` 의 Zed 연동 절에 있다.
+One server per repository is the normal setup: give each editor project its own
+`CREX_WORKSPACE` and a single CREX install serves all of them. Zed `settings.json`
+examples are in `docs/operations.md`.
+
+## Transports
+
+stdio is the default and the one to prefer — the editor spawns the process, talks
+over stdin/stdout, and nothing listens on a port. Streamable HTTP exists for the
+cases stdio cannot cover: one shared server for several people, or a client on a
+different machine. It has no authentication, so bind it to loopback unless the
+network in front of it is doing that job. See `docs/operations.md`.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -44,15 +61,27 @@ from .workspace import resolve
 
 log = logging.getLogger(__name__)
 
+#: HTTP 전송의 기본값. 관제 화면(18765) 옆자리를 쓴다.
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 18766
+DEFAULT_HTTP_PATH = "/mcp"
+
+#: 이 주소들에 바인드했을 때만 set_workspace 를 받는다.
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+#: 워크스페이스 변경을 허용할지. HTTP 로 원격에 열었으면 main() 에서 끈다.
+_workspace_switchable = True
+
 mcp = FastMCP(
     "crex",
     instructions=(
-        "C++/C#/Python 코드 리뷰 도구다. 사용자가 변경사항 리뷰를 요청하면 "
-        "review_staged 를, 브랜치 비교를 요청하면 review_diff 를 부른다. "
-        "도구가 돌려준 요약을 그대로 전달하고, 지적 내용을 각색하거나 "
-        "직접 지적을 추가하지 마라. 리뷰 판단은 도구가 한다. "
-        "리뷰 대상 저장소는 get_workspace 로 확인하고, 사용자가 다른 저장소를 "
-        "지목했을 때만 set_workspace 로 바꾼다."
+        "Code review tool for C++, C# and Python. When the user asks for a review "
+        "of their changes, call review_staged; when they ask to compare against a "
+        "branch, call review_diff. Pass the returned summary through as-is: do not "
+        "reword findings and do not add findings of your own — the judgement is the "
+        "tool's, not yours. Check which repository is under review with "
+        "get_workspace, and change it with set_workspace only when the user names "
+        "another one."
     ),
 )
 
@@ -67,7 +96,7 @@ def service() -> ReviewService:
 
 
 def _call(action) -> str:
-    """서비스 호출을 감싸 사용자에게 보일 오류만 ToolError 로 올린다."""
+    """Wrap a service call so only user-fixable problems surface as ToolError."""
     try:
         return action()
     except ReviewRequestError as exc:
@@ -85,27 +114,32 @@ def _call(action) -> str:
 
 @mcp.tool
 def review_staged(paths: list[str] | None = None) -> str:
-    """스테이징된 변경(git diff --cached)을 리뷰한다. 커밋 전 자가 점검용이며 가장 자주 쓰인다.
+    """Review the staged changes (git diff --cached).
+
+    This is the self-check before committing, and the most common request by far.
+    When a review request is ambiguous, call this one.
 
     Args:
-        paths: 저장소 루트 기준 상대 경로 목록. 파일 또는 폴더. 지정하면 그 경로의
-            변경만 리뷰한다. 큰 변경에서 특정 모듈만 보고 싶을 때 쓴다.
+        paths: Paths relative to the repository root — files or directories. Narrows
+            the review to those paths, for when only one module of a large change
+            matters.
 
     Returns:
-        지적 요약과 전체 리포트 파일 경로. 지적이 없으면 그렇게 알린다.
+        A summary of the findings and the path to the full report. Says so plainly
+        when there is nothing to report.
     """
     return _call(lambda: service().review_staged(paths))
 
 
 @mcp.tool
 def review_working_tree(paths: list[str] | None = None) -> str:
-    """아직 커밋하지 않은 모든 변경(git diff HEAD)을 리뷰한다.
+    """Review every uncommitted change (git diff HEAD), staged or not.
 
     Args:
-        paths: 저장소 루트 기준 상대 경로 목록. 지정하면 그 경로의 변경만 리뷰한다.
+        paths: Paths relative to the repository root. Narrows the review to those paths.
 
     Returns:
-        지적 요약과 전체 리포트 파일 경로.
+        A summary of the findings and the path to the full report.
     """
     return _call(lambda: service().review_working_tree(paths))
 
@@ -117,90 +151,139 @@ def review_diff(
     paths: list[str] | None = None,
     use_merge_base: bool = True,
 ) -> str:
-    """두 git 참조 사이의 변경을 리뷰한다. MR/PR 리뷰에 쓴다.
+    """Review the changes between two git refs. This is the merge-request review.
 
     Args:
-        from_ref: 비교 시작 참조. 브랜치명(main), 태그, 커밋 해시.
-        to_ref: 비교 끝 참조. 기본 HEAD.
-        paths: 저장소 루트 기준 상대 경로 목록. 지정하면 그 경로의 변경만 리뷰한다.
-        use_merge_base: 참으면 from_ref 대신 실제 분기점(merge-base)과 비교한다.
-            브랜치가 오래됐을 때 남이 넣은 변경까지 딸려 들어오는 것을 막는다.
-            특정 커밋 두 개를 그대로 비교하려면 거짓으로 준다.
+        from_ref: Ref to compare from — a branch name (main), tag, or commit hash.
+        to_ref: Ref to compare to. Defaults to HEAD.
+        paths: Paths relative to the repository root. Narrows the review to those paths.
+        use_merge_base: When true, compares against the actual branch point
+            (merge-base) rather than from_ref itself. This keeps other people's
+            commits out of the review when the branch is behind. Pass false to
+            compare two specific commits exactly as given.
 
     Returns:
-        지적 요약과 전체 리포트 파일 경로.
+        A summary of the findings and the path to the full report.
     """
     return _call(lambda: service().review_diff(from_ref, to_ref, paths, use_merge_base=use_merge_base))
 
 
 @mcp.tool
 def review_file(path: str) -> str:
-    """파일 하나를 통째로 감사한다. diff 가 아니라 기존 코드 전체를 본다.
+    """Audit one whole file — existing code, not a diff.
 
-    변경 라인이라는 제약이 없어 diff 리뷰보다 오탐이 많다. 레거시 코드를 살펴볼
-    때 쓰고, 일상적인 변경 리뷰에는 review_staged 를 쓴다.
+    Without the "changed lines only" constraint this produces more false alarms than
+    a diff review. Use it to get a feel for unfamiliar or legacy code; for everyday
+    review of someone's work, use review_staged.
 
     Args:
-        path: 저장소 루트 기준 상대 경로. C++/C#/Python 파일이어야 한다.
+        path: Path relative to the repository root. Must be a C++, C#, or Python file.
 
     Returns:
-        지적 요약과 전체 리포트 파일 경로.
+        A summary of the findings and the path to the full report.
     """
     return _call(lambda: service().review_file(path))
 
 
 @mcp.tool
 def review_directory(path: str, recursive: bool = True) -> str:
-    """폴더 아래 지원 언어 파일을 전부 감사한다.
+    """Audit every supported source file under a directory.
 
-    파일당 LLM 호출이 여러 번이라 비용이 크다. 대상이 상한을 넘으면 거부하고
-    범위를 좁히라고 알린다.
+    Expensive: each file costs several LLM calls. If the directory holds more files
+    than the limit allows, the tool refuses and tells you to narrow the scope rather
+    than silently reviewing part of it.
 
     Args:
-        path: 저장소 루트 기준 상대 경로.
-        recursive: 하위 폴더까지 훑을지. 기본 참.
+        path: Path relative to the repository root.
+        recursive: Whether to descend into subdirectories. True by default.
 
     Returns:
-        지적 요약과 전체 리포트 파일 경로.
+        A summary of the findings and the path to the full report.
     """
     return _call(lambda: service().review_directory(path, recursive))
 
 
 @mcp.tool
 def get_workspace() -> str:
-    """지금 어느 저장소를 리뷰하고 있는지 알려준다.
+    """Report which repository is currently under review.
 
-    사용자가 "지금 뭐 보고 있어?"라고 묻거나, 리뷰 결과의 경로가 예상과 다를 때
-    먼저 확인한다.
+    Call this when the user asks what is being reviewed, and before concluding that
+    a review looked at the wrong code — the paths in a report are relative to this
+    repository.
 
     Returns:
-        워크스페이스 경로, 그 값의 출처, 설정 파일과 리포트 위치.
+        The workspace path, where that value came from, and the config and report
+        locations in effect.
     """
     return _call(lambda: service().describe_workspace())
 
 
 @mcp.tool
 def set_workspace(path: str) -> str:
-    """리뷰 대상 저장소를 바꾼다.
+    """Change which repository the reviews run against.
 
-    사용자가 다른 저장소를 리뷰해 달라고 명시적으로 요청할 때만 부른다. 리뷰가
-    엉뚱한 결과를 냈다고 임의로 바꾸지 마라 — 대상이 틀린 것인지 먼저
-    get_workspace 로 확인하고 사용자에게 알린다.
+    Call this only when the user names another repository. Do not switch because a
+    review returned something unexpected — check with get_workspace first and tell
+    the user what you found.
 
-    이 서버가 살아 있는 동안만 유지된다. 설정 파일은 바뀌지 않으므로 서버를 다시
-    띄우면 원래 대상으로 돌아온다.
+    The change lasts only while this server is running. The config file is not
+    touched, so a restart goes back to the original target. Say that when you report
+    the switch, so nobody assumes it is permanent.
 
     Args:
-        path: 리뷰할 저장소 루트의 절대 경로. `.git` 이 있는 폴더를 준다.
-            하위 폴더를 줘도 저장소 루트로 맞춘다.
+        path: Absolute path to the repository root — the directory holding `.git`.
+            A subdirectory is accepted and promoted to the repository root.
 
     Returns:
-        바뀐 대상과 그에 따라 달라진 설정·리포트 위치.
+        The new target and the config and report locations that followed it.
     """
+    if not _workspace_switchable:
+        # 전송 계층의 판단이라 여기에 둔다. 서비스는 누가 부르는지 모른다.
+        raise ToolError(
+            "이 서버는 루프백이 아닌 주소에 HTTP 로 열려 있어 워크스페이스를 바꿀 수 없다. "
+            "대상 변경은 이 장비의 임의 디렉터리를 열 수 있게 하는 일이라, 인증 없는 "
+            "원격 연결에서는 받지 않는다. CREX_WORKSPACE 를 주고 서버를 다시 띄우라."
+        )
     return _call(lambda: service().set_workspace(path))
 
 
 # --------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m crex.mcp", description="CREX MCP 서버"
+    )
+    parser.add_argument(
+        "--transport", choices=("stdio", "http"), default="stdio",
+        help="stdio(기본) — 에디터가 프로세스를 자식으로 띄운다. "
+             "http — Streamable HTTP 엔드포인트를 연다",
+    )
+    parser.add_argument("--host", default=DEFAULT_HTTP_HOST,
+                        help=f"http 전송의 바인드 주소 (기본 {DEFAULT_HTTP_HOST})")
+    parser.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT,
+                        help=f"http 전송의 포트 (기본 {DEFAULT_HTTP_PORT})")
+    parser.add_argument("--path", default=DEFAULT_HTTP_PATH,
+                        help=f"http 전송의 엔드포인트 경로 (기본 {DEFAULT_HTTP_PATH})")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser
+
+
+def run_http(host: str, port: int, path: str) -> None:
+    """Streamable HTTP 로 띄운다.
+
+    전송 이름이 FastMCP 버전에 따라 다르다. 2.9 이후는 `"http"`, 그 이전은
+    `"streamable-http"` 만 안다. 알 수 없는 이름이면 FastMCP 가 소켓을 잡기 *전에*
+    ValueError 를 내므로, 그때만 옛 이름으로 다시 시도한다. 포트 충돌 같은 실패는
+    OSError 라서 여기 걸리지 않는다 — 엉뚱한 재시도로 원인을 감추지 않는다.
+    """
+    try:
+        mcp.run(transport="http", host=host, port=port, path=path)
+    except ValueError as exc:
+        if "transport" not in str(exc).lower():
+            raise
+        log.info("이 FastMCP 는 'http' 를 모른다. 'streamable-http' 로 다시 시도한다.")
+        mcp.run(transport="streamable-http", host=host, port=port, path=path)
 
 
 def build_service() -> ReviewService:
@@ -213,12 +296,15 @@ def build_service() -> ReviewService:
 
 
 def main(argv: list[str] | None = None) -> int:
-    global _service
+    global _service, _workspace_switchable
+
+    args = build_parser().parse_args(argv)
 
     # stdio 전송에서 stdout 은 JSON-RPC 전용이다. 로그가 한 줄이라도 섞이면
     # 스트림이 깨진다. FastMCP 가 stdout 을 잡기 전에 stderr 로 못 박아둔다.
+    # HTTP 에서도 그대로 stderr 를 쓴다 — 기동 스크립트가 둘을 달리 다루지 않게.
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)-7s %(name)s: %(message)s",
         stream=sys.stderr,
     )
@@ -237,7 +323,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     log.info("폴더 감사 상한 %d개, 리포트 %s", MAX_SCAN_FILES, _service.out_dir)
 
-    mcp.run()
+    if args.transport == "stdio":
+        mcp.run()
+        return 0
+
+    _workspace_switchable = args.host in LOOPBACK
+    log.info("Streamable HTTP — http://%s:%d%s", args.host, args.port, args.path)
+    if not _workspace_switchable:
+        log.warning(
+            "%s 에 바인드한다. 이 엔드포인트에는 인증이 없다 — 붙을 수 있는 사람은 "
+            "누구나 이 저장소의 소스를 리뷰에 태울 수 있다.", args.host
+        )
+        log.warning("원격 바인드이므로 set_workspace 를 막는다.")
+    run_http(args.host, args.port, args.path)
     return 0
 
 

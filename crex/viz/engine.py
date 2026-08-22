@@ -90,7 +90,7 @@ class TracedLLMClient(LLMClient):
         # 중단은 요청을 내보내기 *전에* 본다. 일어나지도 않은 호출이 화면에
         # 카드로 남으면 나중에 로그를 읽는 사람이 헷갈린다.
         if self.cancel.is_set():
-            raise RunCancelled("사용자가 실행을 중단했다")
+            raise RunCancelled("사용자가 실행을 중단했습니다")
 
         call_id = self.tracer.next_call_id()
         chunk = self.tracer.match_chunk(user)
@@ -288,8 +288,8 @@ class RunRegistry:
             running = [r.id for r in self._runs.values() if r.status == "running"]
             if running:
                 raise ReviewRequestError(
-                    f"실행 중({running[0]})에는 워크스페이스를 바꿀 수 없다. "
-                    f"끝나기를 기다리거나 중단하라."
+                    f"실행 중({running[0]})에는 워크스페이스를 바꿀 수 없습니다. "
+                    f"끝나기를 기다리거나 중단하세요."
                 )
             try:
                 changed = switch(self.workspace, path)
@@ -338,7 +338,7 @@ class RunRegistry:
 
     def start(self, kind: str, params: dict[str, Any]) -> Run:
         if kind not in KINDS:
-            raise ReviewRequestError(f"알 수 없는 리뷰 종류: {kind!r}. 가능: {list(KINDS)}")
+            raise ReviewRequestError(f"알 수 없는 리뷰 종류입니다: {kind!r}. 가능: {list(KINDS)}")
 
         run = Run(
             id=uuid.uuid4().hex[:12],

@@ -40,8 +40,16 @@ Do not "clean these up" by translating.
 | LLM prompt templates | **Korean** |
 | Log messages, CLI output, errors | **Korean** |
 | `docs/` user manual | **Korean** |
-| `wiki/`, this file | English |
+| `crex/viz/` UI strings and the errors it raises | **Korean, 합쇼체 (~니다)** |
+| MCP tool docstrings and server instructions | English |
+| `wiki/`, `AGENTS.md`, this file | English |
 | Identifiers, type names, rule IDs | English |
+
+Two of those look like exceptions but aren't. MCP tool docstrings *are* the tool
+schema the agent reads, and `AGENTS.md` is written for the same reader — both are
+addressed to a model, not to the user. The dashboard is the one surface a user reads
+as a product rather than as a terminal, so it uses 합쇼체 while CLI and log output
+keep the terse 해라체.
 
 The user is a Korean-speaking engineer. Match the surrounding comment style:
 direct, explaining *why* rather than restating *what*, willing to state trade-offs
@@ -50,7 +58,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 110 tests, no LLM or network needed
+python tests/run_all.py                     # 112 tests, no LLM or network needed
 ```
 
 ```bash
@@ -66,8 +74,9 @@ python -m crex workspace D:/work/repo         # pin it in crex.toml (--clear to 
 ```
 
 ```bash
-python -m crex.mcp  # MCP stdio server (Zed context_servers)
-                    # needs `pip install -r requirements.txt`
+python -m crex.mcp                    # MCP stdio server (Zed context_servers)
+python -m crex.mcp --transport http   # Streamable HTTP, 127.0.0.1:18766/mcp
+                                      # needs `pip install -r requirements.txt`
 ```
 
 ```bash
@@ -189,8 +198,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 110 tests passing.
-~6,030 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 112 tests passing.
+~6,137 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 
@@ -199,6 +208,10 @@ evaluation harness, MCP server, visualizer. 41 rules. 110 tests passing.
 - **Never run against a real LLM.** All verification is against a fake vLLM server.
   Prompt quality, actual reject rates, and latency are unmeasured. Quality numbers in
   the docs are targets drawn from literature, not observations from this system.
+- **Zed has never connected.** The MCP binding itself now runs against FastMCP 3.4.7
+  (tools list, a review over Streamable HTTP with a real client), but the editor side
+  — `context_servers` config, stdio spawn, the agent picking the right tool — is
+  unverified.
 - **`review.mode = "ocr"` raises.** OCR delegation is Phase 1 work, pending
   inspection of the real binary's output schema.
 - **Outdated Rate not implemented.** Phase 4 flywheel metric.

@@ -73,13 +73,20 @@ builds or a misconfigured `structured_output_mode` silently drop the constraint.
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
 | `crex/service.py` | 261 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
-| `crex/mcp.py` | 245 | FastMCP binding only. Tool schemas from type hints + docstrings |
+| `crex/mcp.py` | 343 | FastMCP binding only. Tool schemas from type hints + docstrings; stdio and Streamable HTTP transports |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.
 `cli` sits alongside `service`; both reach `workspace`, which sits directly above
 `config` and `gitio`. `schema.py` imports nothing from the package. FastMCP appears
 in `mcp.py` and nowhere else.
+
+`mcp.py` serves stdio by default and Streamable HTTP under `--transport http`. The
+transport changes nothing below it — same `ReviewService`, same workspace rules — but
+it does change the threat model: the HTTP endpoint has no authentication, so a
+non-loopback bind disables `set_workspace` there, the same call the dashboard blocks
+for the same reason. Tool docstrings in that file are English because they *are* the
+tool schema the agent reads.
 
 ### Workspace resolution
 

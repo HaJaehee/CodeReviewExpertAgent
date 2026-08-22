@@ -99,7 +99,7 @@ cd crex-20260817
     OK   git
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
-    110/110 통과
+    112/112 통과
     OK   전체 통과
 ```
 
@@ -153,6 +153,15 @@ D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
 ```
 
 `crex-mcp.cmd` 가 번들 Python 을 부르므로 가상환경 경로 문제가 생기지 않습니다.
+인자를 그대로 넘기므로 HTTP 엔드포인트도 이 런처로 엽니다.
+
+```powershell
+.\crex-mcp.cmd --transport http --port 18766
+```
+
+인증이 없는 엔드포인트입니다. 반입 신청서에 포트를 적어야 하고, 루프백 밖으로
+열려면 그만한 이유가 있어야 합니다 —
+[운영](operations.md#streamable-http-엔드포인트) 참고.
 `AGENTS.md` 를 리뷰 대상 저장소로 복사하는 것도 잊지 마세요 —
 [Zed 연동](operations.md#zed-연동-mcp) 참고.
 

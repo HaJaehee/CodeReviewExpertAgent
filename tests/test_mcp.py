@@ -421,6 +421,56 @@ def test_fastmcp_bindings_registered() -> None:
     staged_props = schema_of(by_name["review_staged"]).get("properties", {})
     _check("paths" in staged_props, f"review_staged paths 누락: {sorted(staged_props)}")
 
+    # 도구 설명은 에이전트가 읽는 유일한 근거다. AGENTS.md 와 같은 언어여야 한다.
+    for tool in tools:
+        _check(
+            not any("\uac00" <= ch <= "\ud7a3" for ch in tool.description),
+            f"{tool.name} 설명에 한글이 섞였다 — 도구 스키마는 영어다",
+        )
+
+
+def test_transport_arguments() -> None:
+    """stdio 가 기본이어야 한다. HTTP 는 명시적으로 켜는 것이다."""
+    try:
+        import fastmcp  # noqa: F401
+    except ImportError:
+        print("     (fastmcp 미설치 — 전송 인자 검사 건너뜀)")
+        return
+
+    from crex.mcp import DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, LOOPBACK, build_parser
+
+    default = build_parser().parse_args([])
+    _check(default.transport == "stdio", f"기본 전송: {default.transport}")
+
+    http = build_parser().parse_args(["--transport", "http", "--port", "9000"])
+    _check(http.transport == "http", f"전송: {http.transport}")
+    _check(http.port == 9000, f"포트: {http.port}")
+    _check(http.path == DEFAULT_HTTP_PATH, f"경로: {http.path}")
+    _check(http.host in LOOPBACK, f"기본 바인드가 루프백이 아니다: {http.host}")
+    _check(DEFAULT_HTTP_PORT != 18765, "관제 화면과 같은 포트를 기본값으로 쓰고 있다")
+
+
+def test_remote_http_bind_blocks_workspace_change() -> None:
+    """인증 없는 원격 엔드포인트에서 대상 변경은 임의 디렉터리 열기가 된다."""
+    try:
+        from fastmcp.exceptions import ToolError
+    except ImportError:
+        print("     (fastmcp 미설치 — 원격 바인드 검사 건너뜀)")
+        return
+
+    from crex import mcp as mcp_module
+
+    previous = mcp_module._workspace_switchable  # noqa: SLF001
+    mcp_module._workspace_switchable = False  # noqa: SLF001
+    try:
+        mcp_module.set_workspace("/anywhere")
+    except ToolError as exc:
+        _check("바꿀 수 없다" in str(exc), f"메시지: {exc}")
+    else:
+        raise AssertionError("원격 바인드인데 변경을 받아들였다")
+    finally:
+        mcp_module._workspace_switchable = previous  # noqa: SLF001
+
 
 TESTS = [
     test_git_diff_produces_parseable_output,
@@ -441,6 +491,8 @@ TESTS = [
     test_set_workspace_flags_non_git_directory,
     test_describe_workspace_reports_origin,
     test_fastmcp_bindings_registered,
+    test_transport_arguments,
+    test_remote_http_bind_blocks_workspace_change,
 ]
 
 

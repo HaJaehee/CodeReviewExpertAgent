@@ -41,7 +41,9 @@ python -m crex review --workspace D:\work\myrepo --staged
 ```
 
 Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 —
-[운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 보세요.
+[운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 보세요. 여러 사람이 서버 하나를
+같이 쓰거나 클라이언트가 다른 장비에 있다면 `python -m crex.mcp --transport http` 로
+[Streamable HTTP 엔드포인트](operations.md#streamable-http-엔드포인트)를 엽니다.
 
 리뷰가 왜 그런 결과를 냈는지 들여다보려면 [관제 화면](visualizer.md)을 띄우세요.
 두 모델이 주고받은 프롬프트와 응답이 그대로 보입니다.

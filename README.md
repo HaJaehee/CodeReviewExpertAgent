@@ -140,6 +140,18 @@ python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 python -m crex.viz --port 18765       # http://127.0.0.1:18765
 ```
 
+Zed 등 에이전트 패널에서 부르려면 MCP 서버를 씁니다. 기본은 stdio(에디터가
+프로세스를 자식으로 띄움)이고, 여러 사람이 한 서버를 같이 쓰거나 클라이언트가 다른
+장비에 있을 때만 HTTP 로 엽니다.
+
+```bash
+python -m crex.mcp                    # stdio (권장)
+python -m crex.mcp --transport http   # Streamable HTTP — http://127.0.0.1:18766/mcp
+```
+
+HTTP 엔드포인트에는 인증이 없습니다. 루프백에 묶어 두거나 접근 제어가 있는 망
+안에서만 여세요 — [운영](docs/operations.md#streamable-http-엔드포인트) 참고.
+
 테스트 (외부 의존 없음, LLM 불필요):
 
 ```bash

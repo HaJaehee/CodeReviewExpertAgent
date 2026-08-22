@@ -49,9 +49,9 @@ class Request:
         try:
             data = json.loads(self.body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ReviewRequestError(f"요청 본문이 JSON 이 아니다: {exc}") from exc
+            raise ReviewRequestError(f"요청 본문이 JSON 이 아닙니다: {exc}") from exc
         if not isinstance(data, dict):
-            raise ReviewRequestError("요청 본문은 JSON 객체여야 한다")
+            raise ReviewRequestError("요청 본문은 JSON 객체여야 합니다")
         return data
 
 
@@ -105,7 +105,7 @@ def handle(request: Request, ctx: Context) -> Response:
         for prefix, handler in _PREFIX:
             if path.startswith(prefix):
                 return handler(request, ctx, path[len(prefix) :])
-        return error_response(f"없는 경로: {request.path}", 404)
+        return error_response(f"없는 경로입니다: {request.path}", 404)
     except ReviewRequestError as exc:
         # 사용자가 고칠 수 있는 문제. 화면에 그대로 띄운다.
         return error_response(str(exc), 400)
@@ -122,7 +122,7 @@ def _index(request: Request, ctx: Context, rest: str) -> Response:
 
 def _static(request: Request, ctx: Context, rest: str) -> Response:
     if rest not in STATIC_FILES:
-        return error_response(f"없는 파일: {rest}", 404)
+        return error_response(f"없는 파일입니다: {rest}", 404)
     return _static_file(rest)
 
 
@@ -130,7 +130,7 @@ def _static_file(name: str) -> Response:
     try:
         body = (WEB_ROOT / name).read_bytes()
     except OSError as exc:
-        return error_response(f"화면 파일을 읽을 수 없다 ({name}): {exc}", 500)
+        return error_response(f"화면 파일을 읽을 수 없습니다 ({name}): {exc}", 500)
     guessed = mimetypes.guess_type(name)[0] or "application/octet-stream"
     return Response(200, body, f"{guessed}; charset=utf-8")
 
@@ -176,19 +176,19 @@ def _workspace(request: Request, ctx: Context, rest: str) -> Response:
     if request.method == "GET":
         return json_response(_workspace_state(ctx))
     if request.method != "POST":
-        return error_response(f"{request.method} 는 지원하지 않는다", 405)
+        return error_response(f"{request.method} 는 지원하지 않습니다", 405)
 
     if not ctx.workspace_switchable:
         return error_response(
             "이 서버는 루프백이 아닌 주소에 바인드되어 있어 워크스페이스를 "
-            "바꿀 수 없다. 대상 변경은 임의의 디렉터리를 열 수 있게 하는 일이라 "
-            "원격에서는 받지 않는다. --workspace 로 다시 띄우라.",
+            "바꿀 수 없습니다. 대상 변경은 임의의 디렉터리를 열 수 있게 하는 일이라 "
+            "원격에서는 받지 않습니다. --workspace 로 다시 띄우세요.",
             403,
         )
 
     path = str(request.json().get("path", "")).strip()
     if not path:
-        raise ReviewRequestError("path 가 필요하다")
+        raise ReviewRequestError("path 가 필요합니다")
 
     ctx.registry.retarget(path)
     # 화면이 한 번 더 물어보지 않게 새 상태를 통째로 돌려준다.
@@ -229,11 +229,11 @@ def _runs(request: Request, ctx: Context, rest: str) -> Response:
         kind = str(payload.get("kind", "staged"))
         params = payload.get("params") or {}
         if not isinstance(params, dict):
-            raise ReviewRequestError("params 는 JSON 객체여야 한다")
+            raise ReviewRequestError("params 는 JSON 객체여야 합니다")
         run = ctx.registry.start(kind, params)
         return json_response(run.head(), 201)
     if request.method != "GET":
-        return error_response(f"{request.method} 는 지원하지 않는다", 405)
+        return error_response(f"{request.method} 는 지원하지 않습니다", 405)
     return json_response({"runs": ctx.registry.list()})
 
 
@@ -247,22 +247,22 @@ def _run_detail(request: Request, ctx: Context, rest: str) -> Response:
         since = _int(request.query.get("since"), 0)
         payload = ctx.registry.events(run_id, since)
         if payload is None:
-            return error_response(f"없는 실행: {run_id}", 404)
+            return error_response(f"없는 실행입니다: {run_id}", 404)
         return json_response(payload)
 
     if action == "cancel":
         if request.method != "POST":
-            return error_response("cancel 은 POST 다", 405)
+            return error_response("cancel 은 POST 입니다", 405)
         if not ctx.registry.cancel(run_id):
-            return error_response("이미 끝났거나 없는 실행이다", 409)
+            return error_response("이미 끝났거나 없는 실행입니다", 409)
         return json_response({"cancelled": run_id})
 
     if action:
-        return error_response(f"없는 경로: {request.path}", 404)
+        return error_response(f"없는 경로입니다: {request.path}", 404)
 
     run = ctx.registry.get(run_id)
     if run is None:
-        return error_response(f"없는 실행: {run_id}", 404)
+        return error_response(f"없는 실행입니다: {run_id}", 404)
     return json_response(run.head())
 
 
