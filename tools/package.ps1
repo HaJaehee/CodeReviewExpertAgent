@@ -215,7 +215,7 @@ if ($SkipDeps) {
     Write-Note "코어는 표준 라이브러리만 쓰므로 review/scan/doctor 와 테스트는 그대로 동작한다"
     Write-Note "python -m crex.mcp (Zed 연동) 는 쓸 수 없다"
 } else {
-    Write-Step "서드파티 내려받기 (fastmcp, GitPython)"
+    Write-Step "서드파티 내려받기 (fastmcp, GitPython, TreeSitter, Uvicorn)"
 
     $ReqFile = Join-Path $RepoRoot "requirements.txt"
     $WheelDir = Join-Path $Staging "wheels"
