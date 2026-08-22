@@ -307,6 +307,9 @@ Visual Studio 나 MSBuild 프로젝트라면 별도 도구가 필요합니다. �
 | `roslynator` | C# | 아니오 — 이름을 적어야 켜집니다 |
 | `semgrep` | 전체 | 아니오 — `semgrep_config` 가 있으면 켜집니다 |
 
+어디서 내려받는지, 라이선스가 무엇인지, 폐쇄망에 어떻게 반입하는지는
+[정적분석 도구](analyzers.md)에 있습니다.
+
 `roslynator` 는 별도 설치가 필요하고 `dotnet build` 와 겹치는 룰이 많아서
 기본에서 뺐습니다. 둘 다 쓰면 같은 결함이 두 번 보고됩니다.
 

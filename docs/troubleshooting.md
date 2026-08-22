@@ -200,7 +200,12 @@ JSON 리포트에서 그 룰이 만든 지적을 몇 개 읽어보면 패턴이 
 INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
 ```
 
-말 그대로입니다. 없는 도구는 조용히 건너뜁니다. `doctor` 로 전체 목록을 보세요.
+말 그대로입니다. 없는 도구는 조용히 건너뜁니다. `doctor` 로 전체 목록을 보고,
+채우려면 [정적분석 도구](analyzers.md)에서 내려받는 곳을 보세요.
+
+설치했는데도 "찾을 수 없다"가 나온다면 PATH 문제입니다. CREX 는 `shutil.which`
+로 찾으므로, 설치 후 새로 연 터미널에서 `clang-tidy --version` 이 되는지부터
+확인하세요. Windows 인스톨러가 PATH 등록을 물어보는데 넘긴 경우가 흔합니다.
 
 ```
 INFO    crex.ground: [clang-tidy] 건너뜀 — 120초 내에 끝나지 않아 중단
