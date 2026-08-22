@@ -117,7 +117,13 @@ CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은
 ```bash
 cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
+
+python -m crex workspace D:\work\myrepo   # crex.toml 에 고정 (--clear 로 해제)
+python -m crex workspace                  # 지금 무엇을 보고 있나
 ```
+
+대상은 돌고 있는 중에도 바꿉니다 — 관제 화면 왼쪽의 **변경** 버튼, Zed 에이전트의
+`set_workspace` 도구. 둘 다 설정 파일은 건드리지 않습니다.
 
 ```bash
 python -m crex review --staged --out reports/
@@ -294,7 +300,7 @@ crex/
   workspace.py  리뷰 대상 저장소 해석 — CLI·MCP·관제 화면이 공유하는 규칙
   paths.py      디렉터리 확장, exclude glob, diff 경로 필터
   gitio.py      git diff / merge-base (GitPython, 없으면 subprocess)
-  service.py    ReviewService — MCP 도구 5종의 실제 동작 (FastMCP 미의존)
+  service.py    ReviewService — MCP 도구 7종의 실제 동작 (FastMCP 미의존)
   mcp.py        FastMCP 바인딩 — Zed 에이전트 패널 연동
   viz/          관제 화면 — 3계층
     trace.py      이벤트 모델, 프롬프트↔청크↔지적 상관관계      ┐ Engine

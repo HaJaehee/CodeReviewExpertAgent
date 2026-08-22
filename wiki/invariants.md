@@ -164,7 +164,21 @@ Two properties within it are load-bearing:
 - **Config discovery for a given workspace never walks above it.** Picking up a
   `crex.toml` from some ancestor directory means nobody can tell which file applied.
 
-Pinned by `tests/test_workspace.py`.
+Changing the target later goes through the same door: `switch()` calls `resolve()`
+instead of re-checking anything itself. A second validation path is a second set of
+rules, and the looser one wins the moment they disagree.
+
+Two more, on who may change it:
+
+- **Only the CLI writes to `crex.toml`.** The dashboard button and the MCP
+  `set_workspace` tool change the running process and say so. A click or an agent
+  turn must not decide what the next person's run targets.
+- **No switching mid-run.** `RunRegistry.retarget()` refuses while a run is in
+  flight, holding the same lock `start()` uses. `_execute` reads `repo_root` and
+  `config` as it goes; swapping them halfway produces one report whose chunks came
+  from one repository and whose analyzer findings came from another.
+
+Pinned by `tests/test_workspace.py` and the workspace tests in `tests/test_viz.py`.
 
 ---
 

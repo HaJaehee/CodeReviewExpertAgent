@@ -29,7 +29,7 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 94개 전부 통과해야 합니다
+python tests/run_all.py         # 반입 무결성 — 110개 전부 통과해야 합니다
 cp crex.example.toml crex.toml  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```
@@ -274,9 +274,16 @@ LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩�
 | `review_diff` | 두 ref 사이 (MR 리뷰) |
 | `review_file` | 파일 하나 전체 감사 |
 | `review_directory` | 폴더 전체 감사 |
+| `get_workspace` | 지금 어느 저장소를 보고 있는지 |
+| `set_workspace` | 리뷰 대상 저장소를 바꾼다 (이 서버가 사는 동안만) |
 
 앞의 셋은 `paths` 로 범위를 좁힐 수 있습니다. 큰 MR 에서 "파서 쪽만 보자" 같은
 경우입니다.
+
+`set_workspace` 는 설정 파일을 고치지 않습니다 — 서버를 다시 띄우면 원래 대상으로
+돌아옵니다. 영구히 바꾸려면 `python -m crex workspace <경로>` 를 쓰거나
+`CREX_WORKSPACE` 를 고치세요. 에이전트와의 대화 한 번이 다음 사람의 실행 대상까지
+바꿔 놓으면 안 되기 때문입니다.
 
 ```
 파서 폴더 변경분만 리뷰해줘
@@ -312,8 +319,9 @@ cp <crex-설치경로>/AGENTS.md /work/myrepo/AGENTS.md
 cp <crex-설치경로>/AGENTS.md ~/.config/zed/AGENTS.md
 ```
 
-내용은 다섯 가지입니다 — 직접 리뷰하지 말고 도구를 부를 것, 어떤 말에 어떤
-도구인지, 요약을 각색하지 말 것, 룰 ID 를 지우지 말 것, 오류는 그대로 전달할 것.
+내용은 여섯 가지입니다 — 직접 리뷰하지 말고 도구를 부를 것, 어떤 말에 어떤
+도구인지, 대상 저장소는 사용자가 지목했을 때만 바꿀 것, 요약을 각색하지 말 것,
+룰 ID 를 지우지 말 것, 오류는 그대로 전달할 것.
 
 > **주의:** Zed 은 `.rules` → `.cursorrules` → … → `AGENTS.md` → `CLAUDE.md`
 > 순서로 읽고 **먼저 찾은 것 하나만** 씁니다. 대상 저장소에 `.rules` 가 이미

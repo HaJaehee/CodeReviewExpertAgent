@@ -86,9 +86,9 @@ class Context:
     registry: RunRegistry
     taxonomy: Taxonomy
     version: str = "0.1.0"
-    #: 워크스페이스를 어디서 얻었는지, git 저장소인지. 화면 왼쪽에 그대로 보인다.
-    workspace_origin: str = "현재 디렉터리"
-    workspace_is_git: bool = True
+    #: 워크스페이스 변경을 받아줄지. 루프백이 아닌 주소에 바인드하면 서버가 끈다 —
+    #: 화면에는 인증이 없고, 대상 변경은 "이 저장소"를 "아무 디렉터리"로 넓힌다.
+    workspace_switchable: bool = True
 
 
 # --------------------------------------------------------------------------
@@ -144,11 +144,7 @@ def _config(request: Request, ctx: Context, rest: str) -> Response:
         {
             "version": ctx.version,
             "repo_root": str(registry.repo_root),
-            "workspace": {
-                "root": str(registry.repo_root),
-                "origin": ctx.workspace_origin,
-                "is_git": ctx.workspace_is_git,
-            },
+            "workspace": _workspace_state(ctx),
             "out_dir": str(registry.out_dir),
             "kinds": list(KINDS),
             "config": describe_config(registry.config),
@@ -158,6 +154,45 @@ def _config(request: Request, ctx: Context, rest: str) -> Response:
             },
         }
     )
+
+
+def _workspace_state(ctx: Context) -> dict[str, Any]:
+    workspace = ctx.registry.workspace
+    return {
+        "root": str(ctx.registry.repo_root),
+        "origin": workspace.origin if workspace else "현재 디렉터리",
+        "is_git": workspace.is_git if workspace else True,
+        "switchable": ctx.workspace_switchable,
+    }
+
+
+def _workspace(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/workspace` — 현재 대상. `POST` — 대상 변경.
+
+    변경은 화면에서 오는 것이라도 서버 상태를 바꾸는 일이다. 실행 중이면
+    레지스트리가 거부하고(409 가 아니라 400 으로 내려간다 — 사용자가 읽고 조치할
+    문제다), 루프백이 아닌 주소에 바인드된 서버는 아예 받지 않는다.
+    """
+    if request.method == "GET":
+        return json_response(_workspace_state(ctx))
+    if request.method != "POST":
+        return error_response(f"{request.method} 는 지원하지 않는다", 405)
+
+    if not ctx.workspace_switchable:
+        return error_response(
+            "이 서버는 루프백이 아닌 주소에 바인드되어 있어 워크스페이스를 "
+            "바꿀 수 없다. 대상 변경은 임의의 디렉터리를 열 수 있게 하는 일이라 "
+            "원격에서는 받지 않는다. --workspace 로 다시 띄우라.",
+            403,
+        )
+
+    path = str(request.json().get("path", "")).strip()
+    if not path:
+        raise ReviewRequestError("path 가 필요하다")
+
+    ctx.registry.retarget(path)
+    # 화면이 한 번 더 물어보지 않게 새 상태를 통째로 돌려준다.
+    return _config(request, ctx, "")
 
 
 def _rules_by_language(taxonomy: Taxonomy) -> dict[str, int]:
@@ -244,6 +279,7 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
     "/index.html": _index,
     "/api/config": _config,
     "/api/health": _health,
+    "/api/workspace": _workspace,
     "/api/runs": _runs,
 }
 

@@ -73,6 +73,7 @@ CREX.client = (function () {
 
   return {
     config: () => request('GET', '/api/config'),
+    setWorkspace: (path) => request('POST', '/api/workspace', { path: path }),
     health: () => request('GET', '/api/health'),
     runs: () => request('GET', '/api/runs'),
     start: (kind, params) => request('POST', '/api/runs', { kind: kind, params: params }),

@@ -50,7 +50,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 94 tests, no LLM or network needed
+python tests/run_all.py                     # 110 tests, no LLM or network needed
 ```
 
 ```bash
@@ -62,6 +62,7 @@ python -m crex review --from main --to HEAD  # diff review
 python -m crex review --staged --out reports/
 python -m crex scan src/legacy.cpp           # whole-file audit, no diff
 python -m crex review --workspace D:/work/repo --staged   # target a repo elsewhere
+python -m crex workspace D:/work/repo         # pin it in crex.toml (--clear to unpin)
 ```
 
 ```bash
@@ -113,9 +114,17 @@ cannot drift apart: `--workspace` > `CREX_WORKSPACE`/`CREX_REPO` > `crex.toml`'s
 no config is named, `<workspace>/crex.toml` wins over the one next to CREX — per-repo
 `compile_commands_dir` and `dotnet_project` differ.
 
+It can also be changed mid-run — `switch()` behind the dashboard's 변경 button and the
+MCP `set_workspace` tool, `persist_workspace()` behind `python -m crex workspace`. Only
+the CLI command writes to `crex.toml`; a click or an agent turn must not change what the
+next person's run targets. The dashboard refuses a switch while a review is in flight
+(one report would mix two repositories) and when bound to a non-loopback address (the
+page has no auth, and switching turns "this repo" into "any directory").
+
 `crex/service.py` + `crex/mcp.py` expose the same pipeline to Zed's agent panel over
 MCP. All logic lives in `service.py` (no FastMCP import, fully testable); `mcp.py`
-is a thin FastMCP binding. 5 tools, returning a **compact summary**, not the full report —
+is a thin FastMCP binding. 7 tools (5 reviews + `get_workspace`/`set_workspace`),
+returning a **compact summary**, not the full report —
 tool results land in the agent's context, and the whole design is about spending
 context carefully. Full reports go to disk. The agent decides *when* to review;
 the pipeline still decides *how*.
@@ -180,8 +189,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 94 tests passing.
-~5,677 lines of Python in `crex/`, plus ~1,900 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 110 tests passing.
+~6,030 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 

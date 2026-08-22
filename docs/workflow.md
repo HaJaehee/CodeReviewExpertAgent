@@ -85,6 +85,26 @@ diff 가 아니라 코드 전체를 봅니다. 변경 라인이라는 제약이 
 | "main 이랑 비교해서" | `review_diff` | MR 올리기 전 |
 | "이 파일 전체 봐줘" | `review_file` | 낯선 파일 파악 |
 | "이 폴더 감사해줘" | `review_directory` | 레거시 훑기 |
+| "지금 어느 저장소 보고 있어?" | `get_workspace` | 결과 경로가 이상할 때 |
+| "저쪽 저장소 리뷰해줘" | `set_workspace` | 대상 바꾸기 (아래 참고) |
+
+### 대상 저장소 바꾸기
+
+에이전트에게 경로를 주면 `set_workspace` 로 리뷰 대상을 바꿉니다.
+
+```
+"D:\work\other 저장소 리뷰해줘"
+    → set_workspace("D:\work\other")
+    → review_staged()
+```
+
+**MCP 서버가 살아 있는 동안만 유지됩니다.** `crex.toml` 은 바뀌지 않으므로 Zed 을
+재시작하면 원래 대상으로 돌아옵니다. 영구히 바꾸려면 터미널에서
+`python -m crex workspace <경로>` 를 쓰거나 `.zed/settings.json` 의
+`CREX_WORKSPACE` 를 고치세요.
+
+`.git` 이 없는 폴더를 주면 바뀌기는 하지만 diff 리뷰는 안 되고 파일·폴더 감사만
+됩니다. 도구가 그렇게 알려줍니다.
 
 에이전트가 도구를 안 부르고 **직접 리뷰해 버리는 것**이 가장 흔한 문제입니다.
 검증을 안 거친 지적이라 CREX 를 쓰는 의미가 사라집니다. 저장소 루트에

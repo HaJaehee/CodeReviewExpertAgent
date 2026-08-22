@@ -30,6 +30,8 @@ Do not read the diff and conduct the review yourself. Any findings you generate 
 | Compared against main (or branch name) | `review_diff(from_ref="main")` |
 | This entire file | `review_file(path=...)` |
 | This entire folder / scan this | `review_directory(path=...)` |
+| Which repository is being reviewed | `get_workspace` |
+| Review a different repository (path given) | `set_workspace(path=...)` |
 
 To narrow the scope, such as "parser side only" or "changes in this folder only", use `paths`.
 
@@ -38,6 +40,15 @@ review_staged(paths=["src/parser"])
 ```
 
 If it is ambiguous, call `review_staged` first. This is the most common request.
+
+## Changing the target repository
+
+`set_workspace` changes which repository the reviews run against. Call it only when
+the user explicitly names another repository. Do not call it because a review returned
+something unexpected — check with `get_workspace` first and tell the user what you see.
+
+The change lasts only while this MCP server is running; the config file is untouched.
+Say so when you report the switch, so nobody assumes it is permanent.
 
 ## How to handle results
 

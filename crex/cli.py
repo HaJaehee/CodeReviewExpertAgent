@@ -4,6 +4,7 @@
     python -m crex review --staged
     python -m crex scan src/buffer.cpp src/service.cs
     python -m crex doctor
+    python -m crex workspace D:\\work\\myrepo
 
 CREX 를 리뷰 대상 저장소 안에 둘 필요는 없다. 작업 디렉터리는 CREX 루트로 두고
 대상만 지정한다 — 우선순위와 이유는 `crex/workspace.py` 에 있다.
@@ -18,12 +19,13 @@ import logging
 import sys
 from pathlib import Path
 
+from .config import DEFAULT_CONFIG_NAMES, find_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
 from .ground import GroundingGate
 from .pipeline import Pipeline
 from .report import to_markdown, write_all
 from .rules import load_taxonomy
-from .workspace import Workspace, resolve
+from .workspace import Workspace, persist_workspace, resolve
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,7 +47,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"설정 오류: {exc}", file=sys.stderr)
         return 2
 
-    handlers = {"review": _cmd_review, "scan": _cmd_scan, "doctor": _cmd_doctor}
+    handlers = {
+        "review": _cmd_review,
+        "scan": _cmd_scan,
+        "doctor": _cmd_doctor,
+        "workspace": _cmd_workspace,
+    }
     return handlers[args.command](args, workspace)
 
 
@@ -73,6 +80,14 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_output_args(scan)
 
     sub.add_parser("doctor", help="엔드포인트·분석기·택소노미 상태를 점검한다", parents=[common])
+
+    workspace = sub.add_parser(
+        "workspace", help="리뷰 대상 저장소를 확인하거나 crex.toml 에 고정한다", parents=[common]
+    )
+    workspace.add_argument("path", nargs="?", default=None,
+                           help="새 워크스페이스 경로. 생략하면 현재 상태만 보여준다")
+    workspace.add_argument("--clear", action="store_true",
+                           help="crex.toml 에서 workspace 키를 지운다")
     return parser
 
 
@@ -149,6 +164,61 @@ def _cmd_scan(args: argparse.Namespace, workspace: Workspace) -> int:
     log.info("설정: %s", workspace.config.describe())
     result = Pipeline(workspace.config).run_scan(args.paths, workspace.root)
     return _emit(result, args)
+
+
+def _cmd_workspace(args: argparse.Namespace, workspace: Workspace) -> int:
+    """리뷰 대상을 확인하고, `crex.toml` 에 고정한다.
+
+    `--workspace` 는 그 실행에만 적용된다. 매번 치지 않으려면 어딘가에 적어야
+    하는데, 그 "어딘가"를 사람이 직접 찾아 열게 하지 않는다.
+    """
+    if args.path and args.clear:
+        print("경로와 --clear 를 같이 줄 수 없다.", file=sys.stderr)
+        return 2
+
+    if not args.path and not args.clear:
+        print(f"워크스페이스: {workspace.root}")
+        print(f"  출처={workspace.origin} "
+              f"git={'OK' if workspace.is_git else '없음 — diff 리뷰 불가, scan 만 가능'}")
+        print(f"설정 파일: {workspace.config.source or '(없음 — 기본값 사용 중)'}")
+        print(f"리포트: {workspace.reports}")
+        print()
+        print("고정하려면: python -m crex workspace <경로>")
+        return 0
+
+    target = _config_to_write(args)
+    try:
+        if args.clear:
+            persist_workspace(target, None)
+            print(f"{target} 에서 workspace 키를 지웠다.")
+            print("이제 현재 디렉터리에서 git 루트를 찾는다.")
+            return 0
+
+        # 쓰기 전에 검증한다. 없는 경로를 설정 파일에 박아두면 다음 실행이 죽는다.
+        resolved = resolve(args.path)
+        persist_workspace(target, resolved.root)
+    except (OSError, ValueError) as exc:
+        print(f"{exc}", file=sys.stderr)
+        return 2
+
+    print(f"워크스페이스를 {resolved.root} 로 고정했다.")
+    print(f"  기록한 파일: {target}")
+    if not resolved.is_git:
+        print("  경고: .git 이 없다 — review 는 못 하고 scan 만 된다.")
+    return 0
+
+
+def _config_to_write(args: argparse.Namespace) -> Path:
+    """어느 설정 파일에 적을 것인가.
+
+    `--config` 로 지정했으면 그 파일. 아니면 **현재 디렉터리 기준**으로 찾은
+    파일이다 — 워크스페이스 안에서 발견된 설정에 적으면, 그 저장소를 떠나는
+    순간 방금 한 설정이 사라진다. 아무것도 없으면 여기에 새로 만든다.
+    """
+    if args.config:
+        return Path(args.config)
+    found = find_config(Path.cwd())
+    return found if found is not None else Path.cwd() / DEFAULT_CONFIG_NAMES[0]
 
 
 def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:

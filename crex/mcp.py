@@ -50,7 +50,9 @@ mcp = FastMCP(
         "C++/C#/Python 코드 리뷰 도구다. 사용자가 변경사항 리뷰를 요청하면 "
         "review_staged 를, 브랜치 비교를 요청하면 review_diff 를 부른다. "
         "도구가 돌려준 요약을 그대로 전달하고, 지적 내용을 각색하거나 "
-        "직접 지적을 추가하지 마라. 리뷰 판단은 도구가 한다."
+        "직접 지적을 추가하지 마라. 리뷰 판단은 도구가 한다. "
+        "리뷰 대상 저장소는 get_workspace 로 확인하고, 사용자가 다른 저장소를 "
+        "지목했을 때만 set_workspace 로 바꾼다."
     ),
 )
 
@@ -164,6 +166,40 @@ def review_directory(path: str, recursive: bool = True) -> str:
     return _call(lambda: service().review_directory(path, recursive))
 
 
+@mcp.tool
+def get_workspace() -> str:
+    """지금 어느 저장소를 리뷰하고 있는지 알려준다.
+
+    사용자가 "지금 뭐 보고 있어?"라고 묻거나, 리뷰 결과의 경로가 예상과 다를 때
+    먼저 확인한다.
+
+    Returns:
+        워크스페이스 경로, 그 값의 출처, 설정 파일과 리포트 위치.
+    """
+    return _call(lambda: service().describe_workspace())
+
+
+@mcp.tool
+def set_workspace(path: str) -> str:
+    """리뷰 대상 저장소를 바꾼다.
+
+    사용자가 다른 저장소를 리뷰해 달라고 명시적으로 요청할 때만 부른다. 리뷰가
+    엉뚱한 결과를 냈다고 임의로 바꾸지 마라 — 대상이 틀린 것인지 먼저
+    get_workspace 로 확인하고 사용자에게 알린다.
+
+    이 서버가 살아 있는 동안만 유지된다. 설정 파일은 바뀌지 않으므로 서버를 다시
+    띄우면 원래 대상으로 돌아온다.
+
+    Args:
+        path: 리뷰할 저장소 루트의 절대 경로. `.git` 이 있는 폴더를 준다.
+            하위 폴더를 줘도 저장소 루트로 맞춘다.
+
+    Returns:
+        바뀐 대상과 그에 따라 달라진 설정·리포트 위치.
+    """
+    return _call(lambda: service().set_workspace(path))
+
+
 # --------------------------------------------------------------------------
 
 
@@ -171,7 +207,9 @@ def build_service() -> ReviewService:
     # 워크스페이스·설정·리포트 위치를 정하는 규칙은 CLI 와 완전히 같다.
     workspace = resolve()
     log.info("워크스페이스: %s", workspace.describe())
-    return ReviewService(workspace.root, workspace.config, out_dir=workspace.reports)
+    return ReviewService(
+        workspace.root, workspace.config, out_dir=workspace.reports, workspace=workspace
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

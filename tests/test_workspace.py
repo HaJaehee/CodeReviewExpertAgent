@@ -19,7 +19,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from crex.config import load_config  # noqa: E402
-from crex.workspace import WorkspaceError, resolve  # noqa: E402
+from crex.workspace import (  # noqa: E402
+    WorkspaceError,
+    persist_workspace,
+    resolve,
+    switch,
+)
 
 
 def _check(condition: bool, message: str) -> None:
@@ -257,6 +262,159 @@ def test_env_var_expansion() -> None:
             del os.environ["CREX_TEST_BASE"]
 
 
+# --------------------------------------------------------------------------
+# 도중에 바꾸기
+# --------------------------------------------------------------------------
+
+
+def test_switch_validates_exactly_like_resolve() -> None:
+    """전환 경로가 느슨하면 "처음엔 거부, 바꾸기로는 통과"하는 우회로가 생긴다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        target = _git_repo(root / "target")
+        home = _crex_home(root / "crex")
+        current = resolve(target, start=home, env={})
+
+        try:
+            switch(current, root / "없는폴더")
+        except WorkspaceError:
+            pass
+        else:
+            raise AssertionError("없는 경로로 전환됐다")
+
+        # 하위 디렉터리 승격도 그대로 적용된다.
+        other = _git_repo(root / "other")
+        (other / "src").mkdir(exist_ok=True)
+        changed = switch(current, other / "src")
+        _check(changed.root == other.resolve(), f"root: {changed.root}")
+        _check(changed.origin == "실행 중 변경", f"origin: {changed.origin}")
+
+
+def test_switch_follows_workspace_config_when_not_pinned() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = _git_repo(root / "first")
+        second = _git_repo(root / "second")
+        (second / "crex.toml").write_text(
+            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        )
+        home = _crex_home(root / "crex")
+
+        current = resolve(first, start=home, env={})
+        changed = switch(current, second)
+        _check(
+            changed.config.generator.model == "두번째-모델",
+            f"model: {changed.config.generator.model}",
+        )
+        _check(changed.reports == second.resolve() / "reports", f"reports: {changed.reports}")
+
+
+def test_switch_keeps_pinned_config_and_reports() -> None:
+    """사용자가 --config / --out 으로 고정한 것은 대상을 바꿔도 따라간다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = _git_repo(root / "first")
+        second = _git_repo(root / "second")
+        (second / "crex.toml").write_text(
+            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        )
+        home = _crex_home(root / "crex")
+        pinned = home / "pinned.toml"
+        pinned.write_text('[llm.generator]\nmodel = "고정-모델"\n', encoding="utf-8")
+        reports = root / "리포트"
+
+        current = resolve(first, pinned, reports=reports, start=home, env={})
+        _check(current.config_explicit and current.reports_explicit, "명시 표시가 안 붙었다")
+
+        changed = switch(current, second)
+        _check(
+            changed.config.generator.model == "고정-모델",
+            f"고정한 설정이 밀렸다: {changed.config.generator.model}",
+        )
+        _check(changed.reports == reports, f"reports: {changed.reports}")
+        _check(changed.root == second.resolve(), f"root: {changed.root}")
+
+
+# --------------------------------------------------------------------------
+# 설정 파일에 고정
+# --------------------------------------------------------------------------
+
+
+def test_persist_writes_and_updates_top_level_key() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        target = _git_repo(root / "target")
+        other = _git_repo(root / "other")
+        config = root / "crex.toml"
+
+        persist_workspace(config, target)
+        _check(load_config(config).workspace == target.resolve(), "처음 기록이 안 읽힌다")
+
+        persist_workspace(config, other)
+        _check(load_config(config).workspace == other.resolve(), "갱신이 안 됐다")
+        _check(config.read_text(encoding="utf-8").count("workspace =") == 1, "키가 두 개 생겼다")
+
+        persist_workspace(config, None)
+        _check(load_config(config).workspace is None, "삭제가 안 됐다")
+
+
+def test_persist_keeps_comments_and_sections() -> None:
+    """사람이 읽고 고치는 파일이다. 주석이 내용의 절반이라 다시 써 내면 안 된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "crex.toml"
+        original = (
+            "#  머리말 주석\n"
+            "#  두 번째 줄\n"
+            "\n"
+            "[llm.generator]\n"
+            "#  모델 이름은 vLLM 에 뜬 것과 같아야 한다\n"
+            'model = "Qwen3.6-27B"\n'
+        )
+        config.write_text(original, encoding="utf-8")
+        target = _git_repo(Path(tmp) / "target")
+
+        persist_workspace(config, target)
+        text = config.read_text(encoding="utf-8")
+
+        _check("#  머리말 주석" in text, "머리말 주석이 사라졌다")
+        _check("#  모델 이름은" in text, "섹션 안 주석이 사라졌다")
+        _check('model = "Qwen3.6-27B"' in text, "다른 설정이 사라졌다")
+        # 최상위 키는 첫 섹션보다 앞에 있어야 그 섹션의 키가 되지 않는다.
+        _check(
+            text.index("workspace =") < text.index("[llm.generator]"),
+            f"워크스페이스 키가 섹션 안으로 들어갔다:\n{text}",
+        )
+        _check(load_config(config).workspace == target.resolve(), "다시 읽히지 않는다")
+
+
+def test_persist_preserves_crlf() -> None:
+    """윈도우 사용자의 파일이다. LF 로 되돌리면 한 줄 고치고 전체가 바뀐 것으로 보인다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "crex.toml"
+        config.write_bytes(b'#  header\r\n\r\n[llm.generator]\r\nmodel = "m"\r\n')
+        target = _git_repo(Path(tmp) / "target")
+
+        persist_workspace(config, target)
+        raw = config.read_bytes()
+        _check(raw.count(b"\r\n") == raw.count(b"\n"), f"LF 가 섞였다: {raw!r}")
+        _check(b'workspace = "' in raw, "키가 안 들어갔다")
+
+
+def test_persist_ignores_workspace_key_inside_a_section() -> None:
+    """섹션 안의 같은 이름 키는 다른 설정이다. 건드리면 남의 값을 덮어쓴다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "crex.toml"
+        config.write_text(
+            '[grounding]\nsemgrep_config = "/opt/rules"\n', encoding="utf-8"
+        )
+        target = _git_repo(Path(tmp) / "target")
+
+        persist_workspace(config, target)
+        text = config.read_text(encoding="utf-8")
+        _check(text.index("workspace =") < text.index("[grounding]"), f"위치가 잘못됐다:\n{text}")
+        _check('semgrep_config = "/opt/rules"' in text, "다른 키가 사라졌다")
+
+
 TESTS = [
     test_argument_beats_everything,
     test_env_beats_config,
@@ -271,6 +429,13 @@ TESTS = [
     test_reports_default_into_workspace,
     test_unknown_top_level_config_key_is_rejected,
     test_env_var_expansion,
+    test_switch_validates_exactly_like_resolve,
+    test_switch_follows_workspace_config_when_not_pinned,
+    test_switch_keeps_pinned_config_and_reports,
+    test_persist_writes_and_updates_top_level_key,
+    test_persist_keeps_comments_and_sections,
+    test_persist_preserves_crlf,
+    test_persist_ignores_workspace_key_inside_a_section,
 ]
 
 

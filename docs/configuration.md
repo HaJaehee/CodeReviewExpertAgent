@@ -43,6 +43,17 @@ cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
 ```
 
+`crex.toml` 에 적어두는 것은 손으로 열지 않고 명령으로 할 수 있습니다.
+
+```bash
+python -m crex workspace                    # 지금 무엇을 보고 있나
+python -m crex workspace D:\work\myrepo     # crex.toml 에 고정
+python -m crex workspace --clear            # 고정 해제
+```
+
+경로를 검증한 뒤에 적습니다 — 없는 경로가 설정 파일에 박히면 다음 실행이 죽습니다.
+주석은 그대로 두고 그 한 줄만 갈아 끼웁니다.
+
 정해지는 순서는 위에서 아래로, 먼저 정해지면 아래는 보지 않습니다.
 
 | 순위 | 출처 |
@@ -68,6 +79,22 @@ python -m crex review --workspace D:\work\myrepo --staged
 
 MCP 서버와 관제 화면도 같은 규칙을 씁니다. 세 진입점이 서로 다른 저장소를 보고
 있으면 관제 화면의 의미가 없어지므로 `crex/workspace.py` 한 곳에 모아 뒀습니다.
+
+### 돌고 있는 중에 바꾸기
+
+| 어디서 | 어떻게 | 지속 |
+|---|---|---|
+| 터미널 | `python -m crex workspace <경로>` | `crex.toml` 에 남습니다 |
+| 관제 화면 | 왼쪽 "워크스페이스" 옆 **변경** | 서버가 사는 동안만 |
+| Zed 에이전트 | `set_workspace` 도구 | MCP 서버가 사는 동안만 |
+
+화면과 MCP 쪽은 설정 파일을 고치지 않습니다. 대화 한 번이나 클릭 한 번이 다음
+사람의 실행 대상까지 바꿔 놓으면 안 되기 때문입니다. 영구히 바꾸려면 명령을
+쓰세요.
+
+셋 다 처음 정할 때와 **똑같은 검증**을 거칩니다. 없는 경로는 거부하고, 하위
+폴더는 저장소 루트로 올리고, 새 워크스페이스 안의 `crex.toml` 을 따라갑니다.
+`--config` 나 `--out` 으로 고정해 둔 것은 대상을 바꿔도 그대로 유지됩니다.
 
 ---
 

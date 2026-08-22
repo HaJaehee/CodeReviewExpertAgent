@@ -28,12 +28,22 @@ CREX 는 반입 절차를 거쳐 한 자리에 풀어두는 물건이고, 리뷰
 
 CLI·MCP 서버·관제 화면 세 진입점이 전부 이 모듈 하나를 쓴다. 세 곳이 각자
 환경변수를 읽던 것을 여기로 모았다 — 한 곳에서만 틀릴 수 있게.
+
+## 도중에 바꾸기
+
+`switch()` 는 이미 돌고 있는 프로세스의 대상을 바꾼다 (관제 화면의 "변경" 버튼,
+MCP 의 `set_workspace`). 처음 정할 때와 **완전히 같은 검증**을 거친다 — 여기서만
+느슨하면 "처음엔 거부당했는데 바꾸기로는 통과하는" 경로가 생긴다.
+
+`persist_workspace()` 는 `crex.toml` 의 최상위 `workspace` 키를 갱신한다
+(CLI 의 `workspace` 명령). 다음 실행부터 적용된다.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -67,6 +77,11 @@ class Workspace:
     origin: str
     #: root 에 `.git` 이 있는가. 없으면 diff 리뷰는 못 하고 scan 만 된다.
     is_git: bool = True
+    #: 설정 파일을 사용자가 직접 지정했는가(`--config`/`CREX_CONFIG`).
+    #: 지정했다면 워크스페이스를 바꿔도 그 파일을 계속 쓴다 — 사용자가 고정한 것이다.
+    config_explicit: bool = False
+    #: 리포트 위치를 직접 지정했는가(`--out`/`CREX_REPORTS`). 같은 이유로 따라간다.
+    reports_explicit: bool = False
 
     def describe(self) -> str:
         note = "" if self.is_git else " (git 저장소가 아님 — scan 만 가능)"
@@ -106,7 +121,112 @@ def resolve(
         reports=_reports_dir(reports, environ, root),
         origin=origin,
         is_git=is_git,
+        config_explicit=bool(config_path or (environ.get(ENV_CONFIG) or "").strip()),
+        reports_explicit=bool(reports or (environ.get(ENV_REPORTS) or "").strip()),
     )
+
+
+def switch(
+    current: Workspace | None,
+    target: Path | str,
+    *,
+    start: Path | None = None,
+) -> Workspace:
+    """돌고 있는 프로세스의 리뷰 대상을 바꾼다.
+
+    `resolve()` 를 그대로 다시 태운다 — 존재 확인, 저장소 루트 승격, `.git` 확인,
+    워크스페이스 안의 `crex.toml` 우선까지 전부 같다. 검증을 여기서 따로 쓰면
+    두 경로의 판정이 언젠가 갈린다.
+
+    사용자가 **직접 지정한 것은 따라간다.** `--config` 로 설정 파일을 고정했다면
+    대상을 바꿔도 그 파일을 계속 쓰고, `--out`/`CREX_REPORTS` 로 리포트 위치를
+    고정했다면 그것도 유지한다. 지정하지 않은 것만 새 워크스페이스를 따른다.
+
+    환경변수는 다시 읽지 않는다. 전환은 "지금 이 값으로 바꾼다"이지 "처음부터
+    다시 정한다"가 아니다.
+    """
+    if current is None:
+        return resolve(target, start=start, env={})
+
+    changed = resolve(
+        target,
+        current.config.source if current.config_explicit else None,
+        reports=current.reports if current.reports_explicit else None,
+        start=start,
+        env={},
+    )
+    changed.origin = "실행 중 변경"
+    changed.config_explicit = current.config_explicit
+    changed.reports_explicit = current.reports_explicit
+    return changed
+
+
+#: 설정 파일이 없을 때 만들어 넣는 머리말.
+_NEW_CONFIG_HEADER = (
+    "#  CREX 설정. 전체 항목은 crex.example.toml 과 docs/configuration.md 를 보라.\n"
+)
+
+_WORKSPACE_LINE = re.compile(r"^\s*workspace\s*=", re.IGNORECASE)
+_SECTION_LINE = re.compile(r"^\s*\[")
+
+
+def persist_workspace(config_path: Path, root: Path | None) -> Path:
+    """`crex.toml` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다.
+
+    TOML 을 다시 써 내지 않고 **그 줄만 갈아 끼운다.** 표준 라이브러리에는 TOML
+    작성기가 없고(`tomllib` 은 읽기 전용), 있다 해도 주석을 전부 날려버린다.
+    이 파일은 사람이 읽고 고치는 물건이라 주석이 내용의 절반이다.
+
+    최상위 키만 건드린다 — 첫 `[section]` 앞쪽 구간만 본다. 그 뒤의
+    `workspace = ...` 는 어느 섹션에 속한 다른 키이므로 손대지 않는다.
+    """
+    # 줄바꿈 방식을 바꾸지 않는다. 윈도우에서 CRLF 파일을 LF 로 되돌려 놓으면
+    # 한 줄 고쳤는데 git 이 파일 전체가 바뀐 것으로 본다. 그래서 읽을 때도
+    # 개행 변환을 끈다(`newline=""`) — 켜져 있으면 CRLF 였다는 사실 자체가 지워진다.
+    text = ""
+    if config_path.is_file():
+        with config_path.open("r", encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines()
+
+    limit = next((i for i, line in enumerate(lines) if _SECTION_LINE.match(line)), len(lines))
+    found = next((i for i, line in enumerate(lines[:limit]) if _WORKSPACE_LINE.match(line)), None)
+
+    if root is None:
+        if found is not None:
+            del lines[found]
+            # 키를 지우고 남은 빈 줄이 쌓이지 않게 한 줄만 정리한다.
+            if found < len(lines) and not lines[found].strip() and (
+                found == 0 or not lines[found - 1].strip()
+            ):
+                del lines[found]
+    else:
+        entry = f'workspace = "{_toml_string(root)}"'
+        if found is not None:
+            lines[found] = entry
+        elif not lines:
+            lines = [_NEW_CONFIG_HEADER.rstrip("\n"), "", entry]
+        else:
+            # 첫 섹션 바로 앞에 넣는다. 파일 맨 위 설명 주석을 밀어내지 않는다.
+            insert = limit
+            while insert > 0 and not lines[insert - 1].strip():
+                insert -= 1
+            lines[insert:insert] = [entry, ""] if insert == 0 else ["", entry]
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        newline.join(lines).rstrip("\r\n") + newline, encoding="utf-8", newline=""
+    )
+
+    # 쓴 것을 바로 다시 읽어 검증한다. 망가진 설정을 남기고 성공을 알리지 않는다.
+    load_config(config_path)
+    return config_path
+
+
+def _toml_string(root: Path) -> str:
+    """TOML 기본 문자열 값. 윈도우 경로도 `/` 로 적어 역슬래시 이스케이프를 피한다."""
+    return root.as_posix().replace("\\", "\\\\").replace('"', '\\"')
 
 
 # --------------------------------------------------------------------------
@@ -225,5 +345,7 @@ __all__ = [
     "ENV_WORKSPACE",
     "Workspace",
     "WorkspaceError",
+    "persist_workspace",
     "resolve",
+    "switch",
 ]

@@ -68,12 +68,12 @@ builds or a misconfigured `structured_output_mode` silently drop the constraint.
 | `crex/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
 | `crex/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
 | `crex/config.py` | 212 | TOML config loading with unknown-key rejection (sections *and* top level) |
-| `crex/cli.py` | 258 | `review` / `scan` / `doctor` subcommands |
-| `crex/workspace.py` | 227 | Which repository is under review. One resolution rule shared by CLI, MCP, and dashboard |
+| `crex/cli.py` | 328 | `review` / `scan` / `doctor` / `workspace` subcommands |
+| `crex/workspace.py` | 342 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
-| `crex/service.py` | 209 | `ReviewService` — the 5 MCP operations. **No FastMCP import** |
-| `crex/mcp.py` | 207 | FastMCP binding only. Tool schemas from type hints + docstrings |
+| `crex/service.py` | 261 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
+| `crex/mcp.py` | 245 | FastMCP binding only. Tool schemas from type hints + docstrings |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.
@@ -98,6 +98,14 @@ finding is relative to that root. When the workspace comes from an argument or t
 environment and no config file is named, `<workspace>/crex.toml` wins over CREX's own
 — per-repository `compile_commands_dir` and `dotnet_project` differ — and the search
 never walks above the workspace.
+
+The target can also move while a process is up: `switch()` re-runs `resolve()` rather
+than re-implementing its checks, so the dashboard button and the MCP `set_workspace`
+tool cannot be a looser path in than startup was. Whatever the user pinned explicitly
+(`--config`, `--out`) follows the switch; everything else follows the new workspace.
+Only `persist_workspace()` — the `python -m crex workspace` command — writes to
+`crex.toml`; a dashboard click or an agent turn stays in-process, because neither
+should decide what the next person's run targets.
 
 ### `crex/viz/` — the observability surface
 

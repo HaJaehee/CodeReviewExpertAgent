@@ -116,7 +116,15 @@ cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
 ```
 
-매번 치기 싫으면 `crex.toml` 에 적거나 환경변수를 씁니다.
+매번 치기 싫으면 명령 한 줄로 `crex.toml` 에 고정합니다.
+
+```bash
+python -m crex workspace D:\work\myrepo     # 고정
+python -m crex workspace                    # 지금 무엇을 보고 있나
+python -m crex workspace --clear            # 해제
+```
+
+직접 적어도 됩니다.
 
 ```toml
 workspace = "D:/work/myrepo"

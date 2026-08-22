@@ -82,6 +82,20 @@ def test_verbose_from_either_position() -> None:
     _check(not parser.parse_args(["doctor"]).verbose, "-v 없이 참이 됨")
 
 
+def test_workspace_command_parses() -> None:
+    """확인·고정·해제 세 형태를 다 받아야 한다."""
+    parser = _build_parser()
+
+    show = parser.parse_args(["workspace"])
+    _check(show.command == "workspace", f"command: {show.command}")
+    _check(show.path is None and not show.clear, "인자 없는 형태가 깨졌다")
+
+    setter = parser.parse_args(["workspace", "/tmp/x"])
+    _check(str(setter.path) in ("/tmp/x", "\\tmp\\x"), f"path: {setter.path}")
+
+    _check(parser.parse_args(["workspace", "--clear"]).clear, "--clear 손실")
+
+
 def test_scan_paths_still_parse() -> None:
     args = _build_parser().parse_args(["scan", "a.cpp", "b.py", "--out", "reports"])
     _check(args.paths == ["a.cpp", "b.py"], f"paths: {args.paths}")
@@ -147,6 +161,7 @@ TESTS = [
     test_verbose_from_either_position,
     test_repo_is_accepted_as_alias,
     test_workspace_defaults_to_none,
+    test_workspace_command_parses,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,
     test_exit_code_signals_high_severity,

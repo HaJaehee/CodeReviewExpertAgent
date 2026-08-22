@@ -40,6 +40,9 @@ log = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18765
 
+#: 이 주소들에 바인드했을 때만 화면에서 워크스페이스를 바꿀 수 있다.
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
 #: 요청 본문 상한. 이 API 로 들어오는 것은 실행 파라미터뿐이라 넉넉하다.
 MAX_BODY = 1 << 20
 
@@ -58,10 +61,8 @@ def build_context(
     config = resolved.config
     taxonomy = load_taxonomy(config.taxonomy_path) if config.taxonomy_path else load_taxonomy()
     return Context(
-        RunRegistry(resolved.root, config, resolved.reports),
+        RunRegistry(resolved.root, config, resolved.reports, workspace=resolved),
         taxonomy,
-        workspace_origin=resolved.origin,
-        workspace_is_git=resolved.is_git,
     )
 
 
@@ -216,17 +217,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     registry = ctx.registry
-    log.info("워크스페이스 %s [%s]", registry.repo_root, ctx.workspace_origin)
-    if not ctx.workspace_is_git:
+    log.info("워크스페이스 %s [%s]", registry.repo_root,
+             registry.workspace.origin if registry.workspace else "현재 디렉터리")
+    if registry.workspace is not None and not registry.workspace.is_git:
         log.warning("%s 에 .git 이 없다 — diff 리뷰는 못 하고 파일·폴더 감사만 된다.",
                     registry.repo_root)
     log.info("%s", registry.config.describe())
     log.info("리포트 %s", registry.out_dir)
 
-    if args.host not in ("127.0.0.1", "localhost", "::1"):
+    # 화면에서 워크스페이스를 바꾸는 것은 임의의 디렉터리를 열 수 있게 하는 일이다.
+    # 인증이 없는 화면이므로 루프백일 때만 받는다.
+    ctx.workspace_switchable = args.host in LOOPBACK
+    if args.host not in LOOPBACK:
         log.warning(
             "%s 에 바인드한다. 관제 화면에는 소스 코드와 프롬프트가 그대로 실린다.", args.host
         )
+        log.warning("원격 바인드이므로 화면에서 워크스페이스를 바꿀 수 없게 한다.")
 
     uvicorn = None if args.stdlib else _import_uvicorn()
     print(f"\n  http://{args.host}:{args.port}\n", file=sys.stderr)

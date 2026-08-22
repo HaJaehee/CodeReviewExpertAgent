@@ -61,16 +61,17 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Pipeline: `run_diff` / `run_scan` | Complete, 5 end-to-end tests via fake vLLM |
 | Markdown / SARIF / JSON output | Complete |
 | CLI: `review` / `scan` / `doctor` | Complete |
-| Workspace resolution (review a repo CREX does not live in) | Complete, 13 tests |
-| `ReviewService` (5 MCP operations) | Complete, 13 tests, no FastMCP needed |
+| Workspace resolution (review a repo CREX does not live in) | Complete, 20 tests |
+| Changing the target at runtime (CLI command, dashboard button, MCP tool) | Complete |
+| `ReviewService` (7 MCP operations) | Complete, 18 tests, no FastMCP needed |
 | FastMCP binding (`mcp.py`) | Written; binding test skips when FastMCP absent |
-| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 15 tests. Runs on stdlib; uvicorn optional |
+| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 19 tests. Runs on stdlib; uvicorn optional |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-94 tests total, all runnable offline.
+110 tests total, all runnable offline.
 
 ## What does not exist
 

@@ -36,6 +36,7 @@ from ..llm import LLMClient, LLMError
 from ..pipeline import Pipeline
 from ..schema import ReviewChunk, ReviewResult
 from ..service import ReviewRequestError, ReviewService
+from ..workspace import Workspace, WorkspaceError, switch
 from .trace import Event, Tracer, clip
 
 log = logging.getLogger(__name__)
@@ -261,14 +262,46 @@ class RunRegistry:
         out_dir: Path,
         *,
         max_runs: int = MAX_RUNS,
+        workspace: Workspace | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.config = config
         self.out_dir = out_dir
         self.max_runs = max_runs
+        #: 대상을 바꾸려면 어디서 왔는지 알아야 한다 (`retarget`).
+        self.workspace = workspace
         self._lock = threading.Lock()
         self._runs: dict[str, Run] = {}
         self._order: list[str] = []
+
+    # -- 대상 ---------------------------------------------------------------
+
+    def retarget(self, path: str) -> Workspace:
+        """리뷰 대상 저장소를 바꾼다.
+
+        **진행 중인 실행이 있으면 거부한다.** `_execute` 는 실행 중에
+        `self.repo_root` 와 `self.config` 를 읽는다. 도중에 갈아 끼우면 청크는
+        이쪽 저장소, 정적분석은 저쪽 저장소를 본 결과가 한 리포트에 섞인다.
+        `start()` 도 같은 락을 쥐고 실행을 등록하므로 그 사이로 끼어들 틈은 없다.
+        """
+        with self._lock:
+            running = [r.id for r in self._runs.values() if r.status == "running"]
+            if running:
+                raise ReviewRequestError(
+                    f"실행 중({running[0]})에는 워크스페이스를 바꿀 수 없다. "
+                    f"끝나기를 기다리거나 중단하라."
+                )
+            try:
+                changed = switch(self.workspace, path)
+            except WorkspaceError as exc:
+                # 사용자가 고칠 수 있는 문제. 화면에 그대로 띄운다.
+                raise ReviewRequestError(str(exc)) from exc
+            self.workspace = changed
+            self.repo_root = changed.root
+            self.config = changed.config
+            self.out_dir = changed.reports
+        log.info("워크스페이스 변경: %s", changed.describe())
+        return changed
 
     # -- 조회 ---------------------------------------------------------------
 

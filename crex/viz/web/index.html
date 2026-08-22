@@ -85,13 +85,28 @@
       <p class="hint" id="run-hint">설정: <code>crex.toml</code></p>
 
       <dl class="paths" id="where">
-        <dt>워크스페이스</dt>
+        <dt>
+          워크스페이스
+          <button class="btn-link" id="btn-workspace" type="button">변경</button>
+        </dt>
         <dd id="where-workspace">—</dd>
         <dt>설정 파일</dt>
         <dd id="where-config">—</dd>
         <dt>리포트</dt>
         <dd id="where-reports">—</dd>
       </dl>
+
+      <div class="workspace-edit" id="workspace-edit" hidden>
+        <label class="field">
+          <span>새 워크스페이스 <em>(.git 이 있는 폴더)</em></span>
+          <input id="workspace-input" type="text" placeholder="D:\work\myrepo" spellcheck="false">
+        </label>
+        <p class="hint">이 서버가 살아 있는 동안만 유지된다. <code>crex.toml</code> 은 바뀌지 않는다.</p>
+        <div class="row">
+          <button class="btn btn-primary btn-sm" id="btn-workspace-apply" type="button">적용</button>
+          <button class="btn btn-ghost btn-sm" id="btn-workspace-cancel" type="button">취소</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel panel-grow">
