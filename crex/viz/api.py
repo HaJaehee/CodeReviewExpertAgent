@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..rules import Taxonomy
+from .. import __version__
 from ..service import ReviewRequestError
 from .engine import KINDS, RunRegistry, describe_config
 
@@ -85,7 +86,7 @@ class Context:
 
     registry: RunRegistry
     taxonomy: Taxonomy
-    version: str = "0.1.0"
+    version: str = __version__
     #: 워크스페이스 변경을 받아줄지. 루프백이 아닌 주소에 바인드하면 서버가 끈다 —
     #: 화면에는 인증이 없고, 대상 변경은 "이 저장소"를 "아무 디렉터리"로 넓힌다.
     workspace_switchable: bool = True

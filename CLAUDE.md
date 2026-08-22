@@ -58,7 +58,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 112 tests, no LLM or network needed
+python tests/run_all.py                     # 113 tests, no LLM or network needed
 ```
 
 ```bash
@@ -191,6 +191,13 @@ development. `tests/test_pipeline.py` builds a real temporary git repo and uses 
 five means you can't tell which one raised FAR. See
 [`docs/writing-rules.md`](docs/writing-rules.md).
 
+**The version lives in exactly two places.** `crex/__init__.py :: __version__` is
+the source; `README.md` is the one copy a human maintains. CLI (`--version`,
+`doctor`), SARIF output, `/api/config`, the MCP server identity, and the transfer
+bundle's manifest all derive from it, and `test_version_declared_in_one_place`
+fails if anyone writes the number down again. The taxonomy's own version in
+`rules/taxonomy.toml` is deliberately separate — rules outlive releases.
+
 **Don't add settings that do nothing.** `min_severity` and `review.mode` were
 declared but never read; both were made real (filtering, and validation that
 rejects unimplemented modes). A dead setting is worse than a missing one.
@@ -198,7 +205,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 112 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 113 tests passing.
 ~6,137 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**

@@ -19,6 +19,7 @@ import logging
 import sys
 from pathlib import Path
 
+from . import __version__
 from .config import DEFAULT_CONFIG_NAMES, find_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
 from .ground import GroundingGate
@@ -58,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m crex", description="폐쇄망 sLLM 코드리뷰")
+    parser.add_argument("--version", action="version", version=f"crex {__version__}")
     _add_global_args(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -225,6 +227,7 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     """폐쇄망 반입 직후 무엇이 되고 무엇이 안 되는지 한 번에 보여준다."""
     config = workspace.config
 
+    print(f"crex {__version__}\n")
     print(f"워크스페이스: {workspace.root}")
     print(f"  출처={workspace.origin} "
           f"git={'OK' if workspace.is_git else '없음 — diff 리뷰 불가, scan 만 가능'} "

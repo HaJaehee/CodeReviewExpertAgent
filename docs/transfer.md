@@ -94,12 +94,12 @@ cd crex-20260817
 ==> Python 확인
     번들 런타임 사용
     OK   Python 3.12.10
-    OK   crex 0.1.0 import 성공
+    OK   crex 0.1 import 성공
     OK   fastmcp
     OK   git
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
-    112/112 통과
+    113/113 통과
     OK   전체 통과
 ```
 

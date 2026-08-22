@@ -42,6 +42,7 @@ network in front of it is doing that job. See `docs/operations.md`.
 from __future__ import annotations
 
 import argparse
+import inspect
 import logging
 import os
 import sys
@@ -55,6 +56,7 @@ os.environ.setdefault("FASTMCP_CHECK_FOR_UPDATES", "off")
 from fastmcp import FastMCP  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
 
+from . import __version__
 from .gitio import gitpython_available
 from .service import MAX_SCAN_FILES, ReviewRequestError, ReviewService
 from .workspace import resolve
@@ -72,8 +74,17 @@ LOOPBACK = ("127.0.0.1", "localhost", "::1")
 #: 워크스페이스 변경을 허용할지. HTTP 로 원격에 열었으면 main() 에서 끈다.
 _workspace_switchable = True
 
+#: FastMCP 2.x 에는 `version` 인자가 없다. 있으면 채우고 없으면 넘긴다 —
+#: 서버 버전을 알리자고 구버전에서 기동이 죽으면 곤란하다.
+_VERSION_KWARG = (
+    {"version": __version__}
+    if "version" in inspect.signature(FastMCP.__init__).parameters
+    else {}
+)
+
 mcp = FastMCP(
     "crex",
+    **_VERSION_KWARG,
     instructions=(
         "Code review tool for C++, C# and Python. When the user asks for a review "
         "of their changes, call review_staged; when they ask to compare against a "
@@ -316,7 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     log.info(
-        "MCP 서버 시작 — 저장소 %s, git=%s, %s",
+        "crex %s MCP 서버 시작 — 저장소 %s, git=%s, %s",
+        __version__,
         _service.repo_root,
         "GitPython" if gitpython_available() else "subprocess",
         _service.config.describe(),

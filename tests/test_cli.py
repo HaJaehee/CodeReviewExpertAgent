@@ -5,15 +5,19 @@
 
 from __future__ import annotations
 
+import inspect
 import io
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from crex import __version__  # noqa: E402
 from crex.cli import _build_parser, _emit, force_utf8_output  # noqa: E402
-from crex.report import to_markdown  # noqa: E402
+from crex.report import to_markdown, to_sarif  # noqa: E402
+from crex.viz.api import Context  # noqa: E402
 from crex.schema import Dimension, Finding, ReviewResult, Severity  # noqa: E402
 
 
@@ -80,6 +84,38 @@ def test_verbose_from_either_position() -> None:
     _check(parser.parse_args(["-v", "doctor"]).verbose, "앞쪽 -v 손실")
     _check(parser.parse_args(["doctor", "-v"]).verbose, "뒤쪽 -v 손실")
     _check(not parser.parse_args(["doctor"]).verbose, "-v 없이 참이 됨")
+
+
+def test_version_declared_in_one_place() -> None:
+    """버전 문자열은 crex/__init__.py 와 README 두 곳에만 있어야 한다.
+
+    리포트에 찍힌 버전으로 "그때 뭘로 돌렸나"를 되짚는 것이 목적인데, 소스
+    어딘가에 숫자를 또 적어 두면 그 값이 거짓이 될 수 있다. 사람이 맞추는 곳은
+    README 하나뿐이고, 그것도 여기서 대조한다.
+    """
+    root = Path(__file__).resolve().parents[1]
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    _check(f"버전 {__version__}" in readme, f"README 에 '버전 {__version__}' 이 없다")
+
+    # 소스에서 __init__.py 말고 버전을 또 적은 곳이 있는가.
+    literal = re.compile(r'"' + re.escape(__version__) + r'(\.\d+)*"')
+    offenders = []
+    for path in sorted((root / "crex").rglob("*.py")):
+        if path.name == "__init__.py" and path.parent.name == "crex":
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "version" in line.lower() and literal.search(line):
+                offenders.append(f"{path.relative_to(root)}:{number}")
+    _check(not offenders, f"버전을 직접 적은 곳이 있다: {offenders}")
+
+    # 실제로 파생되는지도 본다 — import 만 해 두고 안 쓰면 위 검사를 통과한다.
+    _check(Context.__dataclass_fields__["version"].default == __version__,
+           "관제 화면이 다른 버전을 알린다")
+    _check(
+        inspect.signature(to_sarif).parameters["version"].default == __version__,
+        "SARIF 리포트가 다른 버전을 적는다",
+    )
 
 
 def test_workspace_command_parses() -> None:
@@ -161,6 +197,7 @@ TESTS = [
     test_verbose_from_either_position,
     test_repo_is_accepted_as_alias,
     test_workspace_defaults_to_none,
+    test_version_declared_in_one_place,
     test_workspace_command_parses,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,

@@ -29,7 +29,7 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 112개 전부 통과해야 합니다
+python tests/run_all.py         # 반입 무결성 — 113개 전부 통과해야 합니다
 cp crex.example.toml crex.toml  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```
@@ -452,6 +452,25 @@ INFO    crex.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적
 ---
 
 ## 버전 관리
+
+### CREX 자체의 버전
+
+```bash
+python -m crex --version    # crex 0.1
+```
+
+`doctor` 의 첫 줄, SARIF 리포트의 `tool.driver.version`, 관제 화면의
+`/api/config`, MCP 서버가 클라이언트에 알리는 서버 버전, 반입 번들의
+`MANIFEST.txt` 가 전부 같은 값을 씁니다. 리포트만 보고 "이건 어느 버전이 낸
+지적인가"를 되짚을 수 있어야 하기 때문입니다.
+
+값은 `crex/__init__.py` 한 줄에서 옵니다. 올릴 때는 거기와 `README.md` 두 곳만
+고치면 되고, 소스 어딘가에 숫자를 또 적으면 테스트가 실패합니다.
+
+룰 택소노미의 버전(`rules/taxonomy.toml` 의 `meta.version`)은 이것과 별개입니다.
+룰은 평가 리포트를 몇 달에 걸쳐 잇는 키라 자기 수명을 따로 가집니다.
+
+### 설정 파일
 
 `crex.toml` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
 상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crex.toml` 에는 공통

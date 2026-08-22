@@ -16,6 +16,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from . import __version__
 from .schema import Finding, ReviewResult, Severity
 
 _SEVERITY_LABEL = {
@@ -97,7 +98,7 @@ def _stats_block(result: ReviewResult) -> str:
     return "\n".join(lines)
 
 
-def to_sarif(result: ReviewResult, *, tool_name: str = "CREX", version: str = "0.1.0") -> dict:
+def to_sarif(result: ReviewResult, *, tool_name: str = "CREX", version: str = __version__) -> dict:
     """SARIF 2.1.0. IDE 와 품질 대시보드가 그대로 읽는다."""
     rules_seen: dict[str, dict] = {}
     sarif_results = []

@@ -97,6 +97,16 @@ function Invoke-Native {
 
 Write-Step "준비"
 
+# 버전은 crex/__init__.py 한 곳에서만 관리한다. 여기에 또 적으면 번들 매니페스트가
+# 소스와 다른 버전을 주장하게 된다 — 반입 심사에서 대조하는 값이라 특히 나쁘다.
+$initPath = Join-Path $RepoRoot "crex\__init__.py"
+$CrexVersion = "unknown"
+if (Test-Path $initPath) {
+    $match = Select-String -Path $initPath -Pattern '^__version__\s*=\s*"([^"]+)"'
+    if ($match) { $CrexVersion = $match.Matches[0].Groups[1].Value }
+}
+Write-Note "crex $CrexVersion"
+
 $minor = [int]($PythonVersion.Split('.')[1])
 if ($minor -lt 11) {
     throw "Python $PythonVersion 은 쓸 수 없다. tomllib 이 3.11 부터 표준이라 3.11 이상이 필요하다."
@@ -298,6 +308,7 @@ $entries = Get-ChildItem -Path $Staging -Recurse -File |
 
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# CREX 반입 번들 매니페스트")
+$lines.Add("# crex: $CrexVersion")
 $lines.Add("# 생성: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $lines.Add("# Python: $(if ($SkipRuntime) { '미포함' } else { $PythonVersion })")
 $lines.Add("# 서드파티: $(if ($SkipDeps) { '미포함' } else { 'fastmcp, GitPython' })")
@@ -330,6 +341,7 @@ $sizeMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
 
 Write-Host ""
 Write-Host "완료" -ForegroundColor Green
+Write-Host "  버전   : crex $CrexVersion"
 Write-Host "  번들   : $ZipPath ($sizeMB MB)"
 Write-Host "  SHA256 : $zipHash"
 Write-Host "  해시   : $ZipPath.sha256"
