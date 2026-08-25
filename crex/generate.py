@@ -21,6 +21,7 @@ vLLM 의 스키마 강제는 보통 "JSON 파싱 실패를 없애는" 용도로 
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from .llm import LLMClient
@@ -101,8 +102,13 @@ class RuleChecker:
         self.max_workers = max_workers
         #: line 을 변경된 라인 집합으로 제한할지. 전체 파일 감사 모드에서는 끈다.
         self.restrict_lines = restrict_lines
+        #: 청크별 호출 실패. 파이프라인이 결과에 실어 사용자에게 보여준다.
+        #: 이걸 로그에만 남기면 "지적 0건"과 "전부 실패"가 구분되지 않는다.
+        self.errors: list[str] = []
+        self._errors_lock = threading.Lock()
 
     def review(self, chunks: list[ReviewChunk]) -> list[Finding]:
+        self.errors = []
         if not chunks:
             return []
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
@@ -141,9 +147,14 @@ class RuleChecker:
             )
         except Exception as exc:  # noqa: BLE001 - 청크 하나가 실패해도 나머지는 진행한다
             log.warning("%s 리뷰 실패: %s", chunk.chunk_id, exc)
+            self._record_error(f"{chunk.chunk_id} 생성 실패: {exc}")
             return []
 
         return self._parse(response, chunk, rules)
+
+    def _record_error(self, message: str) -> None:
+        with self._errors_lock:
+            self.errors.append(message)
 
     def _allowed_lines(self, chunk: ReviewChunk) -> list[int]:
         if self.restrict_lines:

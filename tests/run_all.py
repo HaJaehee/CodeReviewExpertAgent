@@ -18,6 +18,7 @@ MODULES = [
     "tests.test_filter",
     "tests.test_ground",
     "tests.test_pipeline",
+    "tests.test_structured_output",
     "tests.test_mcp",
     "tests.test_viz",
     "tests.test_cli",

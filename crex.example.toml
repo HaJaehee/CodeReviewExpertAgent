@@ -41,10 +41,17 @@ timeout = 120.0
 max_retries = 3
 
 #  vLLM 버전에 따라 구조화 출력 전달 방식이 다르다.
-#    "response_format" — 최신 vLLM (권장)
-#    "guided_json"     — 구버전
-#  `python -m crex doctor` 로 어느 쪽이 동작하는지 확인하라.
-structured_output_mode = "response_format"
+#    "auto"            — 되는 쪽을 스스로 찾는다 (기본값, 권장)
+#    "response_format" — 최신 vLLM 로 고정
+#    "guided_json"     — 구버전 vLLM 로 고정
+#  "auto" 는 첫 호출에서 response_format → guided_json 순으로 시도하고, 성공한
+#  방식을 기억해 이후 호출에 바로 쓴다. 서버 버전을 몰라도 되므로 그대로 두면 된다.
+structured_output_mode = "auto"
+
+#  guided_json 경로에서 함께 보낼 백엔드 이름. 비우면 보내지 않는다.
+#  최신 vLLM 은 이 필드를 모르는 키로 보고 400 을 돌려주므로 기본은 비워둔다.
+#  구버전에서 백엔드를 명시해야 할 때만 "xgrammar" 등을 적는다.
+# guided_decoding_backend = "xgrammar"
 
 #  Qwen3.x 계열의 추론 모드를 끈다. 리뷰는 고정 단계이므로 사고 과정이 불필요하고,
 #  켜두면 지연시간만 몇 배로 늘어난다.
@@ -58,7 +65,7 @@ api_key = "EMPTY"
 temperature = 0.0
 max_input_tokens = 4096            # 검증은 청크 하나만 보므로 더 좁게 잡는다
 timeout = 60.0
-structured_output_mode = "response_format"
+structured_output_mode = "auto"
 
 # --------------------------------------------------------------------------
 # 리뷰 동작

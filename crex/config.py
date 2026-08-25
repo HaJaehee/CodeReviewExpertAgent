@@ -188,7 +188,25 @@ def _anchor(value: str | None, config_path: Path | None) -> Path | None:
     return (config_path.resolve().parent / path).resolve()
 
 
+#: 엔드포인트 테이블에서 받는 키. dataclass 필드와 일치해야 한다.
+ENDPOINT_KEYS = frozenset(
+    {
+        "base_url", "model", "api_key", "temperature",
+        "max_output_tokens", "max_input_tokens", "timeout", "max_retries",
+        "structured_output_mode", "guided_decoding_backend", "extra_body",
+    }
+)
+
+
 def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:
+    # 여기도 다른 섹션과 똑같이 오타를 막는다. base_url 을 bas_url 로 쓰면 조용히
+    # localhost 기본값으로 떨어져, 엔드포인트를 바꿨는데 안 바뀌는 상황이 된다.
+    unknown = set(raw) - ENDPOINT_KEYS
+    if unknown:
+        raise ValueError(
+            f"llm 엔드포인트 설정에 알 수 없는 키: {sorted(unknown)}. "
+            f"사용 가능한 키: {sorted(ENDPOINT_KEYS)}"
+        )
     return EndpointConfig(
         base_url=raw.get("base_url", "http://localhost:8000/v1"),
         model=raw.get("model", default_model),
@@ -198,7 +216,8 @@ def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:
         max_input_tokens=int(raw.get("max_input_tokens", 8192)),
         timeout=float(raw.get("timeout", 120.0)),
         max_retries=int(raw.get("max_retries", 3)),
-        structured_output_mode=raw.get("structured_output_mode", "response_format"),
+        structured_output_mode=raw.get("structured_output_mode", "auto"),
+        guided_decoding_backend=raw.get("guided_decoding_backend", ""),
         extra_body=dict(raw.get("extra_body", {})),
     )
 

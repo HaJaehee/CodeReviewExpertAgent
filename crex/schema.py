@@ -273,10 +273,24 @@ class ReviewResult:
     #: 단계별 소요 시간(초).
     timings: dict[str, float] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    #: LLM 호출이 실패한 건수. 파일 읽기 실패 등과 섞이지 않게 따로 센다.
+    #: `healthy` 가 이것으로 "0건인데 정상인가"를 판정한다.
+    generation_errors: int = 0
+    verification_errors: int = 0
 
     @property
     def total_raw(self) -> int:
         return len(self.kept) + len(self.rejected)
+
+    @property
+    def healthy(self) -> bool:
+        """이 실행을 믿어도 되는가.
+
+        "지적 0건"은 두 가지를 뜻할 수 있다 — 코드가 깨끗하거나, 파이프라인이
+        고장났거나. 리포트와 CLI 종료 코드가 그 둘을 다르게 다루도록 여기서
+        한 번에 판정한다.
+        """
+        return not self.errors
 
     @property
     def reject_rate(self) -> float:
@@ -293,6 +307,9 @@ class ReviewResult:
             "reject_rate": round(self.reject_rate, 4),
             "timings": {k: round(v, 3) for k, v in self.timings.items()},
             "errors": self.errors,
+            "generation_errors": self.generation_errors,
+            "verification_errors": self.verification_errors,
+            "healthy": self.healthy,
         }
 
 

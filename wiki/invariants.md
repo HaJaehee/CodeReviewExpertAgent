@@ -75,6 +75,78 @@ don't repurpose existing ones.
 
 ---
 
+## A failed run must never look like a clean one
+
+Zero findings has two possible meanings — the code is clean, or the pipeline never
+ran. Reporting them the same way turns a broken deployment into a passing gate.
+
+This was a real incident: `doctor` reported every endpoint OK while every C++ and C#
+review returned zero findings. The generator was rejecting the guided-decoding
+request with HTTP 400, `RuleChecker.review_chunk()` swallowed it per chunk into a
+`log.warning`, and the report said `지적 사항 없음.` with exit code 0.
+
+Four things keep them distinguishable, and all four must hold together:
+
+- `RuleChecker.errors` and `ReviewFilter.errors` collect every swallowed call
+  failure. The blanket `except Exception` around each LLM call stays — partial
+  failure really is normal in an air-gapped network — but it records before it
+  returns `[]`.
+- `Pipeline._review()` copies both into `ReviewResult.errors` and counts them in
+  `generation_errors` / `verification_errors`.
+- `ReviewResult.healthy` is False whenever `errors` is non-empty. Markdown replaces
+  `지적 사항 없음.` with a warning banner, and `service.summarize()` does the same
+  for the MCP summary — the agent in Zed reads only that summary and would otherwise
+  tell the user the code is clean.
+- The CLI exits **3**, not 0. Distinct from 1 (`high` findings) so CI can tell
+  "found problems" from "found nothing because it was broken".
+
+Pinned by `test_total_generation_failure_is_not_silent` and
+`test_zero_findings_with_errors_is_not_reported_as_clean`.
+
+---
+
+## `doctor` must exercise the path a review actually uses
+
+`LLMClient.health()` sends a plain chat request with no schema. It proves the
+endpoint answers and the model name resolves — nothing more. Every review call
+additionally carries a JSON Schema, and that is the part that breaks.
+
+So `doctor` calls `LLMClient.probe()`, which sends the *real* schemas
+(`build_findings_schema()` with populated enums, and `VERDICT_SCHEMA`) and then
+checks the response against them. It reports three distinct failures that a
+connection check cannot see:
+
+| Condition | What it means |
+|---|---|
+| Ladder exhausted | The server refuses schema requests outright |
+| Response isn't parseable JSON | Guided decoding isn't actually engaged |
+| `_enum_violations()` non-empty | Schema accepted but constraints ignored |
+
+The last two return HTTP 200. A green connection check says nothing about them, and
+in that state line-number hallucination is no longer structurally prevented.
+
+Don't add a diagnostic that only pings the endpoint. Pinned by
+`test_probe_catches_what_health_alone_misses`.
+
+---
+
+## Relaxing a schema may drop limits, never `enum`
+
+When a backend refuses a schema, `_relax_schema()` retries without the keywords in
+`RELAXABLE_KEYWORDS` (`maxLength`, `maxItems`, `minLength`, `minItems`, `pattern`) —
+xgrammar cannot compile some of them.
+
+`enum` and `type` are never removed. The `line` and `rule_id` enums are what make
+hallucination impossible rather than merely filtered; length caps are prompt
+hygiene. Dropping the caps costs some verbosity, dropping the enums costs the whole
+premise of the tool.
+
+`_relax_schema()` also preserves property order, so `verdict` stays first
+(see Conclusion-First above). Pinned by `test_relax_keeps_enum_and_type` and
+`test_verdict_schema_property_order_survives_relaxation`.
+
+---
+
 ## Verification failure must reject, not pass
 
 `crex/filter.py :: _verify_llm()` returns `kept=False` with
@@ -135,9 +207,14 @@ correct; proceeding produces confidently false output.
 means someone changes a setting, sees no effect, and concludes the setting doesn't
 work.
 
-`load_config()` applies the same rule to top-level keys against `TOP_LEVEL_KEYS`.
-That one matters more than it looks: a `workspase` typo silently ignored means the
-review runs against a different repository than the one the user named.
+`load_config()` applies the same rule to top-level keys against `TOP_LEVEL_KEYS`,
+and `_endpoint()` applies it to the `[llm.*]` tables against `ENDPOINT_KEYS`. That
+last one was a hole: `_endpoint()` used to read with `raw.get(...)` and ignore
+everything else, so a `bas_url` typo silently fell back to `http://localhost:8000/v1`
+— the endpoint appeared unchanged no matter what you edited.
+
+The top-level rule matters for the same reason: a `workspase` typo silently ignored
+means the review runs against a different repository than the one the user named.
 
 Similarly, `ReviewConfig.__post_init__` rejects unimplemented `mode` values rather
 than falling back to `native`. Both `min_severity` and `mode` were previously dead

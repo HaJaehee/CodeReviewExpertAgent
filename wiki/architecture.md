@@ -54,26 +54,36 @@ generation-time prevention, not post-hoc filtering.
 Layers 3 and 4 stay in place because guided decoding is not guaranteed — older vLLM
 builds or a misconfigured `structured_output_mode` silently drop the constraint.
 
+Because layer 2 depends on the server supporting guided decoding at all, `llm.py`
+treats that support as something to establish rather than assume. On the first
+structured call it walks a ladder — `response_format` → `guided_json`, each with the
+original schema and then a relaxed one — and caches whichever combination the server
+accepts. If none works it raises `StructuredOutputError` rather than returning an
+empty result: a review that cannot constrain generation must fail loudly, because
+its output is indistinguishable from clean code. `doctor` walks the same ladder and
+additionally verifies the response honors the enums (`_enum_violations()`), which
+catches servers that accept the schema and ignore it.
+
 ## Module map
 
 | Module | Lines | Responsibility |
 |---|---|---|
-| `crex/schema.py` | 316 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
-| `crex/llm.py` | 250 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
+| `crex/schema.py` | 333 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
+| `crex/llm.py` | 512 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
 | `crex/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
 | `crex/ground.py` | 548 | 8 static-analyzer adapters + output normalization + attachment |
-| `crex/generate.py` | 243 | RuleChecker: enum-constrained schema, prompt, parsing |
-| `crex/filter.py` | 283 | ReviewFilter: deterministic checks + cross-model verdict |
+| `crex/generate.py` | 254 | RuleChecker: enum-constrained schema, prompt, parsing |
+| `crex/filter.py` | 291 | ReviewFilter: deterministic checks + cross-model verdict |
 | `crex/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
-| `crex/pipeline.py` | 312 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
-| `crex/report.py` | 163 | Markdown / SARIF 2.1.0 / JSON output |
-| `crex/config.py` | 212 | TOML config loading with unknown-key rejection (sections *and* top level) |
-| `crex/cli.py` | 328 | `review` / `scan` / `doctor` / `workspace` subcommands |
-| `crex/workspace.py` | 342 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
+| `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
+| `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
+| `crex/config.py` | 234 | TOML config loading with unknown-key rejection (sections *and* top level) |
+| `crex/cli.py` | 365 | `review` / `scan` / `doctor` / `workspace` subcommands |
+| `crex/workspace.py` | 351 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
-| `crex/service.py` | 261 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
-| `crex/mcp.py` | 343 | FastMCP binding only. Tool schemas from type hints + docstrings; stdio and Streamable HTTP transports |
+| `crex/service.py` | 268 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
+| `crex/mcp.py` | 355 | FastMCP binding only. Tool schemas from type hints + docstrings; stdio and Streamable HTTP transports |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.

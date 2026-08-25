@@ -218,8 +218,10 @@ CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `re
 - [ ] `crex.example.toml` → `crex.toml` 로 복사 후 엔드포인트 수정
 - [ ] `python tests/run_all.py` 로 반입 무결성 확인
 - [ ] `python -m crex doctor` 로 엔드포인트·분석기 상태 확인
-- [ ] vLLM 이 guided decoding 을 지원하는지 확인 — `doctor` 의 LLM 항목이 실패하면
-      `structured_output_mode` 를 `"guided_json"` 으로 바꿔 재시도
+- [ ] vLLM 이 guided decoding 을 지원하는지 확인 — `doctor` 의 LLM 항목은
+      **연결·모델**과 **구조화 출력** 두 줄로 나온다. 둘 다 OK 여야 한다.
+      연결만 OK 면 리뷰는 전 청크가 실패해 지적이 0건이 된다
+      ([문제 해결](docs/troubleshooting.md#지적이-항상-0건입니다))
 - [ ] (선택) MCP 서버를 쓸 장비에만 `pip install -r requirements.txt`
 - [ ] (선택) tree-sitter wheel 반입 — `requirements-optional.txt` 참고
 - [ ] (선택) 정적분석 도구 반입 — clang-tidy / cppcheck / ruff 등,

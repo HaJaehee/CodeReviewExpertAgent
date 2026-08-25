@@ -71,7 +71,7 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-113 tests total, all runnable offline.
+128 tests total, all runnable offline.
 
 ## What does not exist
 

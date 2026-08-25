@@ -21,6 +21,7 @@ guided decoding 의 생성 순서를 결정하므로 `verdict` 를 맨 앞에 �
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -133,10 +134,15 @@ class ReviewFilter:
         self.require_changed_line = require_changed_line
         self.max_workers = max_workers
         self.stats = FilterStats()
+        #: 검증 호출 자체가 실패한 건. 기각과는 구분해서 올린다 — 전자는 설비
+        #: 고장이고 후자는 정상 동작이다.
+        self.errors: list[str] = []
+        self._errors_lock = threading.Lock()
 
     def filter(self, findings: list[Finding]) -> tuple[list[Finding], list[FilterVerdict]]:
         """유지된 지적과 기각 판정 목록을 돌려준다."""
         self.stats = FilterStats(total=len(findings))
+        self.errors = []
         if not findings:
             return [], []
 
@@ -261,6 +267,8 @@ class ReviewFilter:
             )
         except Exception as exc:  # noqa: BLE001 - 검증 실패는 보수적으로 기각한다
             log.warning("검증 호출 실패 (%s:%d): %s", finding.path, finding.line, exc)
+            with self._errors_lock:
+                self.errors.append(f"{finding.path}:{finding.line} 검증 실패: {exc}")
             return FilterVerdict(
                 finding, False, f"검증 호출 실패로 보수적 기각: {exc}",
                 RejectReason.FILTER_ERROR,

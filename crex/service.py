@@ -189,9 +189,16 @@ class ReviewService:
         report_path = self._write_report(result, tool)
 
         if not result.kept:
-            lines = ["지적 사항 없음."]
-            if result.errors:
-                lines.append(f"다만 오류 {len(result.errors)}건이 있었다:")
+            # 에이전트는 이 요약만 보고 사용자에게 답한다. 고장을 "깨끗하다"로
+            # 옮기지 않도록 첫 줄에서부터 구분한다.
+            if result.healthy:
+                lines = ["지적 사항 없음."]
+            else:
+                lines = [
+                    f"리뷰가 온전히 끝나지 않았다 — 오류 {len(result.errors)}건 "
+                    f"(생성 {result.generation_errors}, 검증 {result.verification_errors}). "
+                    "지적 0건은 코드가 깨끗하다는 뜻이 아니다.",
+                ]
                 lines.extend(f"  - {e.splitlines()[0]}" for e in result.errors[:3])
             lines.append(f"청크 {result.chunks_reviewed}개 검토. 전체 리포트: {report_path}")
             return "\n".join(lines)

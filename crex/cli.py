@@ -22,6 +22,8 @@ from pathlib import Path
 from . import __version__
 from .config import DEFAULT_CONFIG_NAMES, find_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
+from .filter import VERDICT_SCHEMA
+from .generate import build_findings_schema
 from .ground import GroundingGate
 from .pipeline import Pipeline
 from .report import to_markdown, write_all
@@ -239,6 +241,7 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     ok = True
 
     print("택소노미")
+    taxonomy = None
     try:
         taxonomy = load_taxonomy(config.taxonomy_path) if config.taxonomy_path else load_taxonomy()
         print(f"  OK  v{taxonomy.version}, 룰 {len(taxonomy)}개")
@@ -247,12 +250,18 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
         ok = False
 
     print("\nLLM 엔드포인트")
-    for label, endpoint in (("생성", config.generator), ("검증", config.verifier)):
-        client_ok, detail = _probe(endpoint)
-        status = "OK " if client_ok else "실패"
-        print(f"  {status} {label}: {endpoint.model} @ {endpoint.base_url}")
-        print(f"       {detail}")
-        ok = ok and client_ok
+    # 연결만 보지 않는다. 리뷰가 실제로 보내는 스키마를 그대로 보내본다 —
+    # guided decoding 이 막혀 있으면 연결은 멀쩡한데 지적만 0건이 되고,
+    # 그 상태를 "OK" 로 보고하던 것이 이 점검을 만든 이유다.
+    for label, endpoint, schemas in (
+        ("생성", config.generator, [("findings", _sample_findings_schema(taxonomy))]),
+        ("검증", config.verifier, [("verdict", VERDICT_SCHEMA)]),
+    ):
+        print(f"  {label}: {endpoint.model} @ {endpoint.base_url}")
+        for step in _probe(endpoint, schemas):
+            print(f"    {'OK  ' if step.ok else '실패'} {step.label}")
+            print(f"         {step.detail}")
+            ok = ok and step.ok
 
     print("\n정적분석 도구")
     gate = GroundingGate(cwd=workspace.root)
@@ -281,10 +290,22 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     return 0 if ok else 1
 
 
-def _probe(endpoint) -> tuple[bool, str]:
+def _probe(endpoint, schemas):
     from .llm import LLMClient
 
-    return LLMClient(endpoint).health()
+    return LLMClient(endpoint).probe(schemas)
+
+
+def _sample_findings_schema(taxonomy) -> dict:
+    """생성 단계가 실제로 보내는 것과 같은 모양의 스키마.
+
+    라인 enum 과 룰 ID enum 이 들어 있어야 의미가 있다. 그 둘이 이 시스템에서
+    환각을 막는 유일한 구조적 장치이고, 서버가 그것을 강제하지 못하면
+    파이프라인의 전제가 무너진다.
+    """
+    # 택소노미를 못 읽었어도 점검은 계속한다 — 그쪽 실패는 이미 위에서 보고했다.
+    rule_ids = sorted(taxonomy.valid_ids())[:8] if taxonomy else ["cpp.use-after-move"]
+    return build_findings_schema(rule_ids=rule_ids, allowed_lines=[41, 42], max_findings=2)
 
 
 # --------------------------------------------------------------------------
@@ -322,6 +343,19 @@ def _emit(result, args: argparse.Namespace) -> int:
             print(f"{kind}: {path}")
     else:
         print(to_markdown(result))
+
+    if not result.healthy:
+        # 파이프라인이 끝까지 못 갔으면 "지적 없음"으로 통과시키면 안 된다.
+        # high 지적(1)과 구분되는 코드를 써서 CI 가 둘을 다르게 다룰 수 있게 한다.
+        print(
+            f"\n경고: 오류 {len(result.errors)}건으로 리뷰가 온전히 끝나지 않았다 "
+            f"(생성 {result.generation_errors}, 검증 {result.verification_errors}).\n"
+            "      `python -m crex doctor` 로 엔드포인트를 점검하라.",
+            file=sys.stderr,
+        )
+        for message in result.errors[:3]:
+            print(f"      - {message.splitlines()[0]}", file=sys.stderr)
+        return 3
 
     # 종료 코드로 CI 게이트를 걸 수 있게 한다.
     return 1 if any(f.severity.value == "high" for f in result.kept) else 0

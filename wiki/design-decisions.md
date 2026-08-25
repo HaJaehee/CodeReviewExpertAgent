@@ -70,10 +70,26 @@ JSON." Here the `enum` constraints carry the anti-hallucination weight:
 The model physically cannot emit line 11 when the enum is `[8, 10]`. This converts
 line-number hallucination from a filtering problem into an impossibility.
 
-**Fragility.** If `structured_output_mode` is misconfigured, vLLM ignores the
-constraint and two of four defense layers vanish silently. `doctor` plus an actual
-review run is the only way to confirm. This is documented prominently in
-`docs/troubleshooting.md` because it degrades quietly rather than failing loudly.
+**Fragility.** If guided decoding is not actually in force, two of four defense
+layers vanish — and the failure is silent in both directions. A server that rejects
+the schema makes every chunk fail (zero findings, which reads as clean code); a
+server that accepts and ignores it produces unconstrained output (hallucinated line
+numbers, which reads as findings).
+
+This actually happened: `doctor` reported OK while every C++/C# review returned zero
+findings, because `health()` sent no schema and the per-chunk `except Exception`
+swallowed the 400s. Three changes came out of it.
+
+- **Negotiate instead of configure.** `structured_output_mode` defaults to `"auto"`
+  and `llm.py` walks a ladder to find what the server accepts, caching the result.
+  Most version mismatches no longer need a human at all.
+- **Never relax `enum`.** The ladder's last resort drops `maxLength`/`maxItems`
+  (xgrammar can't compile them) but never the enums, which are the actual defense.
+- **Prove it, don't ping it.** `doctor` sends the real schemas and checks the reply
+  against them, so "accepted but ignored" shows up as a failure.
+
+The invariant is in `wiki/invariants.md`; the user-facing symptoms are in
+`docs/troubleshooting.md`.
 
 ---
 

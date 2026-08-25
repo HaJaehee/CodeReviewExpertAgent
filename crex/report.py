@@ -34,7 +34,10 @@ def to_markdown(result: ReviewResult, *, title: str = "코드리뷰 결과") -> 
     lines: list[str] = [f"# {title}", ""]
 
     if not result.kept:
-        lines.append("지적 사항 없음.")
+        # "0건"이 두 가지를 뜻할 수 있다는 것이 이 도구의 가장 위험한 지점이다.
+        # 코드가 깨끗한 것과 파이프라인이 고장난 것을 같은 문장으로 보고하면
+        # 사용자는 고장을 신뢰로 착각한다.
+        lines.append("지적 사항 없음." if result.healthy else _failure_banner(result))
         lines.append("")
         lines.append(_stats_block(result))
         return "\n".join(lines)
@@ -65,6 +68,25 @@ def to_markdown(result: ReviewResult, *, title: str = "코드리뷰 결과") -> 
     return "\n".join(lines)
 
 
+def _failure_banner(result: ReviewResult) -> str:
+    """실패로 0건이 된 경우의 경고. 리포트 맨 위에 둔다."""
+    causes: list[str] = []
+    if result.generation_errors:
+        causes.append(f"생성 호출 실패 {result.generation_errors}건")
+    if result.verification_errors:
+        causes.append(f"검증 호출 실패 {result.verification_errors}건")
+    other = len(result.errors) - result.generation_errors - result.verification_errors
+    if other > 0:
+        causes.append(f"기타 오류 {other}건")
+
+    detail = ", ".join(causes) or f"오류 {len(result.errors)}건"
+    return (
+        f"> ⚠️ **이 결과는 신뢰할 수 없다 — {detail}.**\n"
+        "> 지적이 0건인 것은 코드가 깨끗해서가 아니라 파이프라인이 끝까지 돌지\n"
+        "> 못했기 때문이다. `python -m crex doctor` 로 엔드포인트를 점검하라."
+    )
+
+
 def _render_finding(finding: Finding) -> list[str]:
     location = f"`{finding.path}:{finding.line}`"
     if finding.end_line and finding.end_line != finding.line:
@@ -92,8 +114,13 @@ def _stats_block(result: ReviewResult) -> str:
     if timings:
         lines.append(f"- 소요: {timings}")
     if result.errors:
-        lines.append(f"- 오류 {len(result.errors)}건:")
+        lines.append(
+            f"- 오류 {len(result.errors)}건"
+            f" (생성 {result.generation_errors}, 검증 {result.verification_errors}):"
+        )
         lines.extend(f"  - {e.splitlines()[0]}" for e in result.errors[:5])
+        if len(result.errors) > 5:
+            lines.append(f"  - ... 외 {len(result.errors) - 5}건")
     lines.extend(["", "</details>"])
     return "\n".join(lines)
 

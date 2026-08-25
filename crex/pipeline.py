@@ -120,7 +120,16 @@ class Pipeline:
                 restrict_lines=require_changed_line,
             )
             raw = checker.review(chunks)
+            result.generation_errors = len(checker.errors)
+            result.errors.extend(checker.errors)
             log.info("생성된 지적 %d건", len(raw))
+            if checker.errors and not raw:
+                # 이 조합이 사고의 정체였다. 로그에만 남기면 "깨끗한 코드"로 읽힌다.
+                log.error(
+                    "청크 %d개가 모두 생성에 실패했다 — 0건은 코드가 깨끗해서가 아니다. "
+                    "`python -m crex doctor` 로 구조화 출력을 점검하라.",
+                    len(checker.errors),
+                )
 
         with self._timed(result, "filter"):
             review_filter = ReviewFilter(
@@ -130,6 +139,13 @@ class Pipeline:
                 max_workers=self.config.review.max_workers,
             )
             kept, rejected = review_filter.filter(raw)
+            result.verification_errors = len(review_filter.errors)
+            result.errors.extend(review_filter.errors)
+            if review_filter.errors and not kept:
+                log.error(
+                    "지적 %d건이 전부 검증 호출 실패로 기각됐다 — 검증 엔드포인트를 점검하라.",
+                    len(review_filter.errors),
+                )
 
         result.kept = _sort_findings(self._apply_min_severity(kept))
         result.rejected = rejected

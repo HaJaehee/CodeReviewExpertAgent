@@ -110,7 +110,7 @@ max_output_tokens = 900
 max_input_tokens = 8192
 timeout = 120.0
 max_retries = 3
-structured_output_mode = "response_format"
+structured_output_mode = "auto"
 ```
 
 `base_url` 은 `/v1` 까지 포함합니다. 뒤에 `/chat/completions` 를 붙이지 마세요.
@@ -148,18 +148,40 @@ top-1 → top-3 → top-5로 늘리자 BLEU-4가 12.32 → 11.76 → 10.81로 �
 
 vLLM 버전마다 구조화 출력을 받는 필드가 다릅니다.
 
-| 값 | vLLM |
+| 값 | 동작 |
 |---|---|
-| `"response_format"` | 최신 (기본값, 권장) |
-| `"guided_json"` | 구버전 |
+| `"auto"` | 되는 쪽을 스스로 찾습니다 (기본값, 권장) |
+| `"response_format"` | 최신 vLLM 방식으로 고정 |
+| `"guided_json"` | 구버전 vLLM 방식으로 고정 |
 
-어느 쪽인지 모르겠으면 `python -m crex doctor` 를 돌려보고, LLM 항목이
-400이나 422로 실패하면 반대쪽으로 바꿔서 다시 돌리세요.
+`"auto"` 는 첫 호출에서 다음 순서로 시도하고, 성공한 조합을 기억해 이후 호출에
+바로 씁니다. 그래서 서버 버전을 몰라도 그대로 두면 됩니다.
+
+1. `response_format` + 원본 스키마
+2. `guided_json` + 원본 스키마
+3. `response_format` + 완화 스키마
+4. `guided_json` + 완화 스키마
+
+**완화 스키마**는 `maxLength` · `maxItems` 처럼 xgrammar 백엔드가 컴파일하지
+못하는 키워드를 뺀 것입니다. `enum` 은 절대 빼지 않습니다 — 룰 ID와 라인 번호를
+묶어두는 그 두 개가 환각을 막는 장치이고, 길이 상한은 프롬프트 위생에 가깝기
+때문입니다. 완화가 쓰이면 로그에 경고가 남으니 백엔드를 점검하세요.
+
+넷 다 실패하면 그 엔드포인트로는 리뷰가 불가능합니다. 이때 CREX 는 조용히
+0건을 내지 않고 오류로 처리합니다 ([종료 코드 3](getting-started.md#종료-코드)).
 
 이 설정은 단순한 호환성 문제가 아닙니다. 구조화 출력이 안 걸리면 룰 ID와 라인
 번호에 대한 enum 제약이 사라지고, 그러면 환각 방어 네 겹 중 두 겹이 날아갑니다.
 남은 두 겹(결정론적 검사, LLM 재판정)이 받아내긴 하지만 오탐이 눈에 띄게 늘어납니다.
-반드시 동작을 확인하고 넘어가세요.
+`python -m crex doctor` 가 이걸 직접 확인해 줍니다.
+
+### `guided_decoding_backend`
+
+`guided_json` 경로에서 함께 보낼 백엔드 이름입니다. 기본값은 빈 문자열이고,
+비어 있으면 아예 보내지 않습니다.
+
+최신 vLLM 은 이 필드를 모르는 키로 보고 400 을 돌려줍니다. 구버전에서 백엔드를
+명시해야 하는 경우에만 `"xgrammar"` 처럼 적으세요.
 
 ### `[llm.generator.extra_body]`
 

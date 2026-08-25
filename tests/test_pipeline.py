@@ -242,6 +242,42 @@ def test_sarif_output_shape() -> None:
         _check(location["region"]["startLine"] == 8, f"SARIF 라인: {location['region']}")
 
 
+def test_total_generation_failure_is_not_silent() -> None:
+    """생성이 전부 실패하면 결과가 그렇게 말해야 한다.
+
+    실제 사고의 회귀 테스트다. 예전에는 이 상황에서 kept=0, errors=[], 종료 코드
+    0 이 나와서 "코드가 깨끗하다"와 구분되지 않았다.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+
+        # 생성 엔드포인트만 죽여둔다. 검증은 살아 있어도 결과는 0건이고,
+        # 그 0건이 "깨끗함"으로 보고되지 않아야 한다는 것이 확인 대상이다.
+        with FakeVLLM() as server:
+            config = _config(server.base_url)
+            config.generator.base_url = _dead_endpoint()
+            result = Pipeline(config).run_diff(diff, repo)
+
+        _check(result.chunks_reviewed >= 1, "청크는 만들어졌어야 한다")
+        _check(len(result.kept) == 0, f"지적이 나오면 안 된다: {result.kept}")
+        _check(result.generation_errors >= 1, "생성 실패가 집계돼야 한다")
+        _check(result.errors, "실패가 errors 에 실려야 한다")
+        _check(not result.healthy, "healthy 가 False 여야 한다")
+
+        markdown = to_markdown(result)
+        _check("지적 사항 없음" not in markdown, f"고장을 정상으로 보고했다:\n{markdown}")
+
+
+def _dead_endpoint() -> str:
+    """아무도 듣고 있지 않은 포트. 닫힌 소켓의 포트 번호를 재사용한다."""
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}/v1"
+
+
 def test_min_severity_hides_low_findings() -> None:
     """min_severity 는 유효한 지적을 '숨기는' 것이지 기각하는 게 아니다."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -289,6 +325,7 @@ def test_unimplemented_mode_is_rejected_loudly() -> None:
 
 TESTS = [
     test_end_to_end_finding_survives,
+    test_total_generation_failure_is_not_silent,
     test_min_severity_hides_low_findings,
     test_unimplemented_mode_is_rejected_loudly,
     test_schema_constrains_line_to_changed_lines,
