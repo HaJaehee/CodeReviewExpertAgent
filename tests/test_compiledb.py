@@ -23,7 +23,8 @@ from crex.compiledb import (  # noqa: E402
     DEFAULT_TARGET,
     CompileDbError,
     build_cmake_command,
-    build_logger_command,
+    ensure_logger,
+    split_batched_commands,
     build_msbuild_command,
     detect_project,
     generate,
@@ -154,16 +155,6 @@ def test_msbuild_command_passes_extra_args_last() -> None:
     _check(not any(arg.startswith("/p:Platform") for arg in command), f"{command}")
 
 
-def test_logger_output_path_ends_with_separator() -> None:
-    """MSBuild 는 OutputPath 끝에 구분자가 없으면 파일 이름으로 본다."""
-    import os
-
-    command = build_logger_command(Path("msbuild"), Path("logger.csproj"), Path("/out/dir"))
-    out = [arg for arg in command if arg.startswith("/p:OutputPath=")]
-    _check(len(out) == 1, f"{command}")
-    _check(out[0].endswith(os.sep), f"구분자가 없다: {out[0]}")
-
-
 def test_cmake_command_forces_ninja_and_export() -> None:
     """Visual Studio 제너레이터는 CMAKE_EXPORT_COMPILE_COMMANDS 를 무시한다."""
     command = build_cmake_command(Path("cmake"), Path("/src"), Path("/build"))
@@ -171,21 +162,6 @@ def test_cmake_command_forces_ninja_and_export() -> None:
     _check("-G" in command and command[command.index("-G") + 1] == "Ninja", f"{command}")
     # 구성만 한다. 빌드까지 가면 몇십 분이 더 걸리는데 얻는 게 없다.
     _check("--build" not in command, f"{command}")
-
-
-def test_logger_sources_are_bundled() -> None:
-    """반입 번들에서 tools/ 가 빠지면 MSBuild 경로 전체가 죽는다."""
-    source = vendored_dir()
-    for name in ("CompileCommandsJson.cs", "CompileCommandsJson.crex.csproj", "LICENSE"):
-        _check((source / name).is_file(), f"{name} 이 없다")
-
-
-def test_vendored_csproj_needs_no_nuget() -> None:
-    """PackageReference 가 하나라도 있으면 폐쇄망에서 복원 단계에서 죽는다."""
-    text = (vendored_dir() / "CompileCommandsJson.crex.csproj").read_text(encoding="utf-8")
-    # 주석에는 이 낱말이 나온다. 실제 요소가 있는지를 본다.
-    _check("<PackageReference" not in text, "NuGet 복원이 필요한 참조가 들어 있다")
-    _check("$(MSBuildToolsPath)" in text, "MSBuild 어셈블리를 설치본에서 가리키지 않는다")
 
 
 # --------------------------------------------------------------------------
@@ -282,6 +258,61 @@ def test_cli_writes_the_path_into_config() -> None:
     _check(written.is_file(), f"{written} 을 가리키지 않는다")
 
 
+
+def test_ensure_logger_returns_the_bundled_dll() -> None:
+    """로거는 빌드하지 않는다. 담겨 온 DLL 을 그대로 쓴다."""
+    dll = ensure_logger()
+    _check(dll.is_file(), f"로거 DLL 이 없다: {dll}")
+    _check(dll.parent == vendored_dir(), f"번들 밖을 가리킨다: {dll}")
+    # .NET 어셈블리는 PE 파일이다. 잘못된 파일이 들어오면 여기서 걸린다.
+    _check(dll.read_bytes()[:2] == b"MZ", "PE 파일이 아니다")
+
+
+def test_batched_cl_command_is_split_per_file() -> None:
+    """MSBuild 는 설정이 같은 .cpp 를 모아 cl.exe 를 한 번만 부른다.
+
+    로거는 그 명령을 항목마다 그대로 적으므로 명령줄에 남의 소스가 남는다.
+    clang-tidy 는 그걸 받으면 "expected exactly one compiler job" 으로 파일을
+    통째로 포기하는데, 그 실패는 진단 형식이 아니라서 파서에 걸리지 않는다 —
+    지적 0건으로 보인다. 실제 .vcxproj 로 재현해서 잡은 항목이다.
+    """
+    batched = r'CL.exe /c /I"C:\repo\include" /D CREX=1 src\buffer.cpp src\main.cpp'
+    entries = [
+        {"file": r"src\buffer.cpp", "directory": r"C:\repo", "command": batched},
+        {"file": r"src\main.cpp", "directory": r"C:\repo", "command": batched},
+    ]
+    changed = split_batched_commands(entries)
+    _check(changed == 2, f"2건을 바꿨어야 한다: {changed}")
+
+    first = entries[0]["command"]
+    _check("buffer.cpp" in first, f"자기 파일이 사라졌다: {first}")
+    _check("main.cpp" not in first, f"남의 파일이 남았다: {first}")
+    # 컴파일 옵션은 손대지 않는다 — include 경로가 빠지면 clang-tidy 가 반쯤 눈을 감는다.
+    _check(r'/I"C:\repo\include"' in first, f"include 경로가 사라졌다: {first}")
+    _check("/D CREX=1" in first, f"매크로 정의가 사라졌다: {first}")
+
+    second = entries[1]["command"]
+    _check("main.cpp" in second and "buffer.cpp" not in second, f"{second}")
+
+
+def test_unbatched_command_is_left_alone() -> None:
+    """파일 하나짜리 명령은 건드리지 않는다. 바꿀 이유가 없다."""
+    entries = [{"file": "src/a.cpp", "directory": "/repo", "command": "clang++ -c src/a.cpp"}]
+    _check(split_batched_commands(entries) == 0, "멀쩡한 명령을 바꿨다")
+    _check(entries[0]["command"] == "clang++ -c src/a.cpp", f'{entries[0]["command"]}')
+
+
+def test_logger_dll_is_bundled_with_its_license() -> None:
+    """반입 번들에서 tools/ 가 빠지면 MSBuild 경로 전체가 죽는다.
+
+    LICENSE 도 같이 본다 — MIT 는 바이너리로 배포할 때도 라이선스 고지를 함께
+    두라고 요구한다. 소스를 지웠다고 고지 의무까지 사라지지 않는다.
+    """
+    bundle = vendored_dir()
+    for name in ("CompileCommandsJson.dll", "LICENSE"):
+        _check((bundle / name).is_file(), f"{name} 이 없다")
+
+
 TESTS = [
     test_cmake_wins_over_generated_solution,
     test_single_solution_is_found,
@@ -291,10 +322,11 @@ TESTS = [
     test_explicit_project_is_resolved_against_root,
     test_msbuild_command_attaches_logger_and_rebuilds,
     test_msbuild_command_passes_extra_args_last,
-    test_logger_output_path_ends_with_separator,
+    test_ensure_logger_returns_the_bundled_dll,
+    test_batched_cl_command_is_split_per_file,
+    test_unbatched_command_is_left_alone,
     test_cmake_command_forces_ninja_and_export,
-    test_logger_sources_are_bundled,
-    test_vendored_csproj_needs_no_nuget,
+    test_logger_dll_is_bundled_with_its_license,
     test_output_dir_ignores_itself_in_git,
     test_custom_output_dir_is_honored,
     test_cmake_route_end_to_end,

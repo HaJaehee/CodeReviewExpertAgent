@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -377,8 +378,12 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     print("\n정적분석 도구")
     gate = GroundingGate(cwd=workspace.root)
     for analyzer in gate.analyzers:
-        available = analyzer.available()
-        print(f"  {'OK ' if available else '없음'} {analyzer.name} ({analyzer.executable})")
+        resolved = analyzer.resolve_executable()
+        print(f"  {'OK ' if resolved else '없음'} {analyzer.name} ({analyzer.executable})")
+        # PATH 밖에서 찾았으면 어디서 찾았는지 보여준다. 장비마다 Visual Studio
+        # 설치 위치가 달라서, 의도한 도구가 맞는지 사람이 확인할 수 있어야 한다.
+        if resolved and resolved != shutil.which(analyzer.executable):
+            print(f"        {resolved}")
 
     print("\ncompile_commands.json (C++ clang-tidy)")
     print(f"  {_compiledb_status(config.grounding.compile_commands_dir, workspace.root)}")

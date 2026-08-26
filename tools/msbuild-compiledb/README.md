@@ -4,33 +4,30 @@ MSBuild(.vcxproj/.sln) 프로젝트에서 `compile_commands.json` 을 뽑는 로
 빌드 중 실제 `cl.exe` 호출을 관찰해서 기록하므로, MSVC 의 property sheet·매크로·
 상속된 include 경로가 전부 반영된 정확한 결과가 나옵니다.
 
-**직접 쓸 일은 없습니다.** `python -m crex compiledb` 가 알아서 빌드하고 실행합니다.
-여기 있는 것은 그 명령이 쓰는 재료입니다.
+**직접 쓸 일은 없습니다.** `python -m crex compiledb` 가 알아서 붙여 실행합니다.
 
 ## 무엇이 들어 있나
 
 | 파일 | 출처 |
 |---|---|
-| `CompileCommandsJson.cs` | [0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson) `d9b1dec` (2023-11-20), **수정 없음** |
-| `LICENSE` | 위 저장소의 MIT 라이선스 원본 |
-| `CompileCommandsJson.crex.csproj` | CREX 가 추가한 빌드 파일 (아래 참고) |
+| `CompileCommandsJson.dll` | 아래 소스를 빌드한 것 (.NET Framework 4.7.2, Release) |
+| `LICENSE` | [0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson) 의 MIT 라이선스 원본 |
 
-## 왜 소스로 담나
+DLL 은 그대로 실행됩니다. 폐쇄망 안에서 빌드하지 않습니다.
 
-컴파일된 DLL 을 담으면 반입 심사가 "이 바이너리가 무엇을 하는지"를 물어야 합니다.
-소스는 300줄이고 사람이 읽어서 확인할 수 있습니다. CREX 가 Python 런타임까지
-소스로 담는 것과 같은 이유입니다 — [`docs/transfer.md`](../../docs/transfer.md) 참고.
+### 이 DLL 의 출처
 
-DLL 은 폐쇄망 안에서 처음 `crex compiledb` 를 돌릴 때 만들어져
-`<저장소>/.crex/compiledb/` 에 캐시됩니다. 그 뒤로는 다시 만들지 않습니다.
+- 소스: [0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson)
+  `d9b1dec` (2023-11-20) 의 `CompileCommandsJson.cs`, 수정 없음
+- 빌드: MSBuild 17.14.51, `TargetFrameworkVersion=v4.7.2`, `Configuration=Release`,
+  `DebugType=none`. NuGet 복원 없음 — `Microsoft.Build.Framework` 와
+  `Microsoft.Build.Utilities.Core` 를 `$(MSBuildToolsPath)` 로 참조합니다.
+- 빌드일: 2026-08-27
+- SHA-256: `95b138b1925af6e355961a3e53ada59204196a37e92c0a95b161e4b619ed84fb`
 
-## 왜 csproj 를 따로 두나
-
-상류의 csproj 는 SDK 스타일이라 `dotnet build` 와 NuGet 복원이 필요합니다.
-폐쇄망에서 제일 먼저 막히는 조합입니다. `CompileCommandsJson.crex.csproj` 는
-같은 소스를 옛 형식으로 빌드합니다 — PackageReference 가 없어 복원이 일어나지
-않고, MSBuild 어셈블리는 `$(MSBuildToolsPath)` 로 그 VS 것을 그대로 씁니다.
-결과적으로 **빌드에 필요한 것이 MSBuild 하나**입니다.
+바이너리를 받지 않는 반입 심사라면 위 저장소에서 소스를 받아 같은 설정으로
+다시 빌드하고, 나온 DLL 을 이 자리에 놓으면 됩니다. CREX 는 파일 이름
+(`CompileCommandsJson.dll`)과 자리만 봅니다.
 
 ## 알아둘 제약
 

@@ -106,6 +106,31 @@ def test_cppcheck_parse() -> None:
     _check(findings[2].severity is Severity.LOW, f"style 심각도: {findings[2].severity}")
 
 
+#: 실제 `dotnet build -v normal` 이 내보내는 모양. 같은 경고가 두 번 나오고,
+#: 한쪽에는 다중 노드 로거의 노드 번호("1>")가 경로 앞에 붙는다.
+#: 2026-08-27, .NET SDK 8.0.100 실측.
+MSBUILD_DUPLICATED_OUT = """\
+     1>D:\\repo\\src\\Program.cs(8,20): warning CS8600: null 리터럴 변환 [D:\\repo\\src\\App.csproj]
+     1>D:\\repo\\src\\Program.cs(7,13): warning CS0219: 'unused' 할당되었지만 사용되지 않음 [D:\\repo\\src\\App.csproj]
+Build succeeded.
+
+경고:
+         D:\\repo\\src\\Program.cs(8,20): warning CS8600: null 리터럴 변환 [D:\\repo\\src\\App.csproj]
+         D:\\repo\\src\\Program.cs(7,13): warning CS0219: 'unused' 할당되었지만 사용되지 않음 [D:\\repo\\src\\App.csproj]
+
+    경고 2개
+"""
+
+
+#: 실제 clang-tidy 가 Windows 에서 내보내는 모양. 상대 경로를 줘도 절대 경로로
+#: 되받아 내고, 거기에는 드라이브 문자의 콜론이 들어 있다.
+#: 2026-08-27, Visual Studio 2022 의 clang-tidy 실측.
+CLANG_TIDY_WINDOWS_OUT = """\
+C:\\repo\\src\\buffer.cpp:6:3: warning: Call to function 'strcpy' is insecure [clang-analyzer-security.insecureAPI.strcpy]
+C:\\repo\\src\\buffer.cpp:6:3: note: Call to function 'strcpy' is insecure
+C:\\repo\\src\\buffer.cpp:7:3: warning: 'memcpy' size exceeds destination [clang-analyzer-unix.cstring.BadSizeArg]
+"""
+
 def test_msbuild_parse() -> None:
     findings = RoslynAnalyzers().parse(MSBUILD_OUT, "")
     _check(len(findings) == 3, f"3건을 기대했으나 {len(findings)}건: {[f.rule_id for f in findings]}")
@@ -296,6 +321,102 @@ def test_optional_analyzers_are_reachable_from_config() -> None:
     _check(len(ALL_ANALYZER_NAMES) == 8, f"분석기 이름 8종: {sorted(ALL_ANALYZER_NAMES)}")
 
 
+
+def test_msbuild_duplicate_diagnostics_are_folded() -> None:
+    """같은 경고가 프로젝트 출력과 말미 요약에 두 번 나오는데, 한 건이어야 한다.
+
+    접지 않으면 정적분석 근거가 2배로 부풀어 프롬프트에 들어가고, 모델은 서로
+    다른 두 도구가 같은 곳을 지적한 것으로 읽는다.
+    """
+    findings = RoslynAnalyzers().parse(MSBUILD_DUPLICATED_OUT, "")
+    _check(len(findings) == 2, f"2건을 기대했으나 {len(findings)}건: {[f.rule_id for f in findings]}")
+    rules = sorted(f.rule_id for f in findings)
+    _check(rules == ["CS0219", "CS8600"], f"룰: {rules}")
+
+
+def test_msbuild_node_prefix_is_stripped_from_path() -> None:
+    """다중 노드 로거의 "1>" 가 경로 앞에 남으면 프롬프트에 깨진 경로가 나간다."""
+    findings = RoslynAnalyzers().parse(MSBUILD_DUPLICATED_OUT, "")
+    for finding in findings:
+        _check(not finding.path.startswith("1>"), f"노드 번호가 남음: {finding.path}")
+        _check(finding.path.endswith("src/Program.cs"), f"경로: {finding.path}")
+
+
+def test_roslyn_forces_a_full_rebuild() -> None:
+    """증분 빌드는 경고를 다시 내보내지 않는다 — 그 침묵이 0건으로 위장된다.
+
+    개발자는 보통 고치고, 빌드해서 확인하고, 그다음 리뷰를 돌린다. 그 순서에서
+    --no-incremental 이 빠지면 C# 그라운딩이 항상 0건이 된다.
+    """
+    command = RoslynAnalyzers(project="src/App.csproj").build_command(["src/Program.cs"])
+    _check("--no-incremental" in command, f"전체 재빌드를 강제하지 않음: {command}")
+
+
+def test_clang_tidy_is_found_inside_visual_studio() -> None:
+    """Visual Studio 는 clang-tidy 를 PATH 에 넣지 않는다.
+
+    PATH 만 보면 설치된 장비에서도 '없음' 으로 뜨고 C++ 그라운딩이 통째로 빠진다.
+    VS 없는 장비에서도 돌아야 하므로 탐색 함수를 갈아끼워 검증한다.
+    """
+    import crex.compiledb as compiledb
+    import crex.ground as ground
+
+    fake = Path("D:/VS/VC/Tools/Llvm/x64/bin/clang-tidy.exe")
+    original_which = ground.shutil.which
+    original_find = compiledb.find_clang_tidy
+    try:
+        ground.shutil.which = lambda name: None          # PATH 에는 없다
+        compiledb.find_clang_tidy = lambda env=None: fake  # VS 안에는 있다
+        analyzer = ClangTidy()
+        _check(analyzer.available(), "VS 안의 clang-tidy 를 못 찾음")
+        _check(analyzer.resolve_executable() == str(fake), f"해석 결과: {analyzer.resolve_executable()}")
+    finally:
+        ground.shutil.which = original_which
+        compiledb.find_clang_tidy = original_find
+
+
+def test_resolved_path_actually_runs() -> None:
+    """PATH 밖에서 찾은 경로가 실제 실행에 쓰여야 한다. 이름만 바꿔선 안 돈다.
+
+    가짜 도구를 만들어 실제 python 실행 파일로 해석시키고, 그 출력이 파서까지
+    도달하는지 본다 — subprocess 를 흉내내지 않고 진짜로 돌린다.
+    """
+    import sys as _sys
+
+    class NotOnPath(ClangTidy):
+        name = "not-on-path"
+        executable = "definitely-not-installed-xyz"
+
+        def _locate(self) -> str | None:
+            return _sys.executable
+
+        def build_command(self, paths: list[str]) -> list[str]:
+            return [self.executable, "-c", r"print(r'a.cpp:1:2: warning: 지어낸 경고 [x-y]')"]
+
+    result = NotOnPath().run(["a.cpp"], Path.cwd())
+    _check(not result.skipped, f"건너뛰어짐: {result.skip_reason}")
+    _check(len(result.findings) == 1, f"1건을 기대했으나 {len(result.findings)}건")
+    _check(result.findings[0].line == 1, f"라인: {result.findings[0].line}")
+
+
+
+def test_gnu_style_accepts_windows_absolute_paths() -> None:
+    """드라이브 문자의 콜론이 경로 매칭을 끊으면 줄 전체가 매칭에 실패한다.
+
+    clang-tidy 는 상대 경로를 줘도 절대 경로로 되받아 내므로, 이게 깨지면 사내
+    Windows 장비에서 C++ 그라운딩이 언제나 0건이 된다. 조용한 0건이라 아무도
+    눈치채지 못한 채 LLM 은 '도구가 아무것도 못 찾았다'는 거짓 근거를 받는다.
+    """
+    findings = ClangTidy().parse(CLANG_TIDY_WINDOWS_OUT, "")
+    # note 는 직전 경고의 부연이므로 접힌다 — 경고 2건만 남아야 한다.
+    _check(len(findings) == 2, f"2건을 기대했으나 {len(findings)}건")
+
+    first = findings[0]
+    _check(first.line == 6, f"라인: {first.line}")
+    _check(first.path == "C:/repo/src/buffer.cpp", f"경로: {first.path}")
+    _check(first.rule_id == "clang-analyzer-security.insecureAPI.strcpy", f"룰: {first.rule_id}")
+
+
 TESTS = [
     test_clang_tidy_parse,
     test_cppcheck_parse,
@@ -311,6 +432,12 @@ TESTS = [
     test_clang_tidy_respects_project_config,
     test_clang_tidy_checks_configurable,
     test_optional_analyzers_are_reachable_from_config,
+    test_msbuild_duplicate_diagnostics_are_folded,
+    test_msbuild_node_prefix_is_stripped_from_path,
+    test_roslyn_forces_a_full_rebuild,
+    test_clang_tidy_is_found_inside_visual_studio,
+    test_resolved_path_actually_runs,
+    test_gnu_style_accepts_windows_absolute_paths,
 ]
 
 

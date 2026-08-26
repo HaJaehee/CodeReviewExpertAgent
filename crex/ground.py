@@ -42,6 +42,10 @@ class AnalyzerResult:
     duration: float = 0.0
 
 
+#: "아직 찾아보지 않았다". None 은 "찾아봤고 없었다" 라서 구분이 필요하다.
+_UNRESOLVED = object()
+
+
 class Analyzer(ABC):
     """정적분석 도구 하나에 대한 어댑터."""
 
@@ -52,9 +56,24 @@ class Analyzer(ABC):
     def __init__(self, *, extra_args: list[str] | None = None, timeout: float = DEFAULT_TIMEOUT) -> None:
         self.extra_args = extra_args or []
         self.timeout = timeout
+        self._resolved: str | None | object = _UNRESOLVED
+
+    def resolve_executable(self) -> str | None:
+        """실행 파일의 실제 경로. 못 찾으면 None.
+
+        결과를 캐시한다 — available() 과 run() 이 각각 부르고 doctor 는 분석기
+        수만큼 부르는데, 하위 클래스는 여기서 vswhere 같은 외부 프로세스를 띄운다.
+        """
+        if self._resolved is _UNRESOLVED:
+            self._resolved = self._locate()
+        return self._resolved  # type: ignore[return-value]
+
+    def _locate(self) -> str | None:
+        """기본은 PATH 뿐이다. PATH 밖을 볼 도구는 하위 클래스가 덮어쓴다."""
+        return shutil.which(self.executable)
 
     def available(self) -> bool:
-        return shutil.which(self.executable) is not None
+        return self.resolve_executable() is not None
 
     def run(self, paths: list[str], cwd: Path) -> AnalyzerResult:
         if not paths:
@@ -66,6 +85,11 @@ class Analyzer(ABC):
             )
 
         command = self.build_command(paths)
+        # build_command 는 도구 이름을 쓴다. PATH 밖에서 찾은 경우 그 이름으로는
+        # 실행되지 않으므로 해석된 절대 경로로 바꾼다.
+        resolved = self.resolve_executable()
+        if resolved and command and command[0] == self.executable:
+            command[0] = resolved
         log.debug("[%s] %s", self.name, " ".join(command))
         try:
             completed = subprocess.run(  # noqa: S603 - 명령은 코드에서 구성되며 사용자 입력이 아니다
@@ -106,8 +130,12 @@ class Analyzer(ABC):
 # --------------------------------------------------------------------------
 
 #: `path:line:col: severity: message [rule]` — clang-tidy, gcc, cppcheck 계열 공통.
+#: Windows 드라이브 문자("C:")를 경로 앞에 허용한다. 이게 없으면 매칭이
+#: 드라이브 문자의 콜론에서 끊겨 줄 전체가 실패한다 — clang-tidy 는 상대
+#: 경로를 줘도 절대 경로로 되받아 내므로, Windows 장비에서 C++ 그라운딩이
+#: 항상 0건이 된다. 조용한 0건이라 아무도 눈치채지 못한다.
 _GNU_STYLE = re.compile(
-    r"^(?P<path>[^:\n]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*"
+    r"^(?P<path>(?:[A-Za-z]:)?[^:\n]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*"
     r"(?P<severity>error|warning|note|style|performance|portability|information):\s*"
     r"(?P<message>.*?)(?:\s*\[(?P<rule>[\w\-\.,]+)\])?$",
     re.MULTILINE,
@@ -134,6 +162,30 @@ _SEVERITY_MAP = {
 
 def _severity(raw: str) -> Severity:
     return _SEVERITY_MAP.get(raw.lower(), Severity.MEDIUM)
+
+
+#: MSBuild 다중 노드 로거가 줄머리에 붙이는 노드 번호("1>").
+_MSBUILD_NODE_PREFIX = re.compile(r"^\d+>")
+
+
+def _parse_msbuild(text: str, tool: str) -> list[StaticFinding]:
+    """MSBuild 출력에서 진단을 뽑는다.
+
+    같은 경고가 두 번 나온다 — 프로젝트별 출력에 한 번, 빌드 말미 요약에 또 한 번.
+    그대로 두면 근거가 2배로 부풀어 프롬프트에 들어가고, 모델은 서로 다른 두 도구가
+    같은 곳을 지적한 것으로 읽는다. 컨텍스트를 아껴 쓰는 것이 이 파이프라인의
+    목적이므로 여기서 접는다.
+
+    노드 번호 접두사("1>")도 뗀다. 청크 매칭은 접미사 비교라 살아남지만, 프롬프트에는
+    "1>C:/..." 같은 깨진 경로가 그대로 노출된다.
+    """
+    findings = _parse_regex(_MSBUILD_STYLE, text, tool)
+    unique: dict[tuple, StaticFinding] = {}
+    for finding in findings:
+        finding.path = _MSBUILD_NODE_PREFIX.sub("", finding.path)
+        key = (finding.path, finding.line, finding.column, finding.rule_id, finding.message)
+        unique.setdefault(key, finding)
+    return list(unique.values())
 
 
 def _parse_regex(pattern: re.Pattern[str], text: str, tool: str, default_rule: str = "") -> list[StaticFinding]:
@@ -191,6 +243,23 @@ class ClangTidy(Analyzer):
         #: compile_commands.json 이 있는 디렉터리. 없으면 정확도가 크게 떨어진다.
         self.compile_commands_dir = compile_commands_dir
         self.project_root = project_root
+
+    def _locate(self) -> str | None:
+        found = super()._locate()
+        if found:
+            return found
+        # 실행 파일 이름을 바꿔 쓴 하위 클래스라면 여기서 멈춘다. 아래 탐색은
+        # clang-tidy 라는 이름에만 해당하는 지식이라, 그대로 두면 다른 도구를
+        # 찾아 주는 꼴이 된다.
+        if self.executable != ClangTidy.executable:
+            return None
+        # Windows 에서 clang-tidy 는 Visual Studio 의 'C++ Clang 도구' 컴포넌트로
+        # 들어오고 PATH 에는 들어가지 않는다. 여기서 포기하면 설치된 장비에서도
+        # C++ 그라운딩이 통째로 빠진다.
+        from .compiledb import find_clang_tidy
+
+        candidate = find_clang_tidy()
+        return str(candidate) if candidate is not None else None
 
     def has_project_config(self) -> bool:
         """팀이 관리하는 .clang-tidy 가 있는가."""
@@ -269,14 +338,20 @@ class RoslynAnalyzers(Analyzer):
 
     def build_command(self, paths: list[str]) -> list[str]:
         # 파일 단위 분석이 불가하므로 프로젝트를 빌드하고 경고를 걷는다.
-        command = [self.executable, "build", "--nologo", "-v", "normal"]
+        #
+        # --no-incremental 이 없으면 up-to-date 인 프로젝트는 경고를 다시 내보내지
+        # 않는다. 개발자는 보통 고치고, 빌드해서 확인하고, 그다음 리뷰를 돌린다 —
+        # 그 순서에서는 그라운딩이 항상 0건이 되고, 그 0건은 '도구가 아무것도 찾지
+        # 못했다'와 구분되지 않은 채 프롬프트에 거짓 근거로 들어간다. 매번 재컴파일하는
+        # 비용을 치르더라도 조용한 0건은 막아야 한다.
+        command = [self.executable, "build", "--nologo", "--no-incremental", "-v", "normal"]
         if self.project:
             command.append(self.project)
         command.extend(self.extra_args)
         return command
 
     def parse(self, stdout: str, stderr: str) -> list[StaticFinding]:
-        return _parse_regex(_MSBUILD_STYLE, stdout + "\n" + stderr, self.name)
+        return _parse_msbuild(stdout + "\n" + stderr, self.name)
 
 
 class Roslynator(Analyzer):
@@ -298,7 +373,7 @@ class Roslynator(Analyzer):
         return command
 
     def parse(self, stdout: str, stderr: str) -> list[StaticFinding]:
-        return _parse_regex(_MSBUILD_STYLE, stdout + "\n" + stderr, self.name)
+        return _parse_msbuild(stdout + "\n" + stderr, self.name)
 
 
 # --------------------------------------------------------------------------

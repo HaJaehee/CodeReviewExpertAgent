@@ -1,22 +1,19 @@
 """compile_commands.json 생성.
 
 clang-tidy 는 컴파일 명령을 모르면 헤더를 못 찾는다. 그 상태의 지적은 절반이
-쓸모없고, 쓸모없는 지적은 이 도구 전체를 3주 만에 무시당하게 만든다. 그래서
-이 파일을 만드는 일은 선택 사항이 아니다.
+오탐이다. 그래서 이 파일을 만드는 일은 선택 사항이 아니다.
 
 문제는 만드는 절차가 프로젝트 형식마다 다르다는 것이다 — CMake 는 한 줄이고,
-MSBuild 는 로거를 직접 빌드해서 붙여야 한다. 문서로 안내해 봤자 아무도 안 읽는다.
-그래서 명령 하나로 만든다.
+MSBuild 는 로거를 붙여야 한다. 그래서 명령 하나로 만든다.
 
     python -m crex compiledb
 
-MSBuild 경로는 Windows + Visual Studio 가 있어야 한다. 재료는
-`tools/msbuild-compiledb/` 에 소스로 들어 있고, 폐쇄망에서 처음 쓸 때 그 자리에서
-빌드해 캐시한다 — 반입 번들에 정체불명의 DLL 이 들어가지 않게 하려는 것이다.
+MSBuild 경로는 Windows + Visual Studio 가 있어야 한다. 로거는
+`tools/msbuild-compiledb/` 에 빌드된 DLL 로 들어 있다 — 폐쇄망 안에서 빌드할
+필요가 없다.
 
-**주의: 이 모듈의 Windows 경로는 실제 MSBuild 로 검증되지 않았다.** 리눅스
-컨테이너에서는 명령 조립까지만 테스트할 수 있다. 그래서 실패할 때 무엇을 실행했고
-무엇이 나왔는지를 전부 남긴다 — 폐쇄망 안에서 사람이 이어받아 고칠 수 있어야 한다.
+실패할 때는 무엇을 실행했고 무엇이 나왔는지를 전부 남긴다 — 폐쇄망 안에서 사람이
+이어받아 고칠 수 있어야 한다.
 """
 
 from __future__ import annotations
@@ -24,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -189,6 +187,40 @@ def find_cmake(env: Mapping[str, str] | None = None) -> Path:
     )
 
 
+def find_clang_tidy(env: Mapping[str, str] | None = None) -> Path | None:
+    """clang-tidy 를 찾는다. PATH 다음으로 Visual Studio 에 딸려온 것을 본다.
+
+    Windows 에서 clang-tidy 는 Visual Studio 의 'C++ Clang 도구' 컴포넌트로 들어오고,
+    설치 관리자는 그것을 PATH 에 넣지 않는다. 설치돼 있는데도 없는 것으로 보이고,
+    C++ 그라운딩이 통째로 빠진다.
+
+    찾지 못하면 None 이다 — MSBuild/cmake 와 달리 분석기 부재는 건너뛸 사유이지
+    오류가 아니다.
+    """
+    env = os.environ if env is None else env
+
+    from_path = shutil.which("clang-tidy")
+    if from_path:
+        return Path(from_path)
+
+    vswhere = _vswhere_path(env)
+    if vswhere is None:
+        return None
+    # MSBuild 컴포넌트를 요구하지 않는다 — Clang 도구만 깔린 설치본도 있고,
+    # -find 로 파일 존재는 이미 확인된다.
+    found = _vswhere_find(vswhere, r"VC\Tools\Llvm\**\bin\clang-tidy.exe", requires=None)
+    if not found:
+        return None
+
+    # VS 는 x64 / ARM64 / 32비트를 한꺼번에 깐다. 호스트에 맞는 것을 고른다.
+    is_arm = (env.get("PROCESSOR_ARCHITECTURE") or "").upper() == "ARM64"
+    preferred = "/arm64/" if is_arm else "/x64/"
+    for candidate in found:
+        if preferred in candidate.as_posix().lower():
+            return candidate
+    return found[0]
+
+
 def _vswhere_path(env: Mapping[str, str]) -> Path | None:
     program_files = env.get("ProgramFiles(x86)") or env.get("ProgramFiles")
     if not program_files:
@@ -220,22 +252,8 @@ def _vswhere_find(
 
 
 def vendored_dir() -> Path:
-    """로거 소스가 있는 자리. 반입 번들에서도 상대 위치가 같다."""
+    """로거 DLL 이 있는 자리. 반입 번들에서도 상대 위치가 같다."""
     return Path(__file__).resolve().parents[1] / "tools" / "msbuild-compiledb"
-
-
-def build_logger_command(msbuild: Path, csproj: Path, out_dir: Path) -> list[str]:
-    """로거 DLL 을 빌드하는 명령.
-
-    OutputPath 는 MSBuild 관례상 끝에 구분자가 붙어야 디렉터리로 해석된다.
-    경로에 공백이 있어도 subprocess 가 인용을 처리하므로 shell 을 거치지 않는다.
-    """
-    return [
-        str(msbuild), str(csproj),
-        "/nologo", "/v:quiet",
-        "/p:Configuration=Release",
-        f"/p:OutputPath={os.fspath(out_dir)}{os.sep}",
-    ]
 
 
 def build_msbuild_command(
@@ -321,24 +339,18 @@ def prepare_output_dir(root: Path, output_dir: Path | str | None = None) -> Path
     return directory
 
 
-def ensure_logger(msbuild: Path, out_dir: Path, *, rebuild: bool = False) -> Path:
-    """로거 DLL 을 준비한다. 이미 있으면 그대로 쓴다."""
-    dll = out_dir / LOGGER_DLL
-    if dll.is_file() and not rebuild:
-        log.debug("로거 재사용: %s", dll)
-        return dll
+def ensure_logger() -> Path:
+    """담겨 온 로거 DLL 의 자리를 준다.
 
-    csproj = vendored_dir() / "CompileCommandsJson.crex.csproj"
-    if not csproj.is_file():
-        raise CompileDbError(
-            f"로거 소스를 찾지 못했다: {csproj}. 반입 번들에서 tools/ 가 빠졌을 수 있다."
-        )
-
-    log.info("로거를 빌드한다 (처음 한 번만)")
-    _run(build_logger_command(msbuild, csproj, out_dir), what="로거 빌드", capture=True)
-
+    빌드하지 않는다. DLL 을 반입 번들에 그대로 담기 때문이다 — 폐쇄망 장비에
+    MSBuild 가 있어도 로거를 거기서 빌드할 이유가 없고, 빌드는 실패할 자리가
+    하나 더 늘어나는 일이다.
+    """
+    dll = vendored_dir() / LOGGER_DLL
     if not dll.is_file():
-        raise CompileDbError(f"로거 빌드는 끝났는데 {dll} 이 없다. 위 로그를 확인하라.")
+        raise CompileDbError(
+            f"로거를 찾지 못했다: {dll}. 반입 번들에서 tools/ 가 빠졌을 수 있다."
+        )
     return dll
 
 
@@ -378,7 +390,7 @@ def generate(
         return Result(found, out_dir, json_path, _count_entries(json_path))
 
     msbuild = find_msbuild(env)
-    logger_dll = ensure_logger(msbuild, out_dir)
+    logger_dll = ensure_logger()
 
     # 로거는 빌드 도중 조금씩 써 나간다. 중간에 실패하면 반쪽짜리 JSON 이 남는데,
     # 그게 원래 자리에 있으면 다음 리뷰가 그걸 그대로 믿는다. 임시 파일에 받아
@@ -398,8 +410,62 @@ def generate(
         raise CompileDbError(
             f"빌드는 끝났는데 {staging} 이 없다. 로거가 붙지 않았을 수 있다 — {log_path} 를 보라."
         )
+    _rewrite_batched_commands(staging)
     staging.replace(json_path)
     return Result(found, out_dir, json_path, _count_entries(json_path), log_path)
+
+
+
+#: 명령줄 토큰. 따옴표로 묶인 덩어리를 하나로 본다.
+_COMMAND_TOKEN = re.compile(r'"[^"]*"|\S+')
+
+
+def _same_path(a: str, b: str) -> bool:
+    return a.strip('"').replace("\\", "/").casefold() == b.strip('"').replace("\\", "/").casefold()
+
+
+def split_batched_commands(entries: list[dict]) -> int:
+    """한 번의 cl.exe 호출에 여러 소스가 묶인 항목을 파일 하나짜리로 줄인다.
+
+    MSBuild 는 설정이 같은 .cpp 를 모아 cl.exe 를 한 번만 부른다. 로거는 관찰한
+    명령을 그대로 적으므로, 항목마다 명령줄 끝에 남의 소스 파일까지 들어간다.
+    clang-tidy 는 그런 명령을 받으면 "expected exactly one compiler job" 으로
+    그 파일을 통째로 포기하는데, 그 실패는 진단 형식이 아니라서 파서에 걸리지
+    않는다 — CREX 는 그것을 지적 0건으로 본다. 조용한 0건이다.
+
+    바꾼 항목 수를 돌려준다.
+    """
+    sources = [entry.get("file", "") for entry in entries]
+    changed = 0
+    for entry in entries:
+        command = entry.get("command")
+        mine = entry.get("file", "")
+        if not command or not mine:
+            continue
+        tokens = _COMMAND_TOKEN.findall(command)
+        kept = [
+            token for token in tokens
+            if _same_path(token, mine)
+            or not any(_same_path(token, other) for other in sources)
+        ]
+        if len(kept) != len(tokens):
+            entry["command"] = " ".join(kept)
+            changed += 1
+    return changed
+
+
+def _rewrite_batched_commands(json_path: Path) -> None:
+    """묶인 명령을 풀어 다시 쓴다. 실패해도 리뷰를 막지 않는다."""
+    try:
+        entries = json.loads(json_path.read_text(encoding="utf-8"))
+        changed = split_batched_commands(entries)
+        if changed:
+            json_path.write_text(
+                json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            log.info("묶여 있던 컴파일 명령 %d건을 파일 단위로 풀었다", changed)
+    except (OSError, ValueError, TypeError) as exc:
+        log.warning("컴파일 명령 분리 실패 — 원본을 그대로 둔다: %s", exc)
 
 
 def _count_entries(json_path: Path) -> int:

@@ -11,9 +11,7 @@ runs entirely inside a corporate **air-gapped network** against **small local LL
 The Python package, CLI, and config file are lowercase `crex`; `CREX` is the name.
 
 Every design choice serves one goal: **suppressing hallucination**. Small models
-confidently invent line numbers, APIs, and defects. A review tool with a high
-false-alarm rate gets ignored within three weeks, so this project trades recall for
-precision on purpose. Target is FAR ≤ 25%.
+confidently invent line numbers, APIs, and defects.
 
 ## Read first
 
@@ -122,9 +120,10 @@ git diff → chunk → ground → generate → filter → report
 
 `crex/compiledb.py` builds `compile_commands.json` for the target repository and
 writes the path into `crex.toml` itself — CMake by configuring with Ninja, MSBuild by
-building with a vendored logger attached. It exists because clang-tidy without a
-compile DB is half-blind, and because a documented manual procedure is a procedure
-nobody follows.
+building with a vendored logger DLL attached (`tools/msbuild-compiledb/`, MIT;
+prebuilt, not built on site). It exists because clang-tidy without a compile DB is
+half-blind, and because the procedure differs per project format — one command
+replaces a page of instructions.
 
 `crex/workspace.py` decides *which* repository is being reviewed. CREX does not have
 to sit inside the target repo — one installed copy (one import bundle to keep intact)
@@ -216,7 +215,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 145 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 152 tests passing.
 ~7,200 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
@@ -226,11 +225,24 @@ evaluation harness, MCP server, visualizer. 41 rules. 145 tests passing.
 - **Never run against a real LLM.** All verification is against a fake vLLM server.
   Prompt quality, actual reject rates, and latency are unmeasured. Quality numbers in
   the docs are targets drawn from literature, not observations from this system.
-- **`crex compiledb`'s MSBuild path has never run against a real MSBuild.** The
-  CMake path is covered end to end by `tests/test_compiledb.py`; the Windows half
-  is tested only up to command assembly, because no MSBuild exists in CI. The
-  logger source (`tools/msbuild-compiledb/`, MIT, vendored unmodified) is upstream's
-  and works, but CREX's discovery, build, and invocation of it are unverified.
+- **Grounding now *is* verified against real tools on Windows** (2026-08-27, .NET SDK
+  8.0.100 + Visual Studio 2022's clang-tidy): `roslyn` and `clang-tidy` were run
+  through the real pipeline on real diffs. Three silent-zero bugs came out of that
+  first run, and a fourth from the compile-DB path: incremental builds suppressing
+  MSBuild warnings; the GNU-style regex breaking on the `C:` drive-letter colon;
+  clang-tidy not being on `PATH` because Visual Studio never puts it there; and
+  MSBuild batching several `.cpp` into one `cl.exe` call, which makes clang-tidy
+  reject the whole file with "expected exactly one compiler job"
+  (`split_batched_commands()` unbatches it). All four produced *zero findings with no
+  error*, which the prompt then reported to the model as "the tools found nothing".
+  Assume any newly added analyzer has this failure mode until it has been run for
+  real — a passing test proves the parser, not the tool.
+- **`crex compiledb`'s CMake path has not run end to end on Windows.** The MSBuild
+  path now has (2026-08-27: real `.vcxproj`, MSBuild 17.14.51, logger attached,
+  2 entries, `crex.toml` written). `tests/test_compiledb.py` covers the CMake route
+  but skips unless `cmake` and `ninja` are on `PATH` — Visual Studio ships both and
+  puts neither there, so the skip is a false negative. Configuring with `-G Ninja`
+  additionally needs a compiler in the environment (a developer command prompt).
 - **Zed has never connected.** The MCP binding itself now runs against FastMCP 3.4.7
   (tools list, a review over Streamable HTTP with a real client), but the editor side
   — `context_servers` config, stdio spawn, the agent picking the right tool — is

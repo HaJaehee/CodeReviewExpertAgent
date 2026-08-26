@@ -121,8 +121,8 @@ compile_commands.json (C++ clang-tidy)
 
 **MSBuild 프로젝트**(`.sln`/`.vcxproj`)면 MSBuild 로거를 붙여 빌드하면서 실제
 `cl.exe` 호출을 기록합니다. property sheet·매크로·상속된 include 경로가 전부
-반영된 정확한 결과가 나옵니다. 로거는 처음 한 번 그 자리에서 빌드되어 캐시됩니다
-(소스는 [`tools/msbuild-compiledb/`](../tools/msbuild-compiledb/README.md), MIT).
+반영된 정확한 결과가 나옵니다. 로거는 빌드된 DLL 로 함께 담겨 있어 그대로
+실행됩니다 ([`tools/msbuild-compiledb/`](../tools/msbuild-compiledb/README.md), MIT).
 
 MSBuild 쪽에는 알아둘 것이 둘 있습니다.
 
@@ -160,7 +160,7 @@ MSBuild 프로젝트를 직접 다루겠다면 선택지가 셋입니다. `crex 
 것은 첫 번째입니다.
 
 - [0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson)
-  — 로거를 붙여 빌드를 관찰합니다. NuGet 없이 빌드됩니다.
+  — 로거를 붙여 빌드를 관찰합니다. 빌드된 DLL 이 번들에 들어 있습니다.
 - [microsoft/msbuild-extractor-sample](https://github.com/microsoft/msbuild-extractor-sample)
   — MSBuild API 로 design-time 빌드만 돌려 뽑으므로 컴파일이 필요 없습니다.
   대신 .NET SDK 와 NuGet 복원이 필요해서 폐쇄망에서는 준비가 더 큽니다.
