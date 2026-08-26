@@ -288,9 +288,12 @@ clang-tidy 가 헤더를 못 찾아서 절반쯤 눈을 감고 분석합니다. 
 cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
 ```
 
-Visual Studio 나 MSBuild 프로젝트라면 별도 도구가 필요합니다. 어렵다면 clang-tidy
-를 포기하고 cppcheck 만 쓰는 것도 나쁘지 않습니다 — cppcheck 는 컴파일 DB 없이도
-돌고 오탐률이 매우 낮습니다.
+경로는 파일이 아니라 **디렉터리**이고, 상대 경로는 리뷰 대상 저장소 루트 기준입니다.
+
+Visual Studio 2022 는 CMake 냐 MSBuild 냐에 따라 방법이 갈립니다 —
+[정적분석 도구 문서의 Visual Studio 2022 절](analyzers.md#visual-studio-2022-에서-만들기)에
+프로젝트 형식별로 정리해 두었습니다. 어렵다면 clang-tidy 를 포기하고 cppcheck 만 쓰는
+것도 나쁘지 않습니다 — cppcheck 는 컴파일 DB 없이도 돌고 오탐률이 매우 낮습니다.
 
 **`clang_tidy_checks`** — 체크 목록입니다. **비워두는 것이 기본이자 권장입니다.**
 
