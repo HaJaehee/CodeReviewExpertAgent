@@ -11,8 +11,8 @@ Qwen3.6-27B and Gemma 4 26B) served by vLLM inside a corporate air-gapped networ
 
 The entire design optimizes for one thing: **suppressing hallucination**. Small
 models confidently invent line numbers, non-existent APIs, and defects that aren't
-there. A review tool with high false-alarm rate gets ignored within three weeks, so
-the project trades recall for precision deliberately and says so out loud.
+there. A false positive costs more than a miss, so the project trades recall for
+precision deliberately and says so out loud.
 
 ## Read these in order
 

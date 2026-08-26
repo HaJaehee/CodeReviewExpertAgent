@@ -179,8 +179,7 @@ def persist_workspace(config_path: Path, root: Path | None) -> Path:
 def persist_compile_commands_dir(config_path: Path, directory: Path | None) -> Path:
     """`[grounding]` 의 `compile_commands_dir` 를 갱신한다 (CLI 의 `compiledb` 명령).
 
-    저장소마다 다른 값이라 사람이 직접 열어 적게 두면 결국 아무도 안 적는다.
-    만든 사람이 바로 적는다.
+    저장소마다 다른 값이다. 만든 쪽이 바로 적어 두면 사람이 옮겨 적을 일이 없다.
     """
     value = None if directory is None else _toml_string(Path(directory))
     return persist_key(config_path, "compile_commands_dir", value, section="grounding")

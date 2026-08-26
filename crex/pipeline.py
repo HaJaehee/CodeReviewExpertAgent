@@ -155,7 +155,7 @@ class Pipeline:
         """설정된 최소 심각도 미만은 리포트에서 뺀다.
 
         기각(rejected)과는 다르다. 이건 '유효하지만 지금은 보고 싶지 않은' 것이다.
-        도입 초기에 high 만 켜두고 신뢰를 쌓은 뒤 낮추는 용도로 쓴다.
+        룰별 정밀도를 아직 모를 때 high 만 켜 두고, 측정 후 낮추는 용도로 쓴다.
         """
         threshold = SEVERITY_ORDER[self.config.review.min_severity]
         if threshold == 0:

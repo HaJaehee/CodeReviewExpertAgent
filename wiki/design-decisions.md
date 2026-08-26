@@ -158,10 +158,10 @@ temporary git repo and use real `git diff` output rather than hand-written diffs
 `max_findings_per_chunk` is 5. Rules carry a `counter` field listing what *not* to
 flag. `min_severity` exists so teams can start at `high` only.
 
-**Why.** A review tool with a high false-alarm rate stops being read within about
-three weeks, and at that point recall is irrelevant. Accepted target is FAR ≤ 25%,
-matching BitsAI-CR's ~75% precision. OCR makes the same trade ("sacrifices recall
-for accuracy").
+**Why.** A false positive costs more than a miss: it spends a reviewer's attention
+on code that is fine, and every one of them has to be read to be dismissed. Target
+is FAR ≤ 25%, matching BitsAI-CR's ~75% precision. OCR makes the same trade
+("sacrifices recall for accuracy").
 
 Phase 3 acceptance explicitly allows KBI to drop to 90% of baseline in exchange.
 
