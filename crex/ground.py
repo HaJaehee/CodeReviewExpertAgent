@@ -92,7 +92,22 @@ class Analyzer(ABC):
             log.warning("[%s] 출력 파싱 실패: %s", self.name, exc)
             return AnalyzerResult(self.name, skipped=True, skip_reason=f"파싱 실패: {exc}")
 
+        broken = self.diagnose(completed, findings)
+        if broken:
+            return AnalyzerResult(self.name, skipped=True, skip_reason=broken)
+
         return AnalyzerResult(self.name, findings=findings)
+
+    def diagnose(
+        self, completed: subprocess.CompletedProcess, findings: list[StaticFinding]
+    ) -> str | None:
+        """도구가 제대로 돌지 못한 것인지 판정한다. 이유를 돌려주면 건너뛴 것으로 본다.
+
+        대부분의 분석기는 지적을 찾으면 0 이 아닌 코드로 끝나므로 종료 코드만으로는
+        판정할 수 없다. 그래서 기본은 판정하지 않는다. 빌드를 태우는 분석기처럼
+        '실패했는데 결과가 0건' 이 곧 조용한 사고인 경우에만 덮어쓴다.
+        """
+        return None
 
     @abstractmethod
     def build_command(self, paths: list[str]) -> list[str]: ...
@@ -250,7 +265,101 @@ class Cppcheck(Analyzer):
 # --------------------------------------------------------------------------
 
 
-class RoslynAnalyzers(Analyzer):
+def find_dotnet_project(root: Path, paths: list[str] | None = None) -> Path | None:
+    """무엇을 빌드할지 정한다. 못 정하면 None.
+
+    `dotnet build` 는 인자가 없으면 현재 디렉터리에서 스스로 찾는데, 저장소 루트에
+    프로젝트가 없거나 둘 이상이면 MSB1003/MSB1011 로 죽는다. 그 오류 문구는 경고
+    형식이 아니라 파서에 걸리지 않고, 결과는 **조용히 0건**이 된다. 설정을 안 한
+    사람에게 "roslyn 이 도는 줄 알았는데 아니었다"가 되는 경로라 여기서 직접 정한다.
+
+    바뀐 파일에서 위로 올라가며 `.csproj` 를 먼저 찾는다. 솔루션 전체가 아니라 그
+    파일이 속한 프로젝트만 빌드하면 되기 때문이다 — 리뷰 한 번에 태우는 빌드가
+    작을수록 좋다. 바뀐 파일이 여러 프로젝트에 걸쳐 있으면 그때 솔루션으로 올린다.
+    """
+    root = Path(root)
+
+    projects: list[Path] = []
+    for path in paths or []:
+        candidate = _nearest_csproj(root, path)
+        if candidate is not None and candidate not in projects:
+            projects.append(candidate)
+
+    if len(projects) == 1:
+        return projects[0]
+
+    solutions = sorted(root.glob("*.sln")) or sorted(root.glob("*/*.sln"))
+    if len(solutions) == 1:
+        return solutions[0]
+
+    if len(projects) > 1:
+        # 솔루션이 없거나 여러 개인데 프로젝트도 여럿이다. 하나를 몰래 고르면
+        # 나머지 프로젝트의 경고가 통째로 빠진 채 리뷰가 돈다.
+        return None
+
+    # 얕은 곳부터 본다. src/Api/Api.csproj 같은 배치가 흔해서 세 단계까지 훑는다.
+    # 저장소 전체를 rglob 하지 않는 이유는 bin/obj 와 남의 소스까지 걸리기 때문이다.
+    for pattern in ("*.csproj", "*/*.csproj", "*/*/*.csproj"):
+        found = sorted(root.glob(pattern))
+        if len(found) == 1:
+            return found[0]
+        if len(found) > 1:
+            return None
+    return None
+
+
+def _nearest_csproj(root: Path, path: str) -> Path | None:
+    """바뀐 파일이 속한 프로젝트. 파일 자리에서 저장소 루트까지만 올라간다."""
+    current = (root / path).parent
+    try:
+        current.relative_to(root)
+    except ValueError:
+        return None
+
+    while True:
+        found = sorted(current.glob("*.csproj"))
+        if found:
+            return found[0]
+        if current == root or current.parent == current:
+            return None
+        current = current.parent
+
+
+class DotnetProjectAnalyzer(Analyzer):
+    """빌드할 C# 프로젝트를 정해야 하는 분석기의 공통부."""
+
+    #: 프로젝트를 정하지 못했을 때 남길 이유. 다음 행동이 들어 있어야 한다.
+    NO_PROJECT = (
+        "빌드할 .csproj/.sln 을 정하지 못했다 — grounding.dotnet_project 를 지정하라"
+    )
+
+    def __init__(self, *, project: str | None = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        #: 설정으로 지정한 .sln/.csproj. 없으면 바뀐 파일에서 찾아낸다.
+        self.project = project
+        #: 이번 실행에서 실제로 쓸 대상. run() 이 정하고 build_command() 가 읽는다.
+        #: 인스턴스 하나는 리뷰 한 번에 한 번만 돌므로 상태를 들고 있어도 된다.
+        self._target: str | None = None
+
+    def run(self, paths: list[str], cwd: Path) -> AnalyzerResult:
+        # 대상 파일이 없거나 도구가 안 깔린 경우는 기반 클래스가 먼저 판정한다.
+        # 그쪽 이유가 더 정확하다 — dotnet 이 없는 장비에서 "프로젝트를 못 정했다"
+        # 고 하면 엉뚱한 것을 고치러 간다.
+        if not paths or not self.available():
+            return super().run(paths, cwd)
+
+        self._target = self.project or self._discover(cwd, paths)
+        if self._target is None:
+            return AnalyzerResult(self.name, skipped=True, skip_reason=self.NO_PROJECT)
+        log.debug("[%s] 대상 프로젝트: %s", self.name, self._target)
+        return super().run(paths, cwd)
+
+    def _discover(self, cwd: Path, paths: list[str]) -> str | None:
+        found = find_dotnet_project(cwd, paths)
+        return str(found) if found is not None else None
+
+
+class RoslynAnalyzers(DotnetProjectAnalyzer):
     """`dotnet build` 의 경고를 그대로 수확한다.
 
     팀이 이미 쓰는 빌드 파이프라인의 분석기 설정(.editorconfig, Directory.Build.props)을
@@ -262,43 +371,62 @@ class RoslynAnalyzers(Analyzer):
     executable = "dotnet"
     languages = (Language.CSHARP,)
 
-    def __init__(self, *, project: str | None = None, **kwargs) -> None:
-        super().__init__(**kwargs)
-        #: 빌드할 .sln/.csproj. 없으면 cwd 에서 자동 탐색된다.
-        self.project = project
-
     def build_command(self, paths: list[str]) -> list[str]:
         # 파일 단위 분석이 불가하므로 프로젝트를 빌드하고 경고를 걷는다.
-        command = [self.executable, "build", "--nologo", "-v", "normal"]
-        if self.project:
-            command.append(self.project)
+        #
+        # --no-incremental 이 필요한 이유: Roslyn 경고는 컴파일할 때만 나온다.
+        # 개발자가 방금 VS 에서 빌드하고 커밋했다면 여기서는 다시 컴파일할 것이
+        # 없고, 경고도 한 줄도 안 나온다. 그러면 "이 파일은 도구가 검사했고
+        # 깨끗하다"는 잘못된 전제로 LLM 이 돈다. 느린 쪽이 맞다.
+        command = [self.executable, "build", "--nologo", "--no-incremental", "-v", "normal"]
+        if self._target:
+            command.append(self._target)
         command.extend(self.extra_args)
         return command
 
     def parse(self, stdout: str, stderr: str) -> list[StaticFinding]:
         return _parse_regex(_MSBUILD_STYLE, stdout + "\n" + stderr, self.name)
 
+    def diagnose(
+        self, completed: subprocess.CompletedProcess, findings: list[StaticFinding]
+    ) -> str | None:
+        """빌드가 실패했는데 걷은 것도 없으면 그건 '깨끗함' 이 아니다.
 
-class Roslynator(Analyzer):
+        폐쇄망에서 제일 흔한 경우가 NuGet 복원 실패다. 그 오류는 줄·열이 없어
+        경고 파서에 걸리지 않고, 그대로 두면 0건이 '지적 없음' 으로 보고된다.
+        """
+        if completed.returncode == 0 or findings:
+            return None
+        tail = _last_meaningful_line(completed.stdout, completed.stderr)
+        return f"dotnet build 실패 (코드 {completed.returncode}){f': {tail}' if tail else ''}"
+
+
+class Roslynator(DotnetProjectAnalyzer):
     """Roslynator CLI. dotnet build 보다 룰이 풍부하지만 별도 설치가 필요하다."""
 
     name = "roslynator"
     executable = "roslynator"
     languages = (Language.CSHARP,)
 
-    def __init__(self, *, project: str | None = None, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.project = project
-
     def build_command(self, paths: list[str]) -> list[str]:
         command = [self.executable, "analyze"]
-        if self.project:
-            command.append(self.project)
+        if self._target:
+            command.append(self._target)
         command.extend(self.extra_args)
         return command
 
     def parse(self, stdout: str, stderr: str) -> list[StaticFinding]:
         return _parse_regex(_MSBUILD_STYLE, stdout + "\n" + stderr, self.name)
+
+
+def _last_meaningful_line(stdout: str, stderr: str) -> str:
+    """실패 이유로 보여줄 한 줄. 뒤에서부터 실제 내용이 있는 줄을 찾는다."""
+    for source in (stderr, stdout):
+        for line in reversed((source or "").splitlines()):
+            stripped = line.strip()
+            if stripped:
+                return stripped[:200]
+    return ""
 
 
 # --------------------------------------------------------------------------

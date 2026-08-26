@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -20,6 +21,7 @@ from crex.ground import (  # noqa: E402
     RoslynAnalyzers,
     Ruff,
     Semgrep,
+    find_dotnet_project,
 )
 from crex.schema import Language, ReviewChunk, Severity, StaticFinding  # noqa: E402
 
@@ -296,6 +298,116 @@ def test_optional_analyzers_are_reachable_from_config() -> None:
     _check(len(ALL_ANALYZER_NAMES) == 8, f"분석기 이름 8종: {sorted(ALL_ANALYZER_NAMES)}")
 
 
+# --------------------------------------------------------------------------
+# C# — 빌드할 프로젝트 정하기
+# --------------------------------------------------------------------------
+
+
+def _csharp_repo(root: Path, projects: tuple[str, ...], solutions: tuple[str, ...] = ()) -> None:
+    for project in projects:
+        path = root / project
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("<Project />", encoding="utf-8")
+    for solution in solutions:
+        (root / solution).write_text("", encoding="utf-8")
+
+
+def test_dotnet_project_follows_the_changed_file() -> None:
+    """바뀐 파일이 속한 프로젝트만 빌드하면 된다. 솔루션 전체를 태울 이유가 없다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _csharp_repo(root, ("src/Api/Api.csproj", "src/Core/Core.csproj"), ("App.sln",))
+
+        found = find_dotnet_project(root, ["src/Core/Service.cs"])
+        _check(found == root / "src" / "Core" / "Core.csproj", f"{found}")
+
+
+def test_dotnet_project_rises_to_solution_when_files_span_projects() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _csharp_repo(root, ("src/Api/Api.csproj", "src/Core/Core.csproj"), ("App.sln",))
+
+        found = find_dotnet_project(root, ["src/Core/A.cs", "src/Api/B.cs"])
+        _check(found == root / "App.sln", f"{found}")
+
+
+def test_dotnet_project_gives_up_rather_than_guessing() -> None:
+    """솔루션이 없고 프로젝트가 여럿이면 하나를 고르면 안 된다.
+
+    몰래 고르면 나머지 프로젝트의 경고가 통째로 빠진 채 리뷰가 돈다 —
+    도구가 검사해서 깨끗한 것과 구분이 안 된다.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _csharp_repo(root, ("src/Api/Api.csproj", "src/Core/Core.csproj"))
+
+        _check(find_dotnet_project(root, ["src/Core/A.cs", "src/Api/B.cs"]) is None, "골라버렸다")
+        _check(find_dotnet_project(root, []) is None, "대상 없이도 골라버렸다")
+
+
+def test_dotnet_project_found_without_paths() -> None:
+    """doctor 처럼 바뀐 파일이 없을 때도 하나뿐이면 찾아야 한다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _csharp_repo(root, ("src/Api/Api.csproj",))
+        _check(find_dotnet_project(root, []) == root / "src" / "Api" / "Api.csproj", "못 찾았다")
+
+
+def test_roslyn_skips_loudly_when_project_is_undecidable() -> None:
+    """조용히 0건을 내지 않는다 — 0건은 '검사했고 깨끗하다' 로 읽히기 때문이다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _csharp_repo(root, ("src/Api/Api.csproj", "src/Core/Core.csproj"))
+
+        analyzer = RoslynAnalyzers()
+        # dotnet 유무와 무관하게 판정이 같아야 하므로 설치된 것으로 두고 본다.
+        analyzer.available = lambda: True  # type: ignore[method-assign]
+        result = analyzer.run(["src/Core/A.cs", "src/Api/B.cs"], root)
+        _check(result.skipped, "건너뛰지 않았다")
+        _check("dotnet_project" in result.skip_reason, f"다음 행동이 없다: {result.skip_reason}")
+
+        # 도구가 아예 없을 때는 프로젝트 얘기가 아니라 그 얘기를 해야 한다.
+        missing = RoslynAnalyzers()
+        missing.available = lambda: False  # type: ignore[method-assign]
+        reason = missing.run(["src/Core/A.cs", "src/Api/B.cs"], root).skip_reason
+        _check("dotnet" in reason and "dotnet_project" not in reason, f"이유가 엉뚱하다: {reason}")
+
+
+def test_roslyn_command_forces_recompilation() -> None:
+    """방금 빌드한 솔루션이면 증분 빌드는 경고를 한 줄도 내지 않는다."""
+    analyzer = RoslynAnalyzers(project="src/App.sln")
+    analyzer._target = analyzer.project
+    command = analyzer.build_command(["src/A.cs"])
+
+    _check("--no-incremental" in command, f"증분 빌드로 돈다: {command}")
+    _check(command[-1] == "src/App.sln", f"대상이 안 붙었다: {command}")
+    _check("-v" in command and command[command.index("-v") + 1] == "normal",
+           f"경고가 보이는 verbosity 가 아니다: {command}")
+
+
+def test_roslyn_reports_a_failed_build_instead_of_zero_findings() -> None:
+    """폐쇄망에서 제일 흔한 실패가 NuGet 복원이다. 그 오류는 경고 파서에 안 걸린다."""
+    import subprocess
+
+    analyzer = RoslynAnalyzers()
+    failed = subprocess.CompletedProcess(
+        args=["dotnet", "build"], returncode=1,
+        stdout="/w/App.csproj : error NU1101: Unable to find package Foo.\n", stderr="",
+    )
+    reason = analyzer.diagnose(failed, [])
+    _check(reason is not None and "NU1101" in reason, f"이유를 못 만들었다: {reason}")
+
+    # 컴파일 오류는 걷힌 지적이다. 그건 실패가 아니라 결과다.
+    compiled_with_errors = subprocess.CompletedProcess(
+        args=["dotnet", "build"], returncode=1, stdout="", stderr=""
+    )
+    findings = RoslynAnalyzers().parse(MSBUILD_OUT, "")
+    _check(analyzer.diagnose(compiled_with_errors, findings) is None, "결과가 있는데 건너뛰었다")
+
+    ok = subprocess.CompletedProcess(args=["dotnet", "build"], returncode=0, stdout="", stderr="")
+    _check(analyzer.diagnose(ok, []) is None, "성공했는데 건너뛰었다")
+
+
 TESTS = [
     test_clang_tidy_parse,
     test_cppcheck_parse,
@@ -311,6 +423,13 @@ TESTS = [
     test_clang_tidy_respects_project_config,
     test_clang_tidy_checks_configurable,
     test_optional_analyzers_are_reachable_from_config,
+    test_dotnet_project_follows_the_changed_file,
+    test_dotnet_project_rises_to_solution_when_files_span_projects,
+    test_dotnet_project_gives_up_rather_than_guessing,
+    test_dotnet_project_found_without_paths,
+    test_roslyn_skips_loudly_when_project_is_undecidable,
+    test_roslyn_command_forces_recompilation,
+    test_roslyn_reports_a_failed_build_instead_of_zero_findings,
 ]
 
 

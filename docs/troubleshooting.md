@@ -305,8 +305,21 @@ INFO    crex.ground: [roslyn] 0건 보고
 있는지 확인하세요. `.editorconfig` 나 `Directory.Build.props` 에서
 `EnableNETAnalyzers` 를 켜야 합니다.
 
-증분 빌드라서 아무것도 안 했을 수도 있습니다. 이 경우 매번 리빌드하게 만들면
-느려지므로, C# 은 정적분석 없이 LLM 리뷰만 쓰는 것도 현실적인 선택입니다.
+증분 빌드 때문은 아닙니다 — `--no-incremental` 로 매번 다시 컴파일합니다. 빌드가
+실패했다면 0건이 아니라 "건너뜀" 으로 나옵니다.
+
+```
+INFO    crex.ground: [roslyn] 건너뜀 — 빌드할 .csproj/.sln 을 정하지 못했다
+INFO    crex.ground: [roslyn] 건너뜀 — dotnet build 실패 (코드 1): ...
+```
+
+첫 줄은 저장소에 프로젝트가 여럿인데 솔루션이 없거나 여러 개라 대상을 하나로
+좁히지 못한 경우입니다. `grounding.dotnet_project` 를 지정하세요 —
+`python -m crex doctor` 의 "빌드 대상" 줄에서 지금 상태를 볼 수 있습니다.
+
+둘째 줄은 빌드 자체가 깨진 경우입니다. 폐쇄망에서는 NuGet 복원 실패가 제일
+흔합니다. 사내 NuGet 피드를 `nuget.config` 에 넣거나, 패키지를 미리 복원해 둔
+장비에서 리뷰를 도세요.
 
 ---
 

@@ -54,6 +54,7 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | tree-sitter integration + heuristic fallback | Complete, fallback verified (tree-sitter not installed locally) |
 | Diff/source consistency check | Complete |
 |  8 static-analysis adapters | Complete, 11 parser tests against real output formats |
+| C# build-target resolution (nearest `.csproj` → `.sln` → skip) | Complete, 7 tests. Never run against a real `dotnet` — no .NET SDK in CI |
 | RuleChecker with enum-constrained schema | Complete |
 | ReviewFilter, deterministic + cross-model | Complete, 9 tests |
 | Rule taxonomy | 41 rules (C++ 14, C# 15, Python 14) |
@@ -72,7 +73,7 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-145 tests total, all runnable offline.
+152 tests total, all runnable offline.
 
 ## What does not exist
 
