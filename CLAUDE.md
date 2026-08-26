@@ -74,6 +74,11 @@ python -m crex workspace D:/work/repo         # pin it in crex.toml (--clear to 
 ```
 
 ```bash
+python -m crex compiledb                     # compile_commands.json, and write it into crex.toml
+python -m crex compiledb --configuration Release --project src/App.vcxproj
+```
+
+```bash
 python -m crex.mcp                    # MCP stdio server (Zed context_servers)
 python -m crex.mcp --transport http   # Streamable HTTP, 127.0.0.1:18766/mcp
                                       # needs `pip install -r requirements.txt`
@@ -114,6 +119,12 @@ git diff → chunk → ground → generate → filter → report
 - **filter** (`crex/filter.py`) — deterministic checks first (no LLM call), then a
   *different* model returns yes/no in Conclusion-First order.
 - **report** (`crex/report.py`) — Markdown / SARIF 2.1.0 / JSON.
+
+`crex/compiledb.py` builds `compile_commands.json` for the target repository and
+writes the path into `crex.toml` itself — CMake by configuring with Ninja, MSBuild by
+building with a vendored logger attached. It exists because clang-tidy without a
+compile DB is half-blind, and because a documented manual procedure is a procedure
+nobody follows.
 
 `crex/workspace.py` decides *which* repository is being reviewed. CREX does not have
 to sit inside the target repo — one installed copy (one import bundle to keep intact)
@@ -205,8 +216,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 128 tests passing.
-~6,570 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 145 tests passing.
+~7,200 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 
@@ -215,6 +226,11 @@ evaluation harness, MCP server, visualizer. 41 rules. 128 tests passing.
 - **Never run against a real LLM.** All verification is against a fake vLLM server.
   Prompt quality, actual reject rates, and latency are unmeasured. Quality numbers in
   the docs are targets drawn from literature, not observations from this system.
+- **`crex compiledb`'s MSBuild path has never run against a real MSBuild.** The
+  CMake path is covered end to end by `tests/test_compiledb.py`; the Windows half
+  is tested only up to command assembly, because no MSBuild exists in CI. The
+  logger source (`tools/msbuild-compiledb/`, MIT, vendored unmodified) is upstream's
+  and works, but CREX's discovery, build, and invocation of it are unverified.
 - **Zed has never connected.** The MCP binding itself now runs against FastMCP 3.4.7
   (tools list, a review over Streamable HTTP with a real client), but the editor side
   — `context_servers` config, stdio spawn, the agent picking the right tool — is

@@ -61,6 +61,7 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Pipeline: `run_diff` / `run_scan` | Complete, 5 end-to-end tests via fake vLLM |
 | Markdown / SARIF / JSON output | Complete |
 | CLI: `review` / `scan` / `doctor` | Complete |
+| `crex compiledb` (compile_commands.json + config write) | CMake path complete and tested end to end; MSBuild path written, never run against a real MSBuild |
 | Workspace resolution (review a repo CREX does not live in) | Complete, 20 tests |
 | Changing the target at runtime (CLI command, dashboard button, MCP tool) | Complete |
 | `ReviewService` (7 MCP operations) | Complete, 20 tests, no FastMCP needed |
@@ -71,7 +72,7 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-128 tests total, all runnable offline.
+145 tests total, all runnable offline.
 
 ## What does not exist
 
@@ -90,6 +91,17 @@ over the Streamable HTTP transport with a real MCP client. What has *not* happen
 a connection from Zed — its `context_servers` config, stdio spawn, and the agent's
 tool selection are all unverified. First run inside the network should be
 `python -m crex.mcp` plus a Zed connection check.
+
+**A real MSBuild under `crex compiledb`.** The CMake path is exercised end to end
+in CI (configure with Ninja, read back the entries, check the value written to
+`crex.toml`). The MSBuild path — vswhere discovery, building the vendored logger
+with the VS toolchain, attaching it to a build — is tested only up to command
+assembly, because Windows and MSBuild do not exist in this repo's CI. Two choices
+there are deliberate and worth re-measuring on the first real run: `/t:Rebuild`
+(the logger records only what it observes compiling) and no `/m` (parallel builds
+forward logger events through a filter, and a silently half-filled database is
+worse than none). First run inside the network should compare the entry count
+against the number of .cpp files actually built.
 
 **OCR comparison.** `review.mode = "ocr"` raises rather than running.
 

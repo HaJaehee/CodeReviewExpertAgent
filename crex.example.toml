@@ -96,8 +96,9 @@ enabled = true
 timeout = 120.0
 
 #  C++: compile_commands.json 이 있는 디렉터리. 없으면 clang-tidy 가 헤더를
-#  못 찾아 정확도가 크게 떨어진다. CMake 라면:
-#    cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+#  못 찾아 정확도가 크게 떨어진다. 손으로 적지 말고 만들게 하라 —
+#  CMake·MSBuild 를 알아서 처리하고 이 값까지 적어준다:
+#    python -m crex compiledb
 compile_commands_dir = "build"
 
 #  C#: 빌드할 솔루션/프로젝트. Roslyn 분석기 경고를 그대로 수확한다.

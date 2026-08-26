@@ -136,6 +136,14 @@ python -m crex review --staged --out reports/
 python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 ```
 
+C++ 저장소라면 처음 한 번 이것도 돌립니다. clang-tidy 가 헤더를 찾으려면
+`compile_commands.json` 이 있어야 하는데, CMake 든 Visual Studio 든 이 명령이
+만들고 `crex.toml` 에 적어줍니다.
+
+```bash
+python -m crex compiledb
+```
+
 리뷰가 왜 그런 결과를 냈는지 들여다보려면 관제 화면을 띄웁니다. 생성 모델이 받은
 프롬프트, 강제된 스키마, 검증 모델의 판정과 그 근거가 그대로 보입니다.
 
@@ -227,8 +235,8 @@ CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `re
 - [ ] (선택) 정적분석 도구 반입 — clang-tidy / cppcheck / ruff 등,
       [설치 가이드](docs/analyzers.md) 참고. 없으면 그 분석기만 건너뛴다
 - [ ] (선택) Semgrep 룰팩 반입 — `"auto"` 는 폐쇄망에서 동작하지 않는다
-- [ ] C++ 이라면 `compile_commands.json` 생성
-      (`cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build`)
+- [ ] C++ 이라면 `python -m crex compiledb` 로 `compile_commands.json` 생성
+      (CMake·MSBuild 모두 처리한다. 없으면 clang-tidy 가 절반쯤 눈을 감는다)
 
 ---
 

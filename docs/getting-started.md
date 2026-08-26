@@ -140,6 +140,11 @@ workspace = "D:/work/myrepo"
 $env:CREX_WORKSPACE = "D:\work\myrepo"
 ```
 
+C++ 저장소라면 처음 한 번 `python -m crex compiledb` 를 돌리세요.
+`compile_commands.json` 을 만들고 그 자리를 설정에 적어줍니다 — 이게 없으면
+clang-tidy 가 헤더를 못 찾아 절반쯤 눈을 감습니다
+([자세히](analyzers.md#compile_commandsjson-이-없으면-반쯤-눈을-감습니다)).
+
 저장소마다 설정이 다르다면(C++ 프로젝트의 `compile_commands_dir`, C# 의
 `dotnet_project` 등) 각 저장소 루트에 `crex.toml` 을 두세요. `--workspace` 로
 지정하면 그 파일을 먼저 씁니다. 전체 규칙은 [설정](configuration.md#workspace--리뷰-대상-저장소)에

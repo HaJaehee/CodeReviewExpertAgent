@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CREX 가 로거 DLL 을 만들 때 쓰는 빌드 파일이다. 상류(0xabu)의 csproj 는
+  SDK 스타일이라 `dotnet build` 와 NuGet 복원이 필요한데, 폐쇄망에서는 그게
+  가장 먼저 막힌다. 그래서 옛 형식으로 다시 썼다.
+
+    - PackageReference 가 없다 → NuGet 복원이 일어나지 않는다.
+    - 참조는 MSBuild 자기 옆에 있는 DLL 을 $(MSBuildToolsPath) 로 가리킨다
+      → 어느 VS 버전이든 그 VS 의 어셈블리로 빌드된다. 버전 못 맞춰 생기는
+      로드 실패가 없다.
+    - 그래서 빌드에 필요한 것이 MSBuild 하나뿐이다. 어차피 그게 있어야
+      compile_commands.json 도 못 만든다.
+
+  crex 가 알아서 부른다. 직접 부를 일은 없지만, 굳이 한다면:
+      msbuild CompileCommandsJson.crex.csproj /p:OutputPath=<나올 자리>\
+-->
+<Project ToolsVersion="Current" DefaultTargets="Build"
+         xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <OutputType>Library</OutputType>
+    <AssemblyName>CompileCommandsJson</AssemblyName>
+    <RootNamespace>CompileCommandsJson</RootNamespace>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <OutputPath Condition=" '$(OutputPath)' == '' ">bin\</OutputPath>
+    <!-- 중간 산출물은 대상 저장소를 어지럽히지 않도록 출력 자리 밑에 둔다. -->
+    <IntermediateOutputPath>$(OutputPath)obj\</IntermediateOutputPath>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <!-- 상류 소스를 그대로 두려고 경고는 경고로 남긴다. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="CompileCommandsJson.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System" />
+    <!-- JSON 문자열 이스케이프(HttpUtility.JavaScriptStringEncode)에 쓴다. -->
+    <Reference Include="System.Web" />
+    <Reference Include="Microsoft.Build.Framework">
+      <HintPath>$(MSBuildToolsPath)\Microsoft.Build.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build.Utilities.Core">
+      <HintPath>$(MSBuildToolsPath)\Microsoft.Build.Utilities.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

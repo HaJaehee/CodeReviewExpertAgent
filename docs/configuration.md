@@ -282,18 +282,20 @@ LLM 을 부르기 전에 결정론적 도구를 돌려서 사실을 확보합니
 나옵니다.
 
 **`compile_commands_dir`** — C++ 을 리뷰한다면 이게 제일 중요합니다. 없으면
-clang-tidy 가 헤더를 못 찾아서 절반쯤 눈을 감고 분석합니다. CMake 라면:
+clang-tidy 가 헤더를 못 찾아서 절반쯤 눈을 감고 분석합니다. **직접 적을 필요는
+없습니다** — 이 명령이 만들고 여기에 적어줍니다.
 
 ```bash
-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+python -m crex compiledb
 ```
 
-경로는 파일이 아니라 **디렉터리**이고, 상대 경로는 리뷰 대상 저장소 루트 기준입니다.
+CMake 든 Visual Studio 든 알아서 처리합니다. 무슨 일이 일어나는지와 손으로
+만드는 방법은 [정적분석 도구 문서](analyzers.md#compile_commandsjson-이-없으면-반쯤-눈을-감습니다)에
+있습니다.
 
-Visual Studio 2022 는 CMake 냐 MSBuild 냐에 따라 방법이 갈립니다 —
-[정적분석 도구 문서의 Visual Studio 2022 절](analyzers.md#visual-studio-2022-에서-만들기)에
-프로젝트 형식별로 정리해 두었습니다. 어렵다면 clang-tidy 를 포기하고 cppcheck 만 쓰는
-것도 나쁘지 않습니다 — cppcheck 는 컴파일 DB 없이도 돌고 오탐률이 매우 낮습니다.
+값은 파일이 아니라 **디렉터리**이고, 상대 경로는 리뷰 대상 저장소 루트 기준입니다.
+어렵다면 clang-tidy 를 포기하고 cppcheck 만 쓰는 것도 나쁘지 않습니다 — cppcheck 는
+컴파일 DB 없이도 돌고 오탐률이 매우 낮습니다.
 
 **`clang_tidy_checks`** — 체크 목록입니다. **비워두는 것이 기본이자 권장입니다.**
 

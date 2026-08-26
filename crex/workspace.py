@@ -36,7 +36,9 @@ MCP 의 `set_workspace`). 처음 정할 때와 **완전히 같은 검증**을 �
 느슨하면 "처음엔 거부당했는데 바꾸기로는 통과하는" 경로가 생긴다.
 
 `persist_workspace()` 는 `crex.toml` 의 최상위 `workspace` 키를 갱신한다
-(CLI 의 `workspace` 명령). 다음 실행부터 적용된다.
+(CLI 의 `workspace` 명령). 다음 실행부터 적용된다. 같은 방식으로
+`persist_compile_commands_dir()` 는 `[grounding]` 안의 값을 갱신한다
+(CLI 의 `compiledb` 명령) — 설정 파일을 고치는 창구를 여기 하나로 모아 둔다.
 """
 
 from __future__ import annotations
@@ -166,19 +168,36 @@ _NEW_CONFIG_HEADER = (
     "#  CREX 설정. 전체 항목은 crex.example.toml 과 docs/configuration.md 를 보라.\n"
 )
 
-_WORKSPACE_LINE = re.compile(r"^\s*workspace\s*=", re.IGNORECASE)
 _SECTION_LINE = re.compile(r"^\s*\[")
 
 
 def persist_workspace(config_path: Path, root: Path | None) -> Path:
-    """`crex.toml` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다.
+    """`crex.toml` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다."""
+    return persist_key(config_path, "workspace", None if root is None else _toml_string(root))
+
+
+def persist_compile_commands_dir(config_path: Path, directory: Path | None) -> Path:
+    """`[grounding]` 의 `compile_commands_dir` 를 갱신한다 (CLI 의 `compiledb` 명령).
+
+    저장소마다 다른 값이라 사람이 직접 열어 적게 두면 결국 아무도 안 적는다.
+    만든 사람이 바로 적는다.
+    """
+    value = None if directory is None else _toml_string(Path(directory))
+    return persist_key(config_path, "compile_commands_dir", value, section="grounding")
+
+
+def persist_key(
+    config_path: Path, key: str, value: str | None, *, section: str | None = None
+) -> Path:
+    """`crex.toml` 의 키 하나를 갱신한다. `value=None` 이면 지운다.
 
     TOML 을 다시 써 내지 않고 **그 줄만 갈아 끼운다.** 표준 라이브러리에는 TOML
     작성기가 없고(`tomllib` 은 읽기 전용), 있다 해도 주석을 전부 날려버린다.
     이 파일은 사람이 읽고 고치는 물건이라 주석이 내용의 절반이다.
 
-    최상위 키만 건드린다 — 첫 `[section]` 앞쪽 구간만 본다. 그 뒤의
-    `workspace = ...` 는 어느 섹션에 속한 다른 키이므로 손대지 않는다.
+    `section=None` 이면 최상위 키다 — 첫 `[section]` 앞쪽 구간만 본다. 그 뒤의
+    같은 이름은 어느 섹션에 속한 다른 키이므로 손대지 않는다. `section` 을 주면
+    그 섹션 안쪽만 본다. 섹션이 없으면 파일 끝에 만든다.
     """
     # 줄바꿈 방식을 바꾸지 않는다. 윈도우에서 CRLF 파일을 LF 로 되돌려 놓으면
     # 한 줄 고쳤는데 git 이 파일 전체가 바뀐 것으로 본다. 그래서 읽을 때도
@@ -190,10 +209,13 @@ def persist_workspace(config_path: Path, root: Path | None) -> Path:
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines()
 
-    limit = next((i for i, line in enumerate(lines) if _SECTION_LINE.match(line)), len(lines))
-    found = next((i for i, line in enumerate(lines[:limit]) if _WORKSPACE_LINE.match(line)), None)
+    start, limit = _key_span(lines, section)
+    key_line = re.compile(rf"^\s*{re.escape(key)}\s*=", re.IGNORECASE)
+    found = next(
+        (i for i in range(start, limit) if key_line.match(lines[i])), None
+    )
 
-    if root is None:
+    if value is None:
         if found is not None:
             del lines[found]
             # 키를 지우고 남은 빈 줄이 쌓이지 않게 한 줄만 정리한다.
@@ -202,11 +224,25 @@ def persist_workspace(config_path: Path, root: Path | None) -> Path:
             ):
                 del lines[found]
     else:
-        entry = f'workspace = "{_toml_string(root)}"'
+        entry = f'{key} = "{value}"'
         if found is not None:
             lines[found] = entry
         elif not lines:
-            lines = [_NEW_CONFIG_HEADER.rstrip("\n"), "", entry]
+            lines = [_NEW_CONFIG_HEADER.rstrip("\n"), ""]
+            if section:
+                lines.append(f"[{section}]")
+            lines.append(entry)
+        elif section and start == limit == len(lines):
+            # 섹션이 아예 없다. 파일 끝에 만든다.
+            if lines[-1].strip():
+                lines.append("")
+            lines.extend([f"[{section}]", entry])
+        elif section:
+            # 섹션 안, 마지막 내용 줄 바로 뒤에 붙인다.
+            insert = limit
+            while insert > start and not lines[insert - 1].strip():
+                insert -= 1
+            lines[insert:insert] = [entry]
         else:
             # 첫 섹션 바로 앞에 넣는다. 파일 맨 위 설명 주석을 밀어내지 않는다.
             insert = limit
@@ -222,6 +258,25 @@ def persist_workspace(config_path: Path, root: Path | None) -> Path:
     # 쓴 것을 바로 다시 읽어 검증한다. 망가진 설정을 남기고 성공을 알리지 않는다.
     load_config(config_path)
     return config_path
+
+
+def _key_span(lines: list[str], section: str | None) -> tuple[int, int]:
+    """키를 찾고 넣을 구간 [start, limit). 섹션이 없으면 (len, len) 을 준다."""
+    if section is None:
+        limit = next(
+            (i for i, line in enumerate(lines) if _SECTION_LINE.match(line)), len(lines)
+        )
+        return 0, limit
+
+    header = re.compile(rf"^\s*\[\s*{re.escape(section)}\s*\]", re.IGNORECASE)
+    start = next((i for i, line in enumerate(lines) if header.match(line)), None)
+    if start is None:
+        return len(lines), len(lines)
+    start += 1
+    limit = next(
+        (i for i in range(start, len(lines)) if _SECTION_LINE.match(lines[i])), len(lines)
+    )
+    return start, limit
 
 
 def _toml_string(root: Path) -> str:

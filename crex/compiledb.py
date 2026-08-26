@@ -1,0 +1,494 @@
+"""compile_commands.json 생성.
+
+clang-tidy 는 컴파일 명령을 모르면 헤더를 못 찾는다. 그 상태의 지적은 절반이
+쓸모없고, 쓸모없는 지적은 이 도구 전체를 3주 만에 무시당하게 만든다. 그래서
+이 파일을 만드는 일은 선택 사항이 아니다.
+
+문제는 만드는 절차가 프로젝트 형식마다 다르다는 것이다 — CMake 는 한 줄이고,
+MSBuild 는 로거를 직접 빌드해서 붙여야 한다. 문서로 안내해 봤자 아무도 안 읽는다.
+그래서 명령 하나로 만든다.
+
+    python -m crex compiledb
+
+MSBuild 경로는 Windows + Visual Studio 가 있어야 한다. 재료는
+`tools/msbuild-compiledb/` 에 소스로 들어 있고, 폐쇄망에서 처음 쓸 때 그 자리에서
+빌드해 캐시한다 — 반입 번들에 정체불명의 DLL 이 들어가지 않게 하려는 것이다.
+
+**주의: 이 모듈의 Windows 경로는 실제 MSBuild 로 검증되지 않았다.** 리눅스
+컨테이너에서는 명령 조립까지만 테스트할 수 있다. 그래서 실패할 때 무엇을 실행했고
+무엇이 나왔는지를 전부 남긴다 — 폐쇄망 안에서 사람이 이어받아 고칠 수 있어야 한다.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Mapping, Sequence
+
+log = logging.getLogger(__name__)
+
+#: 산출물 자리. 대상 저장소 안이지만 git 에는 잡히지 않게 한다(`prepare_output_dir`).
+OUTPUT_DIR = Path(".crex") / "compiledb"
+
+#: 빌드해서 캐시해 둘 로거 이름. 상류 어셈블리 이름과 같아야 한다.
+LOGGER_DLL = "CompileCommandsJson.dll"
+
+#: MSBuild 기본 verbosity. `detailed` 미만에서는 CL 명령줄 이벤트가 로거까지
+#: 오지 않을 수 있다. 콘솔이 지저분해지는 대신 결과가 비는 사고를 막는다.
+DEFAULT_VERBOSITY = "detailed"
+
+#: 관찰 방식이라 컴파일되지 않은 파일은 기록되지 않는다. 증분 빌드는 반쪽짜리
+#: DB 를 만들고, 반쪽짜리 DB 는 없는 것보다 나쁘다 — 조용히 일부만 맞기 때문이다.
+DEFAULT_TARGET = "Rebuild"
+
+
+class CompileDbError(RuntimeError):
+    """사용자가 고칠 수 있는 실패. 메시지에 다음 행동이 들어 있어야 한다."""
+
+
+@dataclass(frozen=True)
+class Project:
+    """무엇을 상대로 만들 것인가."""
+
+    #: "cmake" | "msbuild"
+    kind: str
+    #: CMakeLists.txt / .sln / .vcxproj
+    path: Path
+
+    def describe(self) -> str:
+        return f"{self.kind}: {self.path}"
+
+
+@dataclass(frozen=True)
+class Result:
+    project: Project
+    #: compile_commands.json 이 있는 디렉터리. 그대로 `compile_commands_dir` 에 넣는다.
+    directory: Path
+    json_path: Path
+    #: 엔트리 수. 0 이면 만들기는 했는데 아무것도 안 담긴 것이다.
+    entries: int
+    #: 빌드 로그. 실패했거나 엔트리가 적을 때 여기부터 본다.
+    log_path: Path | None = None
+
+
+# --------------------------------------------------------------------------
+# 탐지
+# --------------------------------------------------------------------------
+
+
+def detect_project(root: Path, explicit: Path | str | None = None) -> Project:
+    """무엇을 빌드할지 정한다.
+
+    CMakeLists.txt 를 .sln 보다 먼저 본다. CMake 프로젝트가 만들어낸 .sln 이
+    같이 있는 경우가 흔한데, 그때 원본은 CMake 쪽이고 그쪽이 훨씬 빠르다
+    (구성만 하면 되고 컴파일이 필요 없다).
+    """
+    root = Path(root)
+
+    if explicit is not None:
+        path = Path(explicit)
+        if not path.is_absolute():
+            path = root / path
+        if not path.exists():
+            raise CompileDbError(f"{path} 가 없다.")
+        return Project(_kind_of(path), path)
+
+    cmake_lists = root / "CMakeLists.txt"
+    if cmake_lists.is_file():
+        return Project("cmake", cmake_lists)
+
+    for pattern in ("*.sln", "*.vcxproj", "*/*.sln", "*/*.vcxproj"):
+        found = sorted(root.glob(pattern))
+        if len(found) == 1:
+            return Project("msbuild", found[0])
+        if len(found) > 1:
+            names = ", ".join(p.relative_to(root).as_posix() for p in found)
+            raise CompileDbError(
+                f"{pattern} 가 여러 개다 ({names}). --project 로 하나를 지정하라."
+            )
+
+    raise CompileDbError(
+        f"{root} 에서 CMakeLists.txt / .sln / .vcxproj 를 찾지 못했다. "
+        f"--project 로 직접 지정하거나, --workspace 로 프로젝트 루트를 가리키라."
+    )
+
+
+def _kind_of(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in (".sln", ".vcxproj", ".slnx"):
+        return "msbuild"
+    if path.name.lower() == "cmakelists.txt":
+        return "cmake"
+    raise CompileDbError(
+        f"{path.name} 로는 무엇을 할지 알 수 없다. .sln, .vcxproj, CMakeLists.txt 중 하나여야 한다."
+    )
+
+
+# --------------------------------------------------------------------------
+# 도구 찾기
+# --------------------------------------------------------------------------
+
+
+def find_msbuild(env: Mapping[str, str] | None = None) -> Path:
+    """MSBuild.exe 를 찾는다. vswhere 를 PATH 보다 먼저 본다.
+
+    PATH 에 있는 msbuild 는 .NET Framework 4.0 에 딸려온 옛 버전일 수 있고,
+    그것으로는 요즘 .vcxproj 를 빌드하지 못한다. vswhere 는 Visual Studio
+    설치 관리자가 항상 같은 자리에 놓으므로 그쪽이 확실하다.
+    """
+    env = os.environ if env is None else env
+
+    vswhere = _vswhere_path(env)
+    if vswhere is not None:
+        found = _vswhere_find(vswhere, r"MSBuild\**\Bin\MSBuild.exe")
+        # 64비트 쪽을 고른다. 큰 솔루션에서 32비트 MSBuild 는 메모리로 죽는다.
+        for candidate in found:
+            if "amd64" in candidate.as_posix().lower():
+                return candidate
+        if found:
+            return found[0]
+
+    from_path = shutil.which("msbuild") or shutil.which("MSBuild.exe")
+    if from_path:
+        return Path(from_path)
+
+    raise CompileDbError(
+        "MSBuild 를 찾지 못했다. Visual Studio(또는 Build Tools)가 설치된 장비에서 "
+        "실행하거나, 'x64 Native Tools Command Prompt' 에서 다시 시도하라."
+    )
+
+
+def find_cmake(env: Mapping[str, str] | None = None) -> Path:
+    """cmake 를 찾는다. PATH 다음으로 Visual Studio 에 딸려온 것을 본다."""
+    env = os.environ if env is None else env
+
+    from_path = shutil.which("cmake")
+    if from_path:
+        return Path(from_path)
+
+    vswhere = _vswhere_path(env)
+    if vswhere is not None:
+        found = _vswhere_find(
+            vswhere,
+            r"Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+            # MSBuild 컴포넌트를 요구하지 않는다. CMake 도구만 깔린 설치본도 있고,
+            # -find 로 파일 존재를 이미 확인하므로 더 좁힐 이유가 없다.
+            requires=None,
+        )
+        if found:
+            return found[0]
+
+    raise CompileDbError(
+        "cmake 를 찾지 못했다. PATH 에 넣거나, Visual Studio 설치 관리자에서 "
+        "'Windows용 C++ CMake 도구' 를 추가하라."
+    )
+
+
+def _vswhere_path(env: Mapping[str, str]) -> Path | None:
+    program_files = env.get("ProgramFiles(x86)") or env.get("ProgramFiles")
+    if not program_files:
+        return None
+    candidate = Path(program_files) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    return candidate if candidate.is_file() else None
+
+
+def _vswhere_find(
+    vswhere: Path, pattern: str, *, requires: str | None = "Microsoft.Component.MSBuild"
+) -> list[Path]:
+    command = [str(vswhere), "-latest", "-prerelease", "-products", "*"]
+    if requires:
+        command += ["-requires", requires]
+    command += ["-find", pattern]
+    try:
+        completed = subprocess.run(
+            command, capture_output=True, text=True, errors="replace", timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover - 장비 의존
+        log.debug("vswhere 실행 실패: %s", exc)
+        return []
+    return [Path(line.strip()) for line in completed.stdout.splitlines() if line.strip()]
+
+
+# --------------------------------------------------------------------------
+# 명령 조립 — 여기까지는 순수 함수라 어느 OS 에서도 테스트된다
+# --------------------------------------------------------------------------
+
+
+def vendored_dir() -> Path:
+    """로거 소스가 있는 자리. 반입 번들에서도 상대 위치가 같다."""
+    return Path(__file__).resolve().parents[1] / "tools" / "msbuild-compiledb"
+
+
+def build_logger_command(msbuild: Path, csproj: Path, out_dir: Path) -> list[str]:
+    """로거 DLL 을 빌드하는 명령.
+
+    OutputPath 는 MSBuild 관례상 끝에 구분자가 붙어야 디렉터리로 해석된다.
+    경로에 공백이 있어도 subprocess 가 인용을 처리하므로 shell 을 거치지 않는다.
+    """
+    return [
+        str(msbuild), str(csproj),
+        "/nologo", "/v:quiet",
+        "/p:Configuration=Release",
+        f"/p:OutputPath={os.fspath(out_dir)}{os.sep}",
+    ]
+
+
+def build_msbuild_command(
+    msbuild: Path,
+    project: Path,
+    logger_dll: Path,
+    out_json: Path,
+    *,
+    configuration: str = "Debug",
+    platform: str | None = "x64",
+    target: str = DEFAULT_TARGET,
+    verbosity: str = DEFAULT_VERBOSITY,
+    extra: Sequence[str] = (),
+) -> list[str]:
+    """로거를 붙여 빌드하는 명령.
+
+    `/m`(병렬)을 기본으로 넣지 않는다. 병렬 빌드는 이벤트를 노드에서 중앙 로거로
+    전달하는데, 그 전달이 verbosity 에 따라 걸러진다. 걸러지면 DB 가 조용히
+    일부만 차고, 그건 비어 있는 것보다 나쁘다. 속도가 급하면 `--msbuild-arg /m`
+    으로 직접 켜고 엔트리 수를 확인하라.
+    """
+    command = [
+        str(msbuild), str(project),
+        "/nologo", f"/v:{verbosity}",
+        f"/t:{target}",
+        f"/p:Configuration={configuration}",
+    ]
+    if platform:
+        command.append(f"/p:Platform={platform}")
+    command.append(f"/logger:{os.fspath(logger_dll)};{os.fspath(out_json)}")
+    command.extend(extra)
+    return command
+
+
+def build_cmake_command(
+    cmake: Path,
+    source_dir: Path,
+    build_dir: Path,
+    *,
+    generator: str = "Ninja",
+    extra: Sequence[str] = (),
+) -> list[str]:
+    """구성(configure)만 하는 명령. 빌드까지 갈 필요가 없다.
+
+    Visual Studio 제너레이터는 CMAKE_EXPORT_COMPILE_COMMANDS 를 무시한다.
+    그래서 대상 저장소가 VS 로 구성돼 있든 말든 여기서는 Ninja 로 따로 구성한다.
+    """
+    command = [
+        str(cmake),
+        "-S", os.fspath(source_dir),
+        "-B", os.fspath(build_dir),
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
+    if generator:
+        command[1:1] = ["-G", generator]
+    command.extend(extra)
+    return command
+
+
+# --------------------------------------------------------------------------
+# 실행
+# --------------------------------------------------------------------------
+
+
+def prepare_output_dir(root: Path, output_dir: Path | str | None = None) -> Path:
+    """산출물 자리를 만들고, 그 자리가 git 에 잡히지 않게 한다.
+
+    사용자의 `.gitignore` 를 건드리지 않는다 — 남의 저장소 파일이다. 대신
+    `.crex/.gitignore` 에 `*` 를 넣어 스스로를 무시하게 한다.
+    """
+    root = Path(root)
+    directory = Path(output_dir) if output_dir else root / OUTPUT_DIR
+    if not directory.is_absolute():
+        directory = root / directory
+    directory.mkdir(parents=True, exist_ok=True)
+
+    marker = directory.parent / ".gitignore"
+    if directory.parent.name == ".crex" and not marker.exists():
+        try:
+            marker.write_text("*\n", encoding="utf-8")
+        except OSError as exc:  # pragma: no cover - 권한 문제는 치명적이지 않다
+            log.debug(".gitignore 를 쓰지 못했다: %s", exc)
+    return directory
+
+
+def ensure_logger(msbuild: Path, out_dir: Path, *, rebuild: bool = False) -> Path:
+    """로거 DLL 을 준비한다. 이미 있으면 그대로 쓴다."""
+    dll = out_dir / LOGGER_DLL
+    if dll.is_file() and not rebuild:
+        log.debug("로거 재사용: %s", dll)
+        return dll
+
+    csproj = vendored_dir() / "CompileCommandsJson.crex.csproj"
+    if not csproj.is_file():
+        raise CompileDbError(
+            f"로거 소스를 찾지 못했다: {csproj}. 반입 번들에서 tools/ 가 빠졌을 수 있다."
+        )
+
+    log.info("로거를 빌드한다 (처음 한 번만)")
+    _run(build_logger_command(msbuild, csproj, out_dir), what="로거 빌드", capture=True)
+
+    if not dll.is_file():
+        raise CompileDbError(f"로거 빌드는 끝났는데 {dll} 이 없다. 위 로그를 확인하라.")
+    return dll
+
+
+def generate(
+    root: Path,
+    *,
+    project: Path | str | None = None,
+    configuration: str = "Debug",
+    platform: str | None = "x64",
+    target: str = DEFAULT_TARGET,
+    verbosity: str = DEFAULT_VERBOSITY,
+    generator: str = "Ninja",
+    output_dir: Path | str | None = None,
+    extra_args: Sequence[str] = (),
+    env: Mapping[str, str] | None = None,
+) -> Result:
+    """compile_commands.json 을 만들고 그 위치를 돌려준다."""
+    root = Path(root).resolve()
+    found = detect_project(root, project)
+    out_dir = prepare_output_dir(root, output_dir)
+    json_path = out_dir / "compile_commands.json"
+
+    if found.kind == "cmake":
+        _run(
+            build_cmake_command(
+                find_cmake(env), root, out_dir, generator=generator, extra=extra_args
+            ),
+            what="cmake 구성",
+            cwd=root,
+            capture=False,
+        )
+        if not json_path.is_file():
+            raise CompileDbError(
+                f"cmake 는 끝났는데 {json_path} 가 없다. 제너레이터가 Ninja 가 맞는지, "
+                f"CMake 3.5 이상인지 확인하라."
+            )
+        return Result(found, out_dir, json_path, _count_entries(json_path))
+
+    msbuild = find_msbuild(env)
+    logger_dll = ensure_logger(msbuild, out_dir)
+
+    # 로거는 빌드 도중 조금씩 써 나간다. 중간에 실패하면 반쪽짜리 JSON 이 남는데,
+    # 그게 원래 자리에 있으면 다음 리뷰가 그걸 그대로 믿는다. 임시 파일에 받아
+    # 성공했을 때만 옮긴다.
+    staging = out_dir / "compile_commands.json.partial"
+    log_path = out_dir / "msbuild.log"
+    command = build_msbuild_command(
+        msbuild, found.path, logger_dll, staging,
+        configuration=configuration, platform=platform,
+        target=target, verbosity=verbosity, extra=extra_args,
+    )
+
+    log.info("%s 를 빌드한다. 큰 솔루션이면 오래 걸린다.", found.path.name)
+    _run(command, what="MSBuild 빌드", cwd=root, capture=True, log_path=log_path)
+
+    if not staging.is_file():
+        raise CompileDbError(
+            f"빌드는 끝났는데 {staging} 이 없다. 로거가 붙지 않았을 수 있다 — {log_path} 를 보라."
+        )
+    staging.replace(json_path)
+    return Result(found, out_dir, json_path, _count_entries(json_path), log_path)
+
+
+def _count_entries(json_path: Path) -> int:
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError) as exc:
+        raise CompileDbError(f"{json_path} 를 읽지 못했다: {exc}") from exc
+    if not isinstance(data, list):
+        raise CompileDbError(f"{json_path} 이 JSON 배열이 아니다. 생성이 중간에 끊겼을 수 있다.")
+    return len(data)
+
+
+def _run(
+    command: list[str],
+    *,
+    what: str,
+    cwd: Path | None = None,
+    capture: bool,
+    log_path: Path | None = None,
+) -> None:
+    """외부 도구를 돌린다. 실패하면 무엇을 실행했는지까지 함께 알린다.
+
+    `capture=True` 면 출력을 파일로 받는다. verbosity 를 detailed 로 올려 놓기
+    때문에 콘솔에 그대로 흘리면 사람이 읽을 수 없고, 정작 필요한 오류가 스크롤에
+    묻힌다. 실패했을 때 꼬리만 보여주고 전문은 파일로 남긴다.
+    """
+    log.debug("실행: %s", " ".join(command))
+
+    if not capture:
+        try:
+            completed = subprocess.run(command, cwd=str(cwd) if cwd else None, check=False)
+        except OSError as exc:
+            raise CompileDbError(f"{what} 를 실행하지 못했다 ({command[0]}): {exc}") from exc
+        if completed.returncode != 0:
+            raise CompileDbError(
+                f"{what} 실패 (종료 코드 {completed.returncode}).\n"
+                f"실행한 명령: {' '.join(command)}"
+            )
+        return
+
+    lines, code = _stream(command, cwd, what, log_path)
+    if code != 0:
+        tail = "\n".join(lines[-20:]) if lines else "(출력 없음)"
+        where = f"\n전체 로그: {log_path}" if log_path is not None and lines else ""
+        raise CompileDbError(
+            f"{what} 실패 (종료 코드 {code}).\n"
+            f"실행한 명령: {' '.join(command)}\n{tail}{where}"
+        )
+
+
+def _stream(
+    command: list[str], cwd: Path | None, what: str, log_path: Path | None
+) -> tuple[list[str], int]:
+    """출력을 파일로 받으면서 살아 있다는 표시만 화면에 낸다.
+
+    전체 Rebuild 는 몇십 분이 걸린다. 그동안 화면이 완전히 조용하면 사람은
+    멈춘 줄 알고 Ctrl-C 를 누른다 — 그러면 처음부터 다시다. 그렇다고 detailed
+    verbosity 출력을 그대로 흘리면 읽을 수 없는 양이 쏟아진다. 그래서 진행
+    표시만 내고 전문은 로그로 남긴다.
+    """
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            bufsize=1,
+        )
+    except OSError as exc:
+        raise CompileDbError(f"{what} 를 실행하지 못했다 ({command[0]}): {exc}") from exc
+
+    lines: list[str] = []
+    handle = None
+    try:
+        if log_path is not None:
+            handle = log_path.open("w", encoding="utf-8", errors="replace")
+        assert process.stdout is not None
+        for line in process.stdout:
+            line = line.rstrip("\n")
+            lines.append(line)
+            if handle is not None:
+                handle.write(line + "\n")
+            if len(lines) % 500 == 0:
+                print(f"  ... {what} 진행 중 ({len(lines):,}줄)", flush=True)
+    finally:
+        if handle is not None:
+            handle.close()
+        process.wait()
+
+    return lines, process.returncode

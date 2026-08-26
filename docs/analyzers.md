@@ -75,29 +75,77 @@ LLVM 공식 인스톨러에 `bin\clang-tidy.exe` 로 포함됩니다.
 
 ### compile_commands.json 이 없으면 반쯤 눈을 감습니다
 
-clang-tidy 는 컴파일 명령을 알아야 헤더를 찾습니다. CMake 라면 한 줄입니다.
+clang-tidy 는 컴파일 명령을 알아야 헤더를 찾습니다. 없으면 절반쯤 눈을 감고
+분석합니다. 만드는 방법은 프로젝트 형식마다 다른데, 그걸 외우고 있을 필요는 없습니다.
 
 ```bash
-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+python -m crex compiledb
 ```
 
-그 경로를 설정에 적습니다. 파일 이름이 아니라 **파일이 들어 있는 디렉터리**를
-적고, 상대 경로는 리뷰 대상 저장소 루트 기준입니다(분석기가 거기서 실행됩니다).
-절대 경로도 받습니다.
+워크스페이스에서 CMake/MSBuild 프로젝트를 찾아 만들고, 나온 자리를 `crex.toml` 의
+`compile_commands_dir` 에 적는 것까지 합니다. 다음 리뷰부터 바로 적용됩니다.
 
-```toml
-[grounding]
-compile_commands_dir = "build"
+```
+D:\work\repo\.crex\compiledb\compile_commands.json
+  대상   : msbuild: D:\work\repo\App.sln
+  엔트리 : 412개
+  기록   : D:\work\repo\crex.toml
 ```
 
-### Visual Studio 2022 에서 만들기
+산출물은 `<저장소>/.crex/compiledb/` 에 들어갑니다. 그 폴더는 스스로를 git 에서
+제외하므로(`.crex/.gitignore`) 저장소의 `.gitignore` 를 고칠 필요가 없습니다.
 
-사내 C++ 프로젝트는 대개 여기에 걸립니다. 프로젝트 형식에 따라 갈립니다.
+자주 쓰는 옵션은 이 정도입니다.
 
-#### CMake 프로젝트 ("폴더 열기")
+| 옵션 | 언제 |
+|---|---|
+| `--configuration Release` | Debug 말고 다른 구성으로 뽑을 때 |
+| `--platform Win32` | 32비트 빌드일 때 |
+| `--project src\App.vcxproj` | .sln 이 여러 개거나 일부만 필요할 때 |
+| `--msbuild-arg /m` | 병렬 빌드 (아래 주의 참고) |
+| `--no-save` | 만들기만 하고 설정은 직접 적을 때 |
 
-VS 2022 의 CMake 통합은 기본 제너레이터가 Ninja 라 그대로 됩니다.
-`CMakePresets.json` 에 캐시 변수만 넣으세요.
+현재 상태는 `python -m crex doctor` 에 나옵니다.
+
+```
+compile_commands.json (C++ clang-tidy)
+  OK  D:\work\repo\.crex\compiledb\compile_commands.json (엔트리 412개)
+```
+
+#### 안에서 무슨 일이 일어나나
+
+**CMake 프로젝트**(`CMakeLists.txt`)면 Ninja 로 **구성만** 합니다 — 컴파일은 하지
+않으므로 몇 초면 끝납니다. `.sln` 을 만들어내는 Visual Studio 제너레이터는
+`CMAKE_EXPORT_COMPILE_COMMANDS` 를 무시하기 때문에, 대상 저장소가 VS 제너레이터로
+구성돼 있어도 여기서는 Ninja 로 따로 구성합니다.
+
+**MSBuild 프로젝트**(`.sln`/`.vcxproj`)면 MSBuild 로거를 붙여 빌드하면서 실제
+`cl.exe` 호출을 기록합니다. property sheet·매크로·상속된 include 경로가 전부
+반영된 정확한 결과가 나옵니다. 로거는 처음 한 번 그 자리에서 빌드되어 캐시됩니다
+(소스는 [`tools/msbuild-compiledb/`](../tools/msbuild-compiledb/README.md), MIT).
+
+MSBuild 쪽에는 알아둘 것이 둘 있습니다.
+
+- **전체 Rebuild 를 합니다.** 관찰 방식이라 컴파일되지 않은 파일은 기록되지
+  않습니다. 증분 빌드로 뽑으면 일부만 담긴 DB 가 생기는데, 그건 없는 것보다
+  나쁩니다 — 나머지 파일에서 clang-tidy 가 조용히 눈을 감습니다. 큰 솔루션이면
+  시간이 걸리지만, 자주 할 일은 아닙니다(빌드 설정이 바뀔 때만).
+- **`/m`(병렬)을 기본으로 켜지 않습니다.** 병렬 빌드는 이벤트를 노드에서 중앙
+  로거로 전달하는데, 그 전달이 걸러지면 DB 가 조용히 반쪽이 됩니다. 속도가 급하면
+  `--msbuild-arg /m` 으로 켜되, **엔트리 수가 줄지 않았는지 확인하세요.**
+
+빌드 로그는 `.crex/compiledb/msbuild.log` 에 남습니다. 실패하면 거기부터 봅니다.
+
+#### 손으로 만들고 싶다면
+
+CI 에 넣거나 다른 방식으로 만들어야 한다면 직접 해도 됩니다. CMake 는 한 줄입니다.
+
+```bash
+cmake -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build
+```
+
+Visual Studio 2022 의 "폴더 열기" CMake 프로젝트라면 `CMakePresets.json` 에
+캐시 변수를 넣어두면 구성할 때마다 자동으로 나옵니다.
 
 ```json
 {
@@ -108,60 +156,34 @@ VS 2022 의 CMake 통합은 기본 제너레이터가 Ninja 라 그대로 됩니
 }
 ```
 
-구성(Configure)만 하면 — 빌드까지 갈 필요 없습니다 —
-`out/build/x64-debug/compile_commands.json` 이 생깁니다.
+MSBuild 프로젝트를 직접 다루겠다면 선택지가 셋입니다. `crex compiledb` 가 쓰는
+것은 첫 번째입니다.
+
+- [0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson)
+  — 로거를 붙여 빌드를 관찰합니다. NuGet 없이 빌드됩니다.
+- [microsoft/msbuild-extractor-sample](https://github.com/microsoft/msbuild-extractor-sample)
+  — MSBuild API 로 design-time 빌드만 돌려 뽑으므로 컴파일이 필요 없습니다.
+  대신 .NET SDK 와 NuGet 복원이 필요해서 폐쇄망에서는 준비가 더 큽니다.
+- [ms2cc](https://github.com/freddiehaddad/ms2cc) — `msbuild /v:detailed` 로그를
+  변환합니다.
+
+어느 쪽이든 만든 **디렉터리**를 설정에 적습니다. 상대 경로는 리뷰 대상 저장소
+루트 기준입니다.
 
 ```toml
 [grounding]
-compile_commands_dir = "out/build/x64-debug"
+compile_commands_dir = "build"
 ```
 
-`.sln` 을 만들어내는 **Visual Studio(MSBuild) 제너레이터는 이 변수를 무시**합니다.
-`-G "Visual Studio 17 2022"` 로 구성했다면 파일이 안 생기니, Ninja 로 구성 디렉터리를
-하나 더 만드는 편이 빠릅니다.
+#### MSVC 플래그와 clang-tidy
 
-#### MSBuild(.vcxproj/.sln) 프로젝트
+엔트리의 컴파일러가 `cl.exe` 면 clang 툴링이 알아서 CL 드라이버 모드로 붙습니다.
+그래도 `/ZI`, `/Gm`, C++/CLI, 일부 PCH 옵션에서는 clang-tidy 가 오류를 냅니다.
+`crex.toml` 에는 clang-tidy 추가 인자를 넣는 설정이 없으니, 이때는 저장소의
+`.clang-tidy` 에 `ExtraArgs` / `ExtraArgsBefore` 로 넣으세요.
 
-VS 자체에는 내보내기 기능이 없습니다. `속성 → 코드 분석 → Clang-Tidy` 는 컴파일
-플래그를 내부적으로 합성해서 쓸 뿐이라 재활용할 수 없습니다. 세 갈래가 있습니다.
-
-**(a) MSBuild 로거 — 폐쇄망에 제일 잘 맞습니다.**
-[0xabu/MsBuildCompileCommandsJson](https://github.com/0xabu/MsBuildCompileCommandsJson)
-은 C# 파일 하나짜리 로거입니다. NuGet 없이 VS 에 딸려오는 `csc` 로 컴파일되므로
-반입 부담이 거의 없습니다.
-
-```
-msbuild App.sln /t:Rebuild /p:Configuration=Debug /p:Platform=x64 ^
-        /logger:C:\tools\CompileCommandsJson.dll
-```
-
-실제 컴파일 호출을 관찰하는 방식이라 **반드시 Rebuild** 여야 전체 파일이 들어갑니다.
-증분 빌드면 그때 컴파일된 것만 기록됩니다.
-
-**(b) Microsoft 공식 샘플.**
-[microsoft/msbuild-extractor-sample](https://github.com/microsoft/msbuild-extractor-sample)
-은 MSBuild API 로 design-time 빌드(`GetClCommandLines`)만 돌려 뽑기 때문에 **실제
-컴파일이 필요 없습니다**. MIT 이고 `-p/-s/-c/-a/-o` 옵션을 받습니다. 대신 .NET SDK 와
-`dotnet build`(NuGet 복원)가 필요해서 폐쇄망에서는 (a)보다 준비가 큽니다.
-
-**(c) 빌드 로그 변환.** `msbuild /v:detailed` 로그를
-[ms2cc](https://github.com/freddiehaddad/ms2cc) 같은 도구로 변환합니다. `/v:detailed`
-미만은 정보가 모자라 실패합니다.
-
-#### 만든 뒤 확인할 것
-
-- **MSVC 플래그 호환** — 엔트리의 컴파일러가 `cl.exe` 면 clang 툴링이 알아서 CL 드라이버
-  모드로 붙습니다. 그래도 `/ZI`, `/Gm`, C++/CLI, 일부 PCH 옵션에서는 clang-tidy 가
-  오류를 냅니다. CREX 에는 clang-tidy 추가 인자를 넣는 설정이 없으니, 이때는 저장소의
-  `.clang-tidy` 에 `ExtraArgs` / `ExtraArgsBefore` 로 넣으세요.
-- **구성 일치** — Debug/x64 로 뽑았으면 리뷰도 그 전제로 돕니다. `#ifdef _DEBUG` 로
-  갈리는 코드는 결과가 달라집니다.
-- **경로 표기** — TOML 에는 슬래시로 적으세요 (`"D:/work/repo/out/build/x64-debug"`).
-- **빠른 검증** — `clang-tidy -p out/build/x64-debug src\foo.cpp` 가 헤더 못 찾는
-  오류 없이 돌면 된 것입니다.
-
-여기까지가 부담스럽다면 clang-tidy 를 포기하고 cppcheck 만 쓰는 것도 나쁘지 않습니다
-— cppcheck 는 컴파일 DB 없이도 돌고, 오탐률이 매우 낮습니다.
+여기까지가 부담스럽다면 clang-tidy 를 포기하고 cppcheck 만 쓰는 것도 나쁘지
+않습니다 — cppcheck 는 컴파일 DB 없이도 돌고, 오탐률이 매우 낮습니다.
 
 ### 어떤 체크를 켜나
 

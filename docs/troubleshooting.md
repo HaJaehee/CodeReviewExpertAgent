@@ -293,8 +293,9 @@ INFO    crex.ground: [clang-tidy] 건너뜀 — 120초 내에 끝나지 않아 �
 ```
 
 clang-tidy 는 헤더가 많은 C++ 에서 쉽게 몇 분을 먹습니다.
-`compile_commands.json` 이 없으면 특히 심합니다. `grounding.timeout` 을 올리거나,
-컴파일 DB 를 만들어주거나, clang-tidy 를 빼고 cppcheck 만 쓰세요.
+`compile_commands.json` 이 없으면 특히 심합니다. `python -m crex compiledb` 로
+컴파일 DB 를 만들어주거나, `grounding.timeout` 을 올리거나, clang-tidy 를 빼고
+cppcheck 만 쓰세요.
 
 ```
 INFO    crex.ground: [roslyn] 0건 보고

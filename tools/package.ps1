@@ -13,6 +13,7 @@
           pylibs/       fastmcp, GitPython 등을 미리 풀어둔 것
           wheels/       원본 wheel (직접 pip 하고 싶을 때만)
           crex/ docs/ wiki/ rules/ eval/ tests/ ...
+          tools/msbuild-compiledb/   MSBuild -> compile_commands.json 로거 (소스)
           crex.cmd       실행 진입점
           MANIFEST.txt  전 파일 SHA256
           설치.md        폐쇄망에서 할 일
@@ -143,6 +144,21 @@ foreach ($dir in $Sources) {
     if ($LASTEXITCODE -ge 8) { throw "$dir 복사 실패 (robocopy $LASTEXITCODE)" }
     Write-Note "$dir"
 }
+
+# MSBuild 로거는 `crex compiledb` 의 재료다. 조용히 빠지면 폐쇄망에서
+# C++ 프로젝트의 compile_commands.json 을 만들 방법이 없어진다 — 그런데 그
+# 사실은 몇 주 뒤 누가 clang-tidy 결과를 의심할 때에야 드러난다.
+$LoggerFiles = @(
+    "tools\msbuild-compiledb\CompileCommandsJson.cs",
+    "tools\msbuild-compiledb\CompileCommandsJson.crex.csproj",
+    "tools\msbuild-compiledb\LICENSE"
+)
+foreach ($needed in $LoggerFiles) {
+    if (-not (Test-Path (Join-Path $Staging $needed))) {
+        throw "$needed 가 번들에 없다. 이게 빠지면 crex compiledb 의 MSBuild 경로가 죽는다."
+    }
+}
+Write-Note "msbuild-compiledb 로거 소스 확인"
 
 foreach ($file in $Files) {
     $src = Join-Path $RepoRoot $file

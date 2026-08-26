@@ -3,6 +3,7 @@
     python -m crex review --from HEAD~1 --to HEAD
     python -m crex review --staged
     python -m crex scan src/buffer.cpp src/service.cs
+    python -m crex compiledb
     python -m crex doctor
     python -m crex workspace D:\\work\\myrepo
 
@@ -15,11 +16,13 @@ CREX 를 리뷰 대상 저장소 안에 둘 필요는 없다. 작업 디렉터�
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from . import __version__
+from .compiledb import CompileDbError, DEFAULT_TARGET, generate
 from .config import DEFAULT_CONFIG_NAMES, find_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
 from .filter import VERDICT_SCHEMA
@@ -28,7 +31,12 @@ from .ground import GroundingGate
 from .pipeline import Pipeline
 from .report import to_markdown, write_all
 from .rules import load_taxonomy
-from .workspace import Workspace, persist_workspace, resolve
+from .workspace import (
+    Workspace,
+    persist_compile_commands_dir,
+    persist_workspace,
+    resolve,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {
         "review": _cmd_review,
         "scan": _cmd_scan,
+        "compiledb": _cmd_compiledb,
         "doctor": _cmd_doctor,
         "workspace": _cmd_workspace,
     }
@@ -82,6 +91,25 @@ def _build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="파일 전체를 감사한다 (diff 없음)", parents=[common])
     scan.add_argument("paths", nargs="+", help="저장소 루트 기준 상대 경로")
     _add_output_args(scan)
+
+    compiledb = sub.add_parser(
+        "compiledb",
+        help="compile_commands.json 을 만들고 crex.toml 에 적는다 (C++ clang-tidy 용)",
+        parents=[common],
+    )
+    compiledb.add_argument("--project", type=Path, default=None,
+                           help="대상 .sln/.vcxproj/CMakeLists.txt. 생략하면 워크스페이스에서 찾는다")
+    compiledb.add_argument("--configuration", default="Debug", help="MSBuild 구성 (기본 Debug)")
+    compiledb.add_argument("--platform", default="x64", help="MSBuild 플랫폼 (기본 x64)")
+    compiledb.add_argument("--target", default=DEFAULT_TARGET,
+                           help="MSBuild 타깃 (기본 Rebuild — 증분 빌드는 반쪽짜리 DB 를 만든다)")
+    compiledb.add_argument("--generator", default="Ninja", help="CMake 제너레이터 (기본 Ninja)")
+    compiledb.add_argument("--out-dir", type=Path, default=None,
+                           help="산출물 위치 (기본 <워크스페이스>/.crex/compiledb)")
+    compiledb.add_argument("--msbuild-arg", action="append", default=[], dest="extra_args",
+                           metavar="ARG", help="빌드 도구에 그대로 넘길 인자. 여러 번 쓸 수 있다")
+    compiledb.add_argument("--no-save", action="store_true",
+                           help="crex.toml 에 compile_commands_dir 를 적지 않는다")
 
     sub.add_parser("doctor", help="엔드포인트·분석기·택소노미 상태를 점검한다", parents=[common])
 
@@ -225,6 +253,89 @@ def _config_to_write(args: argparse.Namespace) -> Path:
     return found if found is not None else Path.cwd() / DEFAULT_CONFIG_NAMES[0]
 
 
+def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
+    """compile_commands.json 을 만들고, 만든 자리를 설정에 적는다.
+
+    두 번째 절반이 핵심이다. 파일만 만들어 주고 "이제 crex.toml 을 여세요" 하면
+    거기서 절반이 떨어져 나간다 — 그래서 clang-tidy 가 반쯤 눈을 감은 채로
+    돌던 것이다.
+    """
+    try:
+        result = generate(
+            workspace.root,
+            project=args.project,
+            configuration=args.configuration,
+            platform=args.platform,
+            target=args.target,
+            generator=args.generator,
+            output_dir=args.out_dir,
+            extra_args=tuple(args.extra_args),
+        )
+    except CompileDbError as exc:
+        print(f"{exc}", file=sys.stderr)
+        return 2
+
+    print(f"\n{result.json_path}")
+    print(f"  대상   : {result.project.describe()}")
+    print(f"  엔트리 : {result.entries}개")
+
+    if result.entries == 0:
+        # 파일은 생겼는데 내용이 없다. 이걸 설정에 적으면 '설정했는데 왜 안 되지'가 된다.
+        print("\n비어 있다. 설정에 적지 않는다.", file=sys.stderr)
+        print("  - 증분 빌드였을 수 있다. 이미 최신인 파일은 기록되지 않는다.", file=sys.stderr)
+        print("  - --configuration/--platform 이 실제 빌드되는 조합인지 확인하라.", file=sys.stderr)
+        if result.log_path:
+            print(f"  - 빌드 로그: {result.log_path}", file=sys.stderr)
+        return 1
+
+    value = _config_value(result.directory, workspace.root)
+
+    if args.no_save:
+        print("\n설정에 적으려면 --no-save 를 빼고 다시 돌리거나, 직접 적으라:")
+        print(f'  [grounding]\n  compile_commands_dir = "{value.as_posix()}"')
+        return 0
+
+    target = _workspace_config_to_write(args, workspace)
+    try:
+        persist_compile_commands_dir(target, value)
+    except (OSError, ValueError) as exc:
+        print(f"설정에 적지 못했다: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"  기록   : {target}")
+    if not target.resolve().is_relative_to(workspace.root.resolve()):
+        print("  참고: 이 설정 파일은 워크스페이스 밖에 있다. 저장소마다 다른 값이므로, "
+              "여러 저장소를 이 파일 하나로 쓰고 있다면 "
+              f"{workspace.root / DEFAULT_CONFIG_NAMES[0]} 로 옮기라.")
+    return 0
+
+
+def _config_value(directory: Path, root: Path) -> Path:
+    """설정에 적을 값. 워크스페이스 안이면 상대경로로 적는다.
+
+    분석기는 워크스페이스를 cwd 로 실행되므로 상대경로가 그대로 맞고, 저장소를
+    다른 장비에 클론해도 값이 살아남는다.
+    """
+    try:
+        return directory.resolve().relative_to(root.resolve())
+    except ValueError:
+        return directory.resolve()
+
+
+def _workspace_config_to_write(args: argparse.Namespace, workspace: Workspace) -> Path:
+    """어느 설정 파일에 적을 것인가.
+
+    `workspace` 명령과 반대다. compile_commands_dir 는 **저장소마다 다른 값**이라
+    지금 쓰이고 있는 설정 파일에 적고, 없으면 워크스페이스 안에 새로 만든다.
+    CREX 루트에 만들면 다음 저장소를 리뷰할 때 엉뚱한 경로를 가리킨다.
+    """
+    if args.config:
+        return Path(args.config)
+    if workspace.config.source is not None:
+        return workspace.config.source
+    return workspace.root / DEFAULT_CONFIG_NAMES[0]
+
+
 def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     """폐쇄망 반입 직후 무엇이 되고 무엇이 안 되는지 한 번에 보여준다."""
     config = workspace.config
@@ -269,6 +380,9 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
         available = analyzer.available()
         print(f"  {'OK ' if available else '없음'} {analyzer.name} ({analyzer.executable})")
 
+    print("\ncompile_commands.json (C++ clang-tidy)")
+    print(f"  {_compiledb_status(config.grounding.compile_commands_dir, workspace.root)}")
+
     print("\ntree-sitter (선택)")
     for module in ("tree_sitter", "tree_sitter_cpp", "tree_sitter_c_sharp", "tree_sitter_python"):
         try:
@@ -288,6 +402,24 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
         print("  없음 fastmcp — `python -m crex.mcp` 를 쓸 수 없다 (CLI 는 정상)")
 
     return 0 if ok else 1
+
+
+def _compiledb_status(configured: str | None, root: Path) -> str:
+    """설정과 실제 파일을 함께 본다. 둘 중 하나만 맞아도 clang-tidy 는 눈을 감는다."""
+    if not configured:
+        return "없음 — `python -m crex compiledb` 로 만들 수 있다 (C++ 이 아니면 무시하라)"
+
+    directory = Path(configured)
+    if not directory.is_absolute():
+        directory = root / directory
+    path = directory / "compile_commands.json"
+    if not path.is_file():
+        return f"실패  {path} 가 없다 — 경로가 맞는지 확인하거나 다시 만들라"
+    try:
+        entries = len(json.loads(path.read_text(encoding="utf-8", errors="replace")))
+    except (OSError, ValueError) as exc:
+        return f"실패  {path} 를 읽지 못했다: {exc}"
+    return f"OK  {path} (엔트리 {entries}개)"
 
 
 def _probe(endpoint, schemas):

@@ -46,6 +46,7 @@ crex-20260817/
   pylibs/           fastmcp, GitPython 등을 미리 풀어둔 것 (pip 실행 불필요)
   wheels/           원본 wheel — 사내 다른 Python 에 직접 설치할 때만
   crex/ docs/ wiki/ rules/ eval/ tests/ tools/
+  tools/msbuild-compiledb/   MSBuild → compile_commands.json 로거 (C# 소스, MIT)
   crex.cmd           리뷰 실행
   crex-mcp.cmd       MCP 서버 (Zed)
   테스트.cmd         반입 무결성 확인
@@ -66,6 +67,7 @@ zip 과 `.sha256` 을 **함께** 제출합니다. 심사에서 물어볼 만한 
 | 외부로 나가나 | 아니오. `crex.toml` 에 적은 사내 vLLM 주소로만 HTTP 를 보냅니다 |
 | 네트워크 포트를 여나 | 아니오. MCP 는 stdio 라 리스너가 생기지 않습니다 |
 | 서드파티는 | `requirements.txt` 두 줄과 그 의존성. `wheels\` 에 원본이 그대로 있습니다 |
+| C# 소스는 뭔가 | `tools\msbuild-compiledb\` 의 300줄짜리 MSBuild 로거입니다 (MIT, 상류 원본 그대로). C++ 프로젝트의 컴파일 명령을 뽑는 데 쓰고, DLL 이 아니라 소스로 담아 읽어서 확인할 수 있습니다 |
 
 번들은 자체 무결성 확인이 가능합니다 — `MANIFEST.txt` 에 파일별 SHA256 이
 들어 있고 `tools\verify.ps1` 이 대조합니다.

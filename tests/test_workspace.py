@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crex.config import load_config  # noqa: E402
 from crex.workspace import (  # noqa: E402
     WorkspaceError,
+    persist_compile_commands_dir,
     persist_workspace,
     resolve,
     switch,
@@ -415,6 +416,46 @@ def test_persist_ignores_workspace_key_inside_a_section() -> None:
         _check('semgrep_config = "/opt/rules"' in text, "다른 키가 사라졌다")
 
 
+def test_persist_section_key_creates_and_updates_grounding() -> None:
+    """`compile_commands_dir` 는 최상위가 아니라 `[grounding]` 안에 들어가야 한다.
+
+    최상위에 적히면 설정이 알 수 없는 키라며 거부한다 — 만들어 주고 나서
+    다음 실행이 죽는 최악의 조합이다.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "crex.toml"
+
+        # 섹션이 없는 파일에 처음 적을 때
+        config.write_text('# 머리말\nworkspace = "/w"\n', encoding="utf-8")
+        persist_compile_commands_dir(config, Path("out/build/x64-debug"))
+        loaded = load_config(config)
+        _check(loaded.grounding.compile_commands_dir == "out/build/x64-debug",
+               f"{loaded.grounding.compile_commands_dir!r}")
+        # workspace 는 Path 로 읽힌다 (config.py 가 경로로 다룬다).
+        _check(str(loaded.workspace) == "/w", f"기존 최상위 키가 날아갔다: {loaded.workspace!r}")
+
+        # 이미 있는 값을 갱신할 때 — 같은 섹션의 다른 키와 주석은 그대로 남는다
+        config.write_text(
+            "[grounding]\n# 이 주석은 남아야 한다\ncompile_commands_dir = \"old\"\ntimeout = 30.0\n",
+            encoding="utf-8",
+        )
+        persist_compile_commands_dir(config, Path("new/dir"))
+        text = config.read_text(encoding="utf-8")
+        _check("이 주석은 남아야 한다" in text, "주석이 날아갔다")
+        loaded = load_config(config)
+        _check(loaded.grounding.compile_commands_dir == "new/dir",
+               f"{loaded.grounding.compile_commands_dir!r}")
+        _check(loaded.grounding.timeout == 30.0, "같은 섹션의 다른 키가 바뀌었다")
+
+        # 다른 섹션만 있을 때는 [grounding] 을 새로 만든다
+        config.write_text("[review]\nmax_workers = 4\n", encoding="utf-8")
+        persist_compile_commands_dir(config, Path("build"))
+        loaded = load_config(config)
+        _check(loaded.grounding.compile_commands_dir == "build",
+               f"{loaded.grounding.compile_commands_dir!r}")
+        _check(loaded.review.max_workers == 4, "다른 섹션이 망가졌다")
+
+
 TESTS = [
     test_argument_beats_everything,
     test_env_beats_config,
@@ -436,6 +477,7 @@ TESTS = [
     test_persist_keeps_comments_and_sections,
     test_persist_preserves_crlf,
     test_persist_ignores_workspace_key_inside_a_section,
+    test_persist_section_key_creates_and_updates_grounding,
 ]
 
 

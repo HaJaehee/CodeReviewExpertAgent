@@ -78,8 +78,9 @@ catches servers that accept the schema and ignore it.
 | `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
 | `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
 | `crex/config.py` | 234 | TOML config loading with unknown-key rejection (sections *and* top level) |
-| `crex/cli.py` | 365 | `review` / `scan` / `doctor` / `workspace` subcommands |
-| `crex/workspace.py` | 351 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
+| `crex/cli.py` | 503 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
+| `crex/compiledb.py` | 449 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.toml` |
+| `crex/workspace.py` | 404 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
 | `crex/service.py` | 268 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
