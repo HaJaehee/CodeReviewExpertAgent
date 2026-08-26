@@ -431,8 +431,13 @@ def test_persist_section_key_creates_and_updates_grounding() -> None:
         loaded = load_config(config)
         _check(loaded.grounding.compile_commands_dir == "out/build/x64-debug",
                f"{loaded.grounding.compile_commands_dir!r}")
-        # workspace 는 Path 로 읽힌다 (config.py 가 경로로 다룬다).
-        _check(str(loaded.workspace) == "/w", f"기존 최상위 키가 날아갔다: {loaded.workspace!r}")
+        # 여기서 지켜야 할 것은 "기존 최상위 키가 날아가지 않는다" 이다. 값으로
+        # 비교하면 플랫폼을 탄다 — POSIX 에서 "/w" 는 그대로지만 Windows 에서는
+        # 드라이브가 붙어 절대 경로가 된다. 그래서 원문으로 확인한다.
+        _check('workspace = "/w"' in config.read_text(encoding="utf-8"),
+               "기존 최상위 키가 날아갔다:" + chr(10) + config.read_text(encoding="utf-8"))
+        _check(loaded.workspace is not None and loaded.workspace.name == "w",
+               f"workspace 를 읽지 못한다: {loaded.workspace!r}")
 
         # 이미 있는 값을 갱신할 때 — 같은 섹션의 다른 키와 주석은 그대로 남는다
         config.write_text(
