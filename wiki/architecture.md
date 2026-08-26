@@ -71,7 +71,7 @@ catches servers that accept the schema and ignore it.
 | `crex/schema.py` | 333 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
 | `crex/llm.py` | 512 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
 | `crex/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
-| `crex/ground.py` | 548 | 8 static-analyzer adapters + output normalization + attachment |
+| `crex/ground.py` | 670 | 8 static-analyzer adapters + output normalization + attachment. Resolves which C# project to build from the changed files, and reports a failed build as skipped rather than zero findings |
 | `crex/generate.py` | 254 | RuleChecker: enum-constrained schema, prompt, parsing |
 | `crex/filter.py` | 291 | ReviewFilter: deterministic checks + cross-model verdict |
 | `crex/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |

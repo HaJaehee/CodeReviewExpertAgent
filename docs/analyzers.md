@@ -233,8 +233,67 @@ compile_commands_dir = "build"
 
 - .NET SDK: [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download) (MIT)
 
-빌드를 태우므로 프로젝트가 크면 리뷰 한 번에 몇 분씩 걸립니다. 감당하기 어렵다면
-`grounding.analyzers` 에서 `roslyn` 을 빼세요.
+C# 은 파일 단위 분석이 안 됩니다. Roslyn 분석기는 컴파일러 안에서 도는 것이라
+프로젝트를 빌드해야 경고가 나옵니다. 그래서 CREX 는 이렇게 합니다.
+
+```
+dotnet build --nologo --no-incremental -v normal <대상>
+```
+
+그 출력에서 `Service.cs(42,13): warning CA2000: ...` 형태의 줄을 걷어 프롬프트에
+넣습니다. 팀이 이미 쓰는 `.editorconfig` 와 `Directory.Build.props` 설정이 그대로
+적용되므로, **CREX 쪽에 룰을 따로 관리하지 않아도 사내 표준과 자동으로 맞습니다.**
+
+### 대상은 알아서 정합니다
+
+`dotnet_project` 를 적지 않아도 됩니다. 순서는 이렇습니다.
+
+1. `grounding.dotnet_project` 가 있으면 그것 (명시가 항상 이깁니다)
+2. **바뀐 파일이 속한 `.csproj`** — 파일 자리에서 저장소 루트까지 올라가며 찾습니다.
+   솔루션 전체가 아니라 그 프로젝트만 빌드하면 되니 제일 빠릅니다
+3. 바뀐 파일이 여러 프로젝트에 걸쳐 있으면 저장소의 `.sln`
+4. 그래도 하나로 좁혀지지 않으면 **건너뜁니다** — 몰래 하나를 고르지 않습니다
+
+4번이 중요합니다. 프로젝트가 여럿인데 아무거나 고르면 나머지 프로젝트의 경고가
+통째로 빠진 채 리뷰가 돌고, 그 결과는 "도구가 검사했는데 깨끗함" 과 구분되지
+않습니다. 그럴 때는 이렇게 나옵니다.
+
+```
+INFO    crex.ground: [roslyn] 건너뜀 — 빌드할 .csproj/.sln 을 정하지 못했다
+                     — grounding.dotnet_project 를 지정하라
+```
+
+지금 무엇이 잡히는지는 `python -m crex doctor` 에 나옵니다.
+
+```
+빌드 대상 (C# roslyn)
+  OK  D:\work\repo\App.sln (자동 탐색)
+```
+
+### 매번 다시 컴파일합니다
+
+`--no-incremental` 이 붙는 이유가 있습니다. Roslyn 경고는 **컴파일할 때만** 나옵니다.
+개발자가 방금 Visual Studio 에서 빌드하고 커밋했다면, 그 상태로 `dotnet build` 를
+불러봐야 다시 컴파일할 것이 없고 경고도 한 줄도 안 나옵니다. 그러면 "이 파일은
+도구가 검사했고 깨끗하다" 는 잘못된 전제로 LLM 이 돕니다.
+
+바뀐 파일이 속한 프로젝트 하나만 태우므로 솔루션 전체를 리빌드하는 것보다는
+훨씬 낫지만, 그래도 리뷰 한 번에 빌드 한 번입니다. 큰 프로젝트라 감당이 안 되면
+`grounding.timeout` 을 올리거나 `grounding.analyzers` 에서 `roslyn` 을 빼세요.
+
+### 빌드가 실패하면 0건이 아니라 실패라고 합니다
+
+폐쇄망에서 제일 흔한 것이 NuGet 복원 실패입니다. 그 오류에는 줄·열 번호가 없어
+경고 파서에 걸리지 않으므로, 그대로 두면 "지적 0건" 으로 보입니다. 빌드가 실패했고
+걷은 것도 없으면 실패로 보고합니다.
+
+```
+INFO    crex.ground: [roslyn] 건너뜀 — dotnet build 실패 (코드 1):
+                     App.csproj : error NU1101: Unable to find package ...
+```
+
+컴파일 오류가 나온 경우는 다릅니다. 그건 실패가 아니라 결과라서 `error CS____` 로
+그대로 지적에 들어갑니다.
 
 `roslynator` 는 기본에서 빠져 있습니다. 별도 설치가 필요하고 `dotnet build` 와
 겹치는 룰이 많기 때문입니다. 쓰려면 이름을 적으세요.

@@ -102,6 +102,8 @@ timeout = 120.0
 compile_commands_dir = "build"
 
 #  C#: 빌드할 솔루션/프로젝트. Roslyn 분석기 경고를 그대로 수확한다.
+#  비워두면 바뀐 파일이 속한 .csproj 를 찾아 그것만 빌드한다. 여러 프로젝트에
+#  걸쳐 있으면 .sln 으로 올린다. 자동으로 못 정할 때만 적으면 된다.
 dotnet_project = "src/App.sln"
 
 #  clang-tidy 체크 목록. 비워두는 것이 기본이자 권장이다.

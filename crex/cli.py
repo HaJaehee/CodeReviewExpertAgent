@@ -388,6 +388,9 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
     print("\ncompile_commands.json (C++ clang-tidy)")
     print(f"  {_compiledb_status(config.grounding.compile_commands_dir, workspace.root)}")
 
+    print("\n빌드 대상 (C# roslyn)")
+    print(f"  {_dotnet_project_status(config.grounding.dotnet_project, workspace.root)}")
+
     print("\ntree-sitter (선택)")
     for module in ("tree_sitter", "tree_sitter_cpp", "tree_sitter_c_sharp", "tree_sitter_python"):
         try:
@@ -425,6 +428,29 @@ def _compiledb_status(configured: str | None, root: Path) -> str:
     except (OSError, ValueError) as exc:
         return f"실패  {path} 를 읽지 못했다: {exc}"
     return f"OK  {path} (엔트리 {entries}개)"
+
+
+def _dotnet_project_status(configured: str | None, root: Path) -> str:
+    """roslyn 은 프로젝트를 빌드해야 도는데, 그 대상이 정해지는지를 미리 보여준다.
+
+    리뷰 때는 바뀐 파일이 속한 프로젝트를 먼저 찾는다. 여기서는 그 정보가 없으니
+    솔루션/단일 프로젝트 폴백만 확인한다 — 그것도 안 되면 리뷰에서도 위태롭다.
+    """
+    from .ground import find_dotnet_project
+
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute():
+            path = root / path
+        if not path.exists():
+            return f"실패  {path} 가 없다 — grounding.dotnet_project 를 확인하라"
+        return f"OK  {path} (dotnet_project 설정)"
+
+    found = find_dotnet_project(root)
+    if found is None:
+        return ("없음 — 자동으로 정할 수 없다. C# 을 리뷰한다면 "
+                "grounding.dotnet_project 를 지정하라 (C# 이 아니면 무시하라)")
+    return f"OK  {found} (자동 탐색)"
 
 
 def _probe(endpoint, schemas):

@@ -111,7 +111,9 @@ git diff → chunk → ground → generate → filter → report
   `[added @142]`. Verifies diff matches on-disk source and skips the file if not.
 - **ground** (`crex/ground.py`) — run static analyzers in parallel (6 by default, 8 available); missing tools
   skip silently. Findings go into the prompt so the LLM's job becomes *verify these
-  and add what tools can't catch*, not *find defects*.
+  and add what tools can't catch*, not *find defects*. The C# adapters pick the
+  project to build from the changed files (nearest `.csproj`, else the `.sln`) and
+  skip loudly rather than silently reporting zero when they can't.
 - **generate** (`crex/generate.py`) — one LLM call per chunk with a JSON Schema whose
   `enum`s restrict `line` to the chunk's changed lines and `rule_id` to the taxonomy.
 - **filter** (`crex/filter.py`) — deterministic checks first (no LLM call), then a
