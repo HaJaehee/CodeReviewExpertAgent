@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -267,6 +269,136 @@ def _run_detail(request: Request, ctx: Context, rest: str) -> Response:
     return json_response(run.head())
 
 
+def _list_drives() -> list[str]:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            buf = ctypes.create_unicode_buffer(1024)
+            ctypes.windll.kernel32.GetLogicalDriveStringsW(1024, buf)
+            raw = [d for d in buf[:].split("\x00") if d]
+            return [d for d in raw if os.path.exists(d)]
+        except Exception:
+            return ["C:\\"]
+    return ["/"]
+
+
+def _calc_rel_path(target: str, root: Path) -> str:
+    try:
+        rel = Path(target).resolve().relative_to(root.resolve())
+        return str(rel).replace("\\", "/")
+    except ValueError:
+        return str(target).replace("\\", "/")
+
+
+def _browse(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/browse` — 서버 파일시스템 디렉터리 및 파일 목록 제공.
+
+    쿼리 파라미터:
+    - path: 탐색할 폴더 경로 (없으면 워크스페이스 루트)
+    - mode: "dir" (폴더만) | "file" (폴더 + 파일)
+    - scope: "all" (전체 시스템) | "workspace" (워크스페이스 내부 한정)
+    """
+    if request.method != "GET":
+        return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+    mode = request.query.get("mode", "dir")
+    scope = request.query.get("scope", "all")
+    raw_path = request.query.get("path", "").strip()
+
+    repo_root = Path(ctx.registry.repo_root).resolve()
+
+    if not ctx.workspace_switchable and scope != "workspace":
+        return error_response(
+            "이 서버는 원격 주소에 바인드되어 있어 임의의 시스템 디렉터리를 탐색할 수 없습니다.",
+            403,
+        )
+
+    if not raw_path:
+        target_dir = repo_root
+    else:
+        target_dir = Path(raw_path).expanduser().resolve()
+
+    if scope == "workspace" and not ctx.workspace_switchable:
+        try:
+            target_dir.relative_to(repo_root)
+        except ValueError:
+            target_dir = repo_root
+
+    if not target_dir.exists():
+        if target_dir.parent.exists():
+            target_dir = target_dir.parent
+        else:
+            target_dir = repo_root
+
+    if target_dir.is_file():
+        target_dir = target_dir.parent
+
+    drives = _list_drives()
+    parent_dir = str(target_dir.parent) if target_dir.parent != target_dir else None
+
+    dirs_list: list[dict[str, Any]] = []
+    files_list: list[dict[str, Any]] = []
+
+    try:
+        with os.scandir(target_dir) as it:
+            for entry in it:
+                name = entry.name
+                if name.startswith(".") or name in ("__pycache__", "$RECYCLE.BIN", "System Volume Information"):
+                    continue
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+
+                full_path = str(Path(entry.path).resolve())
+                rel_path = _calc_rel_path(full_path, repo_root)
+
+                if is_dir:
+                    try:
+                        is_git = (Path(entry.path) / ".git").exists()
+                    except OSError:
+                        is_git = False
+                    dirs_list.append({
+                        "name": name,
+                        "path": full_path,
+                        "rel_path": rel_path,
+                        "is_dir": True,
+                        "is_git": is_git,
+                    })
+                elif mode == "file":
+                    try:
+                        size = entry.stat().st_size
+                    except OSError:
+                        size = None
+                    ext = Path(name).suffix.lower()
+                    files_list.append({
+                        "name": name,
+                        "path": full_path,
+                        "rel_path": rel_path,
+                        "is_dir": False,
+                        "size": size,
+                        "ext": ext,
+                    })
+    except OSError as exc:
+        return error_response(f"디렉터리를 열 수 없습니다 ({target_dir}): {exc}", 400)
+
+    dirs_list.sort(key=lambda x: x["name"].lower())
+    files_list.sort(key=lambda x: x["name"].lower())
+
+    return json_response({
+        "current": str(target_dir),
+        "current_rel": _calc_rel_path(str(target_dir), repo_root),
+        "parent": parent_dir,
+        "is_root": parent_dir is None,
+        "workspace_root": str(repo_root),
+        "drives": drives,
+        "mode": mode,
+        "scope": scope,
+        "entries": dirs_list + files_list,
+    })
+
+
 def _int(raw: str | None, default: int) -> int:
     try:
         return int(raw) if raw is not None else default
@@ -282,6 +414,7 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
     "/api/health": _health,
     "/api/workspace": _workspace,
     "/api/runs": _runs,
+    "/api/browse": _browse,
 }
 
 #: 뒤에 붙는 부분을 핸들러에 넘기는 접두 경로.

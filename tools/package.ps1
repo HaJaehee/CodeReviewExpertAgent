@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     폐쇄망 반입용 번들을 만든다. 인터넷 되는 장비에서 실행한다.
 
@@ -129,7 +129,8 @@ Write-Step "소스 복사"
 $Sources = @("crex", "rules", "eval", "tests", "docs", "wiki", "tools")
 $Files = @(
     "README.md", "CLAUDE.md", "AGENTS.md", "crex.example.toml",
-    "requirements.txt", "requirements-optional.txt", ".gitignore"
+    "requirements.txt", "requirements-optional.txt", ".gitignore",
+    "run_viz.ps1", "viz.ps1"
 )
 
 foreach ($dir in $Sources) {
@@ -309,7 +310,13 @@ rem Zed MCP 서버. Zed settings.json 의 command 로 이 파일을 지정해도
 "%~dp0runtime\python.exe" -m crex.mcp %*
 '@ | Set-Content -Path (Join-Path $Staging "crex-mcp.cmd") -Encoding ascii
 
-    Write-Note "crex.cmd / crex-mcp.cmd / 테스트.cmd"
+    @'
+@echo off
+rem CREX 웹 UI (viz) 실행 진입점. 번들 안의 Python 을 쓴다.
+"%~dp0runtime\python.exe" -m crex.viz %*
+'@ | Set-Content -Path (Join-Path $Staging "crex-viz.cmd") -Encoding ascii
+
+    Write-Note "crex.cmd / crex-mcp.cmd / crex-viz.cmd / 테스트.cmd / run_viz.ps1 / viz.ps1"
 }
 
 # --------------------------------------------------------------------------

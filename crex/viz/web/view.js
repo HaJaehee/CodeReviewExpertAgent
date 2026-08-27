@@ -630,6 +630,11 @@
     document.querySelector('[data-for="path"]').hidden = !(kind === 'file' || kind === 'directory');
     document.querySelector('[data-for="directory"]').hidden = kind !== 'directory';
     document.querySelector('[data-for="paths"]').hidden = kind === 'file' || kind === 'directory';
+
+    const btnBrowse = $('btn-path-browse');
+    if (btnBrowse) {
+      btnBrowse.textContent = kind === 'file' ? '파일 선택…' : '폴더 선택…';
+    }
   }
 
   function savePrefs() {
@@ -744,6 +749,237 @@
     }
   }
 
+  // ── 파일 / 폴더 탐색기 모달 ──────────────────────────────────────────
+
+  let pickerState = {
+    open: false,
+    title: '',
+    sub: '',
+    mode: 'dir',        // 'dir' | 'file'
+    scope: 'all',       // 'all' | 'workspace'
+    currentDir: '',
+    workspaceRoot: '',
+    parentDir: null,
+    drives: [],
+    entries: [],
+    filterText: '',
+    selectedPath: '',
+    selectedRelPath: '',
+    onSelect: null,
+  };
+
+  async function openPicker(options) {
+    pickerState.title = options.title || (options.mode === 'file' ? '파일 선택' : '폴더 선택');
+    pickerState.sub = options.sub || '';
+    pickerState.mode = options.mode || 'dir';
+    pickerState.scope = options.scope || 'all';
+    pickerState.onSelect = options.onSelect;
+    pickerState.filterText = '';
+    pickerState.selectedPath = '';
+    pickerState.selectedRelPath = '';
+
+    $('picker-title').textContent = pickerState.title;
+    $('picker-sub').textContent = pickerState.sub;
+    $('picker-filter').value = '';
+    $('picker-selected').value = '';
+
+    $('picker-modal').hidden = false;
+    pickerState.open = true;
+
+    await loadBrowse(options.initialPath || '');
+  }
+
+  function closePicker() {
+    $('picker-modal').hidden = true;
+    pickerState.open = false;
+    pickerState.onSelect = null;
+  }
+
+  async function loadBrowse(targetPath) {
+    try {
+      const data = await client.browse({
+        path: targetPath || '',
+        mode: pickerState.mode,
+        scope: pickerState.scope,
+      });
+
+      pickerState.currentDir = data.current;
+      pickerState.parentDir = data.parent;
+      pickerState.workspaceRoot = data.workspace_root || '';
+      pickerState.drives = data.drives || [];
+      pickerState.entries = data.entries || [];
+
+      if (pickerState.mode === 'dir') {
+        selectPickerItem(data.current, data.current_rel || '');
+      } else {
+        selectPickerItem('', '');
+      }
+
+      renderPickerBreadcrumbs(data.current);
+      renderPickerDrives(data.drives);
+      renderPickerList();
+    } catch (err) {
+      toast('탐색 실패: ' + err.message, 'error');
+    }
+  }
+
+  function renderPickerBreadcrumbs(currentPath) {
+    const container = $('picker-crumbs');
+    container.innerHTML = '';
+
+    const isWindows = /^[a-zA-Z]:[\\\/]/.test(currentPath);
+    const parts = currentPath.split(/[\\\/]+/).filter(Boolean);
+
+    let cumulative = isWindows ? parts[0] + '\\' : '/';
+
+    const rootCrumb = document.createElement('span');
+    rootCrumb.className = 'picker-crumb';
+    rootCrumb.textContent = isWindows ? parts[0] + '\\' : '/';
+    rootCrumb.addEventListener('click', () => loadBrowse(cumulative));
+    container.appendChild(rootCrumb);
+
+    const startIndex = isWindows ? 1 : 0;
+    for (let i = startIndex; i < parts.length; i++) {
+      const sepSpan = document.createElement('span');
+      sepSpan.className = 'picker-crumb-sep';
+      sepSpan.textContent = '>';
+      container.appendChild(sepSpan);
+
+      const part = parts[i];
+      if (isWindows) {
+        cumulative = cumulative.replace(/\\+$/, '') + '\\' + part;
+      } else {
+        cumulative = cumulative.replace(/\/+$/, '') + '/' + part;
+      }
+      const target = cumulative;
+
+      const crumb = document.createElement('span');
+      crumb.className = 'picker-crumb';
+      crumb.textContent = part;
+      crumb.addEventListener('click', () => loadBrowse(target));
+      container.appendChild(crumb);
+    }
+  }
+
+  function renderPickerDrives(drives) {
+    const container = $('picker-drives');
+    container.innerHTML = '';
+
+    if (pickerState.workspaceRoot) {
+      const wsChip = document.createElement('button');
+      wsChip.type = 'button';
+      wsChip.className = 'picker-drive-chip' +
+        (pickerState.currentDir.toLowerCase() === pickerState.workspaceRoot.toLowerCase() ? ' is-active' : '');
+      wsChip.textContent = '저장소 루트';
+      wsChip.addEventListener('click', () => loadBrowse(pickerState.workspaceRoot));
+      container.appendChild(wsChip);
+    }
+
+    if (drives && drives.length > 1) {
+      drives.forEach((d) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'picker-drive-chip' +
+          (pickerState.currentDir.toLowerCase().startsWith(d.toLowerCase()) ? ' is-active' : '');
+        chip.textContent = d;
+        chip.addEventListener('click', () => loadBrowse(d));
+        container.appendChild(chip);
+      });
+    }
+  }
+
+  function selectPickerItem(absPath, relPath) {
+    pickerState.selectedPath = absPath;
+    pickerState.selectedRelPath = relPath;
+    $('picker-selected').value = (pickerState.scope === 'workspace' && relPath) ? relPath : absPath;
+  }
+
+  function renderPickerList() {
+    const list = $('picker-list');
+    list.innerHTML = '';
+
+    const filter = pickerState.filterText.toLowerCase();
+
+    if (pickerState.parentDir && pickerState.parentDir !== pickerState.currentDir) {
+      const upItem = document.createElement('li');
+      upItem.className = 'picker-item';
+      upItem.innerHTML = `
+        <div class="picker-item-left">
+          <span class="picker-item-icon">📁</span>
+          <span class="picker-item-name">.. (상위 폴더)</span>
+        </div>
+      `;
+      upItem.addEventListener('click', () => loadBrowse(pickerState.parentDir));
+      list.appendChild(upItem);
+    }
+
+    const filtered = pickerState.entries.filter((entry) => {
+      if (!filter) return true;
+      return entry.name.toLowerCase().includes(filter);
+    });
+
+    if (!filtered.length) {
+      const empty = document.createElement('li');
+      empty.className = 'empty-lane';
+      empty.textContent = '항목이 없습니다.';
+      list.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((entry) => {
+      const item = document.createElement('li');
+      item.className = 'picker-item' + (pickerState.selectedPath === entry.path ? ' is-selected' : '');
+
+      const icon = entry.is_dir ? '📁' : '📄';
+      const badges = [];
+      if (entry.is_git) badges.push('<span class="picker-badge git">git</span>');
+      if (!entry.is_dir && entry.ext) badges.push(`<span class="picker-badge">${escapeHtml(entry.ext)}</span>`);
+
+      item.innerHTML = `
+        <div class="picker-item-left">
+          <span class="picker-item-icon">${icon}</span>
+          <span class="picker-item-name">${escapeHtml(entry.name)}</span>
+        </div>
+        <div class="picker-item-right">
+          ${badges.join('')}
+        </div>
+      `;
+
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.picker-item').forEach((el) => el.classList.remove('is-selected'));
+        item.classList.add('is-selected');
+        selectPickerItem(entry.path, entry.rel_path);
+      });
+
+      item.addEventListener('dblclick', () => {
+        if (entry.is_dir) {
+          loadBrowse(entry.path);
+        } else {
+          confirmPicker();
+        }
+      });
+
+      list.appendChild(item);
+    });
+  }
+
+  function confirmPicker() {
+    let chosen = $('picker-selected').value.trim();
+    if (!chosen) {
+      if (pickerState.selectedPath) chosen = pickerState.selectedPath;
+      else if (pickerState.currentDir) chosen = pickerState.currentDir;
+    }
+    if (!chosen) {
+      toast('경로를 선택하세요.', 'warn');
+      return;
+    }
+
+    if (pickerState.onSelect) {
+      pickerState.onSelect(pickerState.selectedPath || chosen, pickerState.selectedRelPath || chosen);
+    }
+    closePicker();
+  }
+
   // ── 기동 ──────────────────────────────────────────────────────────
 
   async function boot() {
@@ -796,6 +1032,53 @@
   $('workspace-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') applyWorkspace();
   });
+  $('btn-workspace-browse').addEventListener('click', () => {
+    const current = $('workspace-input').value.trim() ||
+      (config && config.workspace ? config.workspace.root : '');
+    openPicker({
+      title: '워크스페이스 폴더 선택',
+      sub: '리뷰할 Git 저장소 루트 디렉터리를 선택하세요 (.git 폴더가 있는 위치)',
+      mode: 'dir',
+      scope: 'all',
+      initialPath: current,
+      onSelect: (absPath) => {
+        $('workspace-input').value = absPath;
+      },
+    });
+  });
+
+  $('btn-path-browse').addEventListener('click', () => {
+    const kind = $('kind').value;
+    const isFile = kind === 'file';
+    const currentPath = $('path').value.trim();
+    const wsRoot = config && config.workspace ? config.workspace.root : '';
+
+    openPicker({
+      title: isFile ? '감사할 파일 선택' : '감사할 폴더 선택',
+      sub: isFile ? '전체 코드를 감사할 파일 하나를 선택하세요' : '하위 전체를 감사할 디렉터리를 선택하세요',
+      mode: isFile ? 'file' : 'dir',
+      scope: 'workspace',
+      initialPath: currentPath ? (currentPath.includes(':') ? currentPath : (wsRoot + '/' + currentPath)) : wsRoot,
+      onSelect: (absPath, relPath) => {
+        $('path').value = relPath || absPath;
+        savePrefs();
+      },
+    });
+  });
+
+  $('picker-close').addEventListener('click', closePicker);
+  $('picker-cancel').addEventListener('click', closePicker);
+  $('picker-scrim').addEventListener('click', closePicker);
+  $('picker-confirm').addEventListener('click', confirmPicker);
+
+  $('picker-filter').addEventListener('input', (event) => {
+    pickerState.filterText = event.target.value;
+    renderPickerList();
+  });
+
+  $('picker-selected').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') confirmPicker();
+  });
 
   $('btn-health').addEventListener('click', async () => {
     const button = $('btn-health');
@@ -839,7 +1122,13 @@
   $('drawer-close').addEventListener('click', closeDrawer);
   $('drawer-scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeDrawer();
+    if (event.key === 'Escape') {
+      if (pickerState.open) {
+        closePicker();
+      } else {
+        closeDrawer();
+      }
+    }
   });
 
   boot();

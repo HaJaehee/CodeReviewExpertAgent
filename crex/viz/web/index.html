@@ -10,7 +10,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CREX · 리뷰 파이프라인 관제</title>
+<title>CREX</title>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128269;</text></svg>">
 </head>
@@ -19,7 +19,6 @@
 <header class="top">
   <div class="brand">
     <span class="mark">CREX</span>
-    <span class="brand-sub">리뷰 파이프라인 관제</span>
   </div>
   <div class="top-meta">
     <span class="chip" id="chip-repo" title="리뷰 대상 저장소">저장소 —</span>
@@ -63,10 +62,13 @@
       </div>
 
       <div class="field-group" data-for="path" hidden>
-        <label class="field">
+        <div class="field">
           <span>경로</span>
-          <input id="path" type="text" placeholder="src/buffer.cpp" spellcheck="false">
-        </label>
+          <div class="input-with-btn">
+            <input id="path" type="text" placeholder="src/buffer.cpp" spellcheck="false">
+            <button class="btn btn-ghost btn-sm" id="btn-path-browse" type="button">선택…</button>
+          </div>
+        </div>
         <label class="check" data-for="directory" hidden>
           <input id="recursive" type="checkbox" checked>
           <span>하위 폴더까지</span>
@@ -97,10 +99,13 @@
       </dl>
 
       <div class="workspace-edit" id="workspace-edit" hidden>
-        <label class="field">
+        <div class="field">
           <span>새 워크스페이스 <em>(.git 이 있는 폴더)</em></span>
-          <input id="workspace-input" type="text" placeholder="D:\work\myrepo" spellcheck="false">
-        </label>
+          <div class="input-with-btn">
+            <input id="workspace-input" type="text" placeholder="D:\work\myrepo" spellcheck="false">
+            <button class="btn btn-ghost btn-sm" id="btn-workspace-browse" type="button">폴더 선택…</button>
+          </div>
+        </div>
         <p class="hint">이 서버가 살아 있는 동안만 유지됩니다. <code>crex.toml</code> 은 바뀌지 않습니다.</p>
         <div class="row">
           <button class="btn btn-primary btn-sm" id="btn-workspace-apply" type="button">적용</button>
@@ -240,6 +245,40 @@
     <div class="drawer-body"><pre id="drawer-pre"></pre></div>
   </div>
   <div class="drawer-scrim" id="drawer-scrim"></div>
+</div>
+
+<!-- ── 파일 / 폴더 탐색기 모달 ──────────────────────────────────── -->
+<div class="modal" id="picker-modal" hidden>
+  <div class="modal-dialog">
+    <div class="modal-head">
+      <div>
+        <h3 id="picker-title">폴더 선택</h3>
+        <p class="modal-sub" id="picker-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="picker-close" type="button">✕</button>
+    </div>
+    <div class="picker-nav">
+      <div class="picker-breadcrumbs" id="picker-crumbs"></div>
+      <div class="picker-drives" id="picker-drives"></div>
+    </div>
+    <div class="picker-filter-wrap">
+      <input id="picker-filter" type="text" placeholder="필터링 (이름 검색)..." spellcheck="false">
+    </div>
+    <div class="picker-body">
+      <ul class="picker-list" id="picker-list"></ul>
+    </div>
+    <div class="modal-foot">
+      <div class="picker-selected-wrap">
+        <span class="picker-selected-label">선택:</span>
+        <input id="picker-selected" type="text" spellcheck="false">
+      </div>
+      <div class="row">
+        <button class="btn btn-primary btn-sm" id="picker-confirm" type="button">선택</button>
+        <button class="btn btn-ghost btn-sm" id="picker-cancel" type="button">취소</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-scrim" id="picker-scrim"></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

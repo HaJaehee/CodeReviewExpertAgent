@@ -539,6 +539,38 @@ def _wait_for_port(port: int, timeout: float = 5.0) -> None:
     raise AssertionError(f"{port} 포트가 열리지 않았다")
 
 
+def test_browse_api_directories_and_files() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp).resolve()
+        sub = root / "src" / "parser"
+        sub.mkdir(parents=True)
+        (sub / "token.cpp").write_text("int a = 1;", encoding="utf-8")
+        (root / ".git").mkdir()
+
+        ctx = _context(root, "http://127.0.0.1:1/v1", root / "reports")
+
+        # 1. 기본 브라우징 (mode=dir)
+        res = handle(Request("GET", "/api/browse", query={"path": str(root), "mode": "dir"}), ctx)
+        _check(res.status == 200, f"browse 응답 상태: {res.status}")
+        data = json.loads(res.body)
+        _check("entries" in data, "entries 누락")
+        entry_names = [e["name"] for e in data["entries"]]
+        _check("src" in entry_names, f"src 폴더 누락: {entry_names}")
+
+        # 2. 파일 브라우징 (mode=file)
+        res_file = handle(Request("GET", "/api/browse", query={"path": str(sub), "mode": "file"}), ctx)
+        data_file = json.loads(res_file.body)
+        file_entries = [e for e in data_file["entries"] if not e["is_dir"]]
+        _check(len(file_entries) == 1, f"파일 수 불일치: {file_entries}")
+        _check(file_entries[0]["name"] == "token.cpp", f"파일명 불일치: {file_entries[0]['name']}")
+        _check(file_entries[0]["rel_path"] == "src/parser/token.cpp", f"상대 경로 불일치: {file_entries[0]['rel_path']}")
+
+        # 3. 원격 바인드 차단 (workspace_switchable=False)
+        ctx_remote = Context(ctx.registry, ctx.taxonomy, workspace_switchable=False)
+        remote_res = handle(Request("GET", "/api/browse", query={"scope": "all"}), ctx_remote)
+        _check(remote_res.status == 403, f"원격 탐색 403 차단 실패: {remote_res.status}")
+
+
 TESTS = [
     test_traced_pipeline_matches_plain_pipeline,
     test_stage_events_cover_every_stage,
@@ -559,6 +591,7 @@ TESTS = [
     test_event_cursor_never_replays,
     test_stdlib_server_serves_over_real_http,
     test_asgi_app_answers_without_uvicorn,
+    test_browse_api_directories_and_files,
 ]
 
 

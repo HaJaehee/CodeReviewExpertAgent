@@ -78,6 +78,10 @@ CREX.client = (function () {
     runs: () => request('GET', '/api/runs'),
     start: (kind, params) => request('POST', '/api/runs', { kind: kind, params: params }),
     cancel: (runId) => request('POST', '/api/runs/' + runId + '/cancel', {}),
+    browse: (params) => {
+      const qs = new URLSearchParams(params || {}).toString();
+      return request('GET', '/api/browse' + (qs ? '?' + qs : ''));
+    },
     follow: follow,
     POLL_MS: POLL_MS,
   };
