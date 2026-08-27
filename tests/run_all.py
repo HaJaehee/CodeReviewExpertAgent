@@ -25,6 +25,7 @@ MODULES = [
     "tests.test_workspace",
     "tests.test_compiledb",
     "tests.test_eval",
+    "tests.test_proactive_review",
 ]
 
 

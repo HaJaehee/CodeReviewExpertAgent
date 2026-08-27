@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .chunk import Chunker, DiffSourceMismatch, SymbolLocator, parse_unified_diff
+from .treesitter import TreeSitterAnalyzer
 from .config import SEVERITY_ORDER, Config
 from .filter import ReviewFilter
 from .generate import RuleChecker
@@ -206,6 +207,7 @@ class Pipeline:
 
         window = self.config.chunking.absolute_max_lines
         locator = SymbolLocator()
+        treesitter_analyzer = TreeSitterAnalyzer()
         chunks: list[ReviewChunk] = []
         start = 1
         index = 0
@@ -222,6 +224,8 @@ class Pipeline:
                 DiffLine(LineStatus.UNCHANGED, n, lines[n - 1])
                 for n in range(start, end + 1)
             ]
+            all_lines = set(range(start, end + 1))
+            ast_ctx = treesitter_analyzer.analyze(lines, language, start, end, all_lines)
             chunks.append(
                 ReviewChunk(
                     chunk_id=f"{path}#{index}",
@@ -230,7 +234,9 @@ class Pipeline:
                     start_line=start,
                     end_line=end,
                     lines=body,
-                    changed_linenos=set(range(start, end + 1)),
+                    changed_linenos=all_lines,
+                    enclosing_symbol=ast_ctx.enclosing_symbol,
+                    ast_context=ast_ctx.render_for_prompt(),
                 )
             )
             index += 1

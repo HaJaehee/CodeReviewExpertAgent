@@ -135,6 +135,7 @@ def test_valid_finding_kept() -> None:
 
     _check(len(kept) == 1, f"유효한 지적이 기각됨: {rejected}")
     _check(kept[0].line == 17, f"라인 불일치: {kept[0].line}")
+    _check(kept[0].verifier_comment == "raw 포인터 무효화 확인", f"검증 코멘트 누락: {kept[0].verifier_comment}")
 
 
 def test_duplicate_rejected() -> None:

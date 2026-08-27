@@ -124,7 +124,14 @@ class StaticFinding:
     column: int | None = None
 
     def render(self) -> str:
-        return f"- [{self.tool}:{self.rule_id}] {self.path}:{self.line} — {self.message}"
+        loc = f"{self.path}:{self.line}"
+        if self.column:
+            loc += f":{self.column}"
+        return (
+            f"- [{self.tool}:{self.rule_id}] {loc} (심각도: {self.severity.value})\n"
+            f"  내용: {self.message}\n"
+            f"  → 검토 지침: 이 정적분석 지적이 타당하다면 해당 라인의 결함으로 적극 채택하고 적합한 룰 ID를 부여하라."
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return _asdict(self)
@@ -167,6 +174,7 @@ class ReviewChunk:
     #: 확장 근거가 된 심볼 이름 (예: "MyClass::Update"). 프롬프트 헤더에 쓴다.
     enclosing_symbol: str | None = None
     static_findings: list[StaticFinding] = field(default_factory=list)
+    ast_context: str | None = None
 
     def render_code(self) -> str:
         return "\n".join(line.annotate() for line in self.lines)
@@ -175,6 +183,13 @@ class ReviewChunk:
         if not self.static_findings:
             return "(없음 — 정적분석 도구가 이 범위에서 아무것도 보고하지 않았다)"
         return "\n".join(f.render() for f in self.static_findings)
+
+    def render_ast_context(self) -> str:
+        if self.ast_context:
+            return self.ast_context
+        if self.enclosing_symbol:
+            return f"- 둘러싼 심볼: `{self.enclosing_symbol}`"
+        return "(Tree-sitter 구문 분석 정보 없음)"
 
     def covers(self, lineno: int) -> bool:
         return self.start_line <= lineno <= self.end_line
@@ -201,6 +216,8 @@ class Finding:
     chunk_id: str | None = None
     #: 다중 라인 지적일 때의 끝 라인. 단일 라인이면 line 과 같다.
     end_line: int | None = None
+    #: 검증기가 남긴 적극적인 평가/코멘트 (선택).
+    verifier_comment: str | None = None
 
     def __post_init__(self) -> None:
         if self.end_line is None:
@@ -221,6 +238,7 @@ class Finding:
             suggestion=data.get("suggestion"),
             chunk_id=data.get("chunk_id"),
             end_line=data.get("end_line"),
+            verifier_comment=data.get("verifier_comment"),
         )
 
 

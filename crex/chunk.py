@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 
 from .schema import DiffLine, FileDiff, Hunk, Language, LineStatus, ReviewChunk
+from .treesitter import TreeSitterAnalyzer
 
 log = logging.getLogger(__name__)
 
@@ -408,6 +409,7 @@ class Chunker:
         #: diff 와 소스가 어긋날 때의 동작: "raise" | "warn" | "ignore".
         self.on_mismatch = on_mismatch
         self.locator = SymbolLocator()
+        self.treesitter_analyzer = TreeSitterAnalyzer()
 
     def chunk_file(self, file_diff: FileDiff, new_source: str) -> list[ReviewChunk]:
         if file_diff.is_deleted or file_diff.is_binary or not file_diff.hunks:
@@ -439,6 +441,8 @@ class Chunker:
         chunks: list[ReviewChunk] = []
         for index, (start, end, name, changed) in enumerate(merged):
             lines = _render_range(source_lines, start, end, deleted_before, added, unchanged)
+            ast_ctx = self.treesitter_analyzer.analyze(source_lines, language, start, end, changed)
+            ast_summary = ast_ctx.render_for_prompt()
             chunks.append(
                 ReviewChunk(
                     chunk_id=f"{file_diff.path}#{index}",
@@ -448,7 +452,8 @@ class Chunker:
                     end_line=end,
                     lines=lines,
                     changed_linenos=changed,
-                    enclosing_symbol=name,
+                    enclosing_symbol=name or ast_ctx.enclosing_symbol,
+                    ast_context=ast_summary,
                 )
             )
         return chunks

@@ -202,6 +202,17 @@ def test_line_annotation_is_unambiguous() -> None:
         _check(status in valid, f"알 수 없는 상태 {status!r}: {line!r}")
 
 
+def test_chunk_ast_context_generated() -> None:
+    """청크 생성 시 Tree-sitter AST 분석 결과가 ast_context 에 채워져야 한다."""
+    fd = parse_unified_diff(CPP_DIFF)[0]
+    chunk = Chunker().chunk_file(fd, CPP_SOURCE)[0]
+    ast_rendered = chunk.render_ast_context()
+    _check(ast_rendered != "", "ast_context 가 비어있다")
+    _check("둘러싼 심볼" in ast_rendered, f"심볼 정보 누락: {ast_rendered}")
+    _check("Grow" in ast_rendered, f"함수명 Grow 누락: {ast_rendered}")
+    _check("L16" in ast_rendered or "L15" in ast_rendered, f"변경 라인 정보 누락: {ast_rendered}")
+
+
 TESTS = [
     test_parse_cpp_diff,
     test_chunk_cpp_expands_to_function,
@@ -209,6 +220,7 @@ TESTS = [
     test_stale_source_is_rejected,
     test_replacement_hunk_at_module_level,
     test_line_annotation_is_unambiguous,
+    test_chunk_ast_context_generated,
 ]
 
 

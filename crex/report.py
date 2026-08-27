@@ -93,6 +93,8 @@ def _render_finding(finding: Finding) -> list[str]:
         location = f"`{finding.path}:{finding.line}-{finding.end_line}`"
 
     lines = [f"### {location} — {finding.rule_id}", "", finding.message, ""]
+    if finding.verifier_comment:
+        lines.extend([f"> 💬 **검증관 코멘트**: {finding.verifier_comment}", ""])
     if finding.suggestion:
         lines.extend(["```", finding.suggestion, "```", ""])
     return lines
