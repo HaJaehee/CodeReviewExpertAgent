@@ -489,12 +489,14 @@ input::placeholder { color: var(--fg-faint); }
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
+
 .verdicts td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 .verdicts tr.empty td { color: var(--fg-faint); border: none; padding-top: 12px; }
 .verdicts .c-where { font-family: var(--mono); white-space: nowrap; }
 .verdicts .c-rule { font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim); white-space: nowrap; }
 .verdicts .c-msg { min-width: 260px; }
 .verdicts .c-reason { color: var(--fg-faint); font-size: 12px; min-width: 200px; }
+.verdicts .c-verdict { min-width: 60px;}
 .verdicts tr[data-kept="false"] .c-msg { color: var(--fg-faint); text-decoration: line-through; text-decoration-color: var(--fg-faint); }
 
 .sev { font-family: var(--mono); font-size: 11px; white-space: nowrap; }

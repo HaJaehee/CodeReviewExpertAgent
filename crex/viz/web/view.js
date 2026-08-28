@@ -377,7 +377,7 @@
           (SEVERITY_LABEL[v.severity] || v.severity) + '</span></td>' +
         '<td class="c-rule">' + escapeHtml(v.rule_id) + '</td>' +
         '<td class="c-msg">' + escapeHtml(v.message) + '</td>' +
-        '<td>' + (v.kept
+        '<td class="c-verdict">' + (v.kept
           ? '<span class="tag tag-yes">유지</span>'
           : '<span class="tag tag-no">' +
             escapeHtml(REJECT_LABEL[v.reject_reason] || '기각') + '</span>') + '</td>' +
