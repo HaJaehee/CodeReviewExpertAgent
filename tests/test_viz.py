@@ -445,6 +445,264 @@ def test_workspace_switch_blocked_on_remote_bind() -> None:
         _check(state["switchable"] is False, "switchable 이 안 실렸다")
 
 
+# --------------------------------------------------------------------------
+# compile_commands.json 빌드
+# --------------------------------------------------------------------------
+
+
+def _fake_generate(entries: int, *, lines: tuple[str, ...] = ("빌드 시작", "빌드 끝")):
+    """`compiledb.generate` 자리에 끼울 가짜.
+
+    MSBuild 도 CMake 도 없는 장비에서 돌아야 한다(`wiki/invariants.md` — 테스트는
+    네트워크·LLM·설치 없이 돈다). 진짜 빌드는 여기서 검증할 수 없고, 검증하려는
+    것도 그게 아니다 — **만든 뒤에 무엇을 하는가**가 이 경로의 새로운 부분이다.
+    """
+    from crex.compiledb import Project, Result
+
+    def fake(root, **kwargs):
+        on_line = kwargs.get("on_line")
+        for line in lines:
+            if on_line is not None:
+                on_line(line)
+        directory = Path(root) / ".crex" / "compiledb"
+        directory.mkdir(parents=True, exist_ok=True)
+        json_path = directory / "compile_commands.json"
+        payload = [
+            {"directory": str(root), "file": f"src/f{i}.cpp", "command": "cl.exe"}
+            for i in range(entries)
+        ]
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        project = Project("msbuild", Path(root) / "App.sln")
+        return Result(project, directory, json_path, entries, directory / "msbuild.log")
+
+    return fake
+
+
+def _build_and_wait(ctx: Context, payload: dict | None = None, timeout: float = 10.0) -> dict:
+    started = handle(
+        Request("POST", "/api/compiledb", body=json.dumps(payload or {}).encode()), ctx
+    )
+    _check(started.status == 201, f"빌드 시작 실패: {started.body!r}")
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        state = json.loads(handle(Request("GET", "/api/compiledb"), ctx).body)
+        if state["job"] and state["job"]["status"] != "running":
+            return state
+        time.sleep(0.02)
+    raise AssertionError(f"빌드가 {timeout}초 안에 끝나지 않았다")
+
+
+def test_compiledb_state_reports_config_project_and_defaults() -> None:
+    """화면이 세 번 묻지 않아도 되게, 설정·탐지·기본값이 한 응답에 있어야 한다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        (repo / "App.sln").write_text("solution\n", encoding="utf-8")
+
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        state = json.loads(handle(Request("GET", "/api/compiledb"), ctx).body)
+
+        _check(state["project"]["kind"] == "msbuild", f"탐지 결과: {state['project']}")
+        _check(state["project"]["found"].endswith("App.sln"), state["project"]["found"])
+        _check(state["status"]["configured"] is None, f"설정: {state['status']}")
+        _check(state["defaults"]["target"] == "Rebuild", f"기본값: {state['defaults']}")
+        _check(state["job"] is None, "돌지도 않은 빌드가 있다")
+
+
+def test_compiledb_detection_failure_is_reported_not_raised() -> None:
+    """C++ 프로젝트가 아닌 저장소에서도 화면은 떠야 한다. 사유만 실어 보낸다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+
+        response = handle(Request("GET", "/api/compiledb"), ctx)
+        _check(response.status == 200, f"상태: {response.status}")
+        state = json.loads(response.body)
+        _check(state["project"]["found"] is None, f"없는 프로젝트를 찾았다: {state['project']}")
+        _check("찾지 못했다" in (state["project"]["error"] or ""), str(state["project"]["error"]))
+
+
+def test_compiledb_success_applies_to_config_and_writes_toml() -> None:
+    """만들기만 하고 끝나면 절반이 떨어져 나간다 — 만든 자리가 설정에 꽂혀야 한다."""
+    import crex.viz.build as build
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        (repo / "crex.toml").write_text("[grounding]\ntimeout = 30.0\n", encoding="utf-8")
+
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.registry.workspace = resolve(repo, start=Path(tmp), env={})
+        ctx.registry.config = ctx.registry.workspace.config
+
+        original = build.generate
+        build.generate = _fake_generate(3)
+        try:
+            state = _build_and_wait(ctx)
+        finally:
+            build.generate = original
+
+        job = state["job"]
+        _check(job["status"] == "done", f"{job['status']}: {job['error']}")
+        _check(job["result"]["entries"] == 3, f"엔트리: {job['result']['entries']}")
+        # 1) 돌고 있는 설정에 꽂혔다 — 다음 리뷰가 곧바로 쓴다.
+        _check(
+            ctx.registry.config.grounding.compile_commands_dir == ".crex/compiledb",
+            f"설정에 안 꽂혔다: {ctx.registry.config.grounding.compile_commands_dir!r}",
+        )
+        # 2) crex.toml 에도 적혔다 — 다음에 띄울 때도 살아 있다.
+        written = (repo / "crex.toml").read_text(encoding="utf-8")
+        _check('compile_commands_dir = ".crex/compiledb"' in written, written)
+        _check("timeout = 30.0" in written, f"기존 설정이 날아갔다: {written}")
+        _check(job["result"]["saved_to"] == str(repo / "crex.toml"), str(job["result"]["saved_to"]))
+
+        # 상태 응답도 같이 따라와야 한다 — 화면이 옛 값을 보여주면 안 된다.
+        after = json.loads(handle(Request("GET", "/api/compiledb"), ctx).body)
+        _check(after["status"]["entries"] == 3, f"상태: {after['status']}")
+        _check(after["status"]["error"] is None, f"상태 오류: {after['status']['error']}")
+
+
+def test_compiledb_without_save_leaves_toml_alone() -> None:
+    """체크박스를 끄면 남의 저장소 파일을 고치지 않는다. 적용은 이 서버 안에서만."""
+    import crex.viz.build as build
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.registry.workspace = resolve(repo, start=Path(tmp), env={})
+        ctx.registry.config = ctx.registry.workspace.config
+
+        original = build.generate
+        build.generate = _fake_generate(2)
+        try:
+            state = _build_and_wait(ctx, {"save": False})
+        finally:
+            build.generate = original
+
+        _check(state["job"]["status"] == "done", str(state["job"]["error"]))
+        _check(not (repo / "crex.toml").exists(), "save=False 인데 설정 파일을 만들었다")
+        _check(
+            ctx.registry.config.grounding.compile_commands_dir == ".crex/compiledb",
+            "이 서버 안에서도 적용이 안 됐다",
+        )
+
+
+def test_compiledb_empty_result_is_not_applied() -> None:
+    """빈 DB 를 설정에 꽂으면 '설정했는데 왜 안 되지'가 된다. CLI 와 같은 자리에서 멈춘다."""
+    import crex.viz.build as build
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.registry.workspace = resolve(repo, start=Path(tmp), env={})
+        ctx.registry.config = ctx.registry.workspace.config
+
+        original = build.generate
+        build.generate = _fake_generate(0)
+        try:
+            state = _build_and_wait(ctx)
+        finally:
+            build.generate = original
+
+        job = state["job"]
+        _check(job["status"] == "failed", f"빈 DB 를 성공으로 봤다: {job['status']}")
+        _check("비어 있습니다" in (job["error"] or ""), str(job["error"]))
+        _check(
+            ctx.registry.config.grounding.compile_commands_dir is None,
+            f"빈 DB 가 설정에 꽂혔다: {ctx.registry.config.grounding.compile_commands_dir!r}",
+        )
+        _check(not (repo / "crex.toml").exists(), "빈 DB 를 설정 파일에 적었다")
+
+
+def test_compiledb_rejects_unknown_and_multiword_options() -> None:
+    """설정 파일과 같은 규칙이다. 오타난 값을 조용히 버리면 '설정했는데 안 먹는다'가 된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+
+        unknown = handle(
+            Request("POST", "/api/compiledb", body=b'{"configuraton": "Release"}'), ctx
+        )
+        _check(unknown.status == 400, f"오타난 키 상태: {unknown.status}")
+
+        # MSBuild 인자로 그대로 들어간다. 공백이 섞이면 스위치를 하나 더 넘기는 모양이 된다.
+        spaced = handle(
+            Request("POST", "/api/compiledb", body=b'{"configuration": "Debug /p:X=1"}'), ctx
+        )
+        _check(spaced.status == 400, f"공백 값 상태: {spaced.status}")
+
+
+def test_compiledb_and_review_never_run_together() -> None:
+    """Rebuild 는 산출물을 지웠다 다시 만든다. 그 사이의 DB 로 도는 clang-tidy 는 절반만 본다."""
+    from crex.viz.build import BuildParams, new_job
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        other = _make_repo(Path(tmp) / "other")
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+
+        # 진행 중인 빌드를 만든다 — 스레드를 띄우지 않고 상태만 세운다.
+        job = new_job(BuildParams())
+        ctx.registry._build = job  # noqa: SLF001 - 진행 중 상태를 만드는 가장 단순한 방법
+
+        refused = handle(Request("POST", "/api/runs", body=b'{"kind":"staged"}'), ctx)
+        _check(refused.status == 400, f"빌드 중 리뷰 상태: {refused.status}")
+        _check("빌드 중" in json.loads(refused.body)["error"], json.loads(refused.body)["error"])
+
+        moved = _post_workspace(ctx, str(other))
+        _check(moved.status == 400, f"빌드 중 대상 변경 상태: {moved.status}")
+        _check(ctx.registry.repo_root == repo, "빌드 중인데 대상이 바뀌었다")
+
+        # 반대 방향 — 리뷰가 돌고 있으면 빌드를 받지 않는다.
+        job.status = "done"
+        run = Run(id="x", kind="staged", params={}, label="테스트", created_at=0.0)
+        ctx.registry._runs[run.id] = run  # noqa: SLF001
+        ctx.registry._order.append(run.id)  # noqa: SLF001
+
+        blocked = handle(Request("POST", "/api/compiledb", body=b"{}"), ctx)
+        _check(blocked.status == 400, f"리뷰 중 빌드 상태: {blocked.status}")
+        _check("리뷰 실행 중" in json.loads(blocked.body)["error"], json.loads(blocked.body)["error"])
+
+
+def test_compiledb_build_blocked_on_remote_bind() -> None:
+    """빌드 시작은 서버 장비에서 MSBuild 를 돌리는 일이다. 인증 없는 화면이 원격에서 받을 것이 아니다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _make_repo(Path(tmp))
+        ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
+        ctx.workspace_switchable = False
+
+        blocked = handle(Request("POST", "/api/compiledb", body=b"{}"), ctx)
+        _check(blocked.status == 403, f"상태: {blocked.status}")
+        _check(ctx.registry._build is None, "막았는데 빌드가 떴다")  # noqa: SLF001
+
+        # 상태 조회는 계속 되어야 한다 — 화면이 버튼을 끄려면 이 응답이 필요하다.
+        state = json.loads(handle(Request("GET", "/api/compiledb"), ctx).body)
+        _check(state["switchable"] is False, "switchable 이 안 실렸다")
+
+
+def test_build_log_cursor_never_replays() -> None:
+    """로그도 이벤트와 같다 — 같은 줄을 두 번 주면 화면이 부풀어 오른다."""
+    from crex.viz.build import MAX_LOG_LINES, BuildParams, new_job
+
+    job = new_job(BuildParams())
+    for i in range(5):
+        job.append(f"줄 {i}")
+
+    first = job.tail(0)
+    _check(len(first["lines"]) == 5, str(first["lines"]))
+    _check(job.tail(first["cursor"])["lines"] == [], "끝난 커서에서 또 나온다")
+
+    job.append("줄 5")
+    _check(job.tail(first["cursor"])["lines"] == ["줄 5"], str(job.tail(first["cursor"])["lines"]))
+
+    # 버퍼를 넘기면 밀려 나간 줄은 없는 것이다. 없는 것을 있는 척하지 않는다.
+    for i in range(MAX_LOG_LINES + 10):
+        job.append(f"넘침 {i}")
+    overflowed = job.tail(0)
+    _check(len(overflowed["lines"]) == MAX_LOG_LINES, f"{len(overflowed['lines'])}줄")
+    _check(overflowed["dropped"] > 0, "밀려 나간 줄 수를 안 알려준다")
+    _check(overflowed["cursor"] == 6 + MAX_LOG_LINES + 10, f"커서: {overflowed['cursor']}")
+
+
 def test_event_cursor_never_replays() -> None:
     """폴링이 같은 이벤트를 두 번 주면 화면의 지표가 부풀어 오른다."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -588,6 +846,15 @@ TESTS = [
     test_workspace_switch_is_refused_while_running,
     test_workspace_switch_validates_like_startup,
     test_workspace_switch_blocked_on_remote_bind,
+    test_compiledb_state_reports_config_project_and_defaults,
+    test_compiledb_detection_failure_is_reported_not_raised,
+    test_compiledb_success_applies_to_config_and_writes_toml,
+    test_compiledb_without_save_leaves_toml_alone,
+    test_compiledb_empty_result_is_not_applied,
+    test_compiledb_rejects_unknown_and_multiword_options,
+    test_compiledb_and_review_never_run_together,
+    test_compiledb_build_blocked_on_remote_bind,
+    test_build_log_cursor_never_replays,
     test_event_cursor_never_replays,
     test_stdlib_server_serves_over_real_http,
     test_asgi_app_answers_without_uvicorn,

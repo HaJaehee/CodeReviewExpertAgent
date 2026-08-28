@@ -276,6 +276,67 @@ input::placeholder { color: var(--fg-faint); }
 .btn-ghost { background: transparent; color: var(--fg-dim); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
+/* ── compile_commands.json 빌드 ──────────────────────────────────────
+
+   접어 둔다. C++ 저장소에서만 쓰는 패널이고, 왼쪽 열은 이미 길다. */
+
+.panel-build summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.panel-build summary::-webkit-details-marker { display: none; }
+.panel-build summary h2 { margin: 0; flex: 1; }
+/* 삼각형은 문자로 그린다 — 아이콘 폰트를 부르지 않는다(폐쇄망). */
+.panel-build summary::after {
+  content: '▾';
+  color: var(--fg-faint);
+  font-size: 11px;
+  transition: transform 0.12s;
+}
+.panel-build details[open] summary::after { transform: rotate(180deg); }
+.panel-build details[open] > *:not(summary) { margin-top: 10px; }
+
+/* 구성·플랫폼·타깃은 짧은 값 셋이라 한 줄에 놓는다. */
+.field-row { display: flex; gap: 8px; }
+.field-row .field { flex: 1; min-width: 0; }
+.field-row input { min-width: 0; }
+
+.build-state {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-left-width: 2px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.build-state[data-state="running"] { border-left-color: var(--gen); }
+.build-state[data-state="done"] { border-left-color: var(--keep); }
+.build-state[data-state="failed"] { border-left-color: var(--drop); color: var(--drop); }
+.build-state[data-state="cancelled"] { border-left-color: var(--fg-faint); }
+
+/* 빌드 로그 꼬리. 전문은 msbuild.log 에 있으므로 높이를 낮게 묶는다. */
+.build-log {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-faint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ── 실행 기록 ─────────────────────────────────────────────────────── */
 
 .panel-grow { display: flex; flex-direction: column; min-height: 0; }

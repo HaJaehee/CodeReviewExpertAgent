@@ -78,8 +78,8 @@ catches servers that accept the schema and ignore it.
 | `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
 | `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
 | `crex/config.py` | 234 | TOML config loading with unknown-key rejection (sections *and* top level) |
-| `crex/cli.py` | 503 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
-| `crex/compiledb.py` | 449 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.toml` |
+| `crex/cli.py` | 507 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
+| `crex/compiledb.py` | 645 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.toml`. Optional `on_line`/`cancel` callbacks let the dashboard stream and stop a build without re-implementing it |
 | `crex/workspace.py` | 404 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
@@ -133,11 +133,12 @@ streams it to a browser. It adds no required wheel; see
 
 | Tier | Module | Lines | Responsibility |
 |---|---|---|---|
-| Engine | `viz/trace.py` | 238 | Event model, `Tracer`, prompt↔chunk↔finding correlation |
-| Engine | `viz/engine.py` | 476 | `TracedPipeline` / `TracedLLMClient`, `RunRegistry` (one thread per run) |
-| Application | `viz/api.py` | 258 | Transport-agnostic router. `Request → Response`, nothing else |
-| Application | `viz/server.py` | 252 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
-| Presentation | `viz/web/*` | 1792 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
+| Engine | `viz/trace.py` | 242 | Event model, `Tracer`, prompt↔chunk↔finding correlation |
+| Engine | `viz/engine.py` | 581 | `TracedPipeline` / `TracedLLMClient`, `RunRegistry` (one thread per run, plus the one build slot) |
+| Engine | `viz/build.py` | 266 | `compile_commands.json` builds driven from the page — calls `compiledb.generate()`, keeps a bounded log tail |
+| Application | `viz/api.py` | 534 | Transport-agnostic router. `Request → Response`, nothing else |
+| Application | `viz/server.py` | 264 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
+| Presentation | `viz/web/*` | 2932 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
 
 Dependencies point down and never back: `server → api → engine → trace → crex.*`.
 `api.py` never imports `Pipeline`; `engine.py` never imports HTTP.
@@ -154,6 +155,19 @@ Correlation is by prompt content, not template parsing: `chunk.render_code()`
 appears verbatim inside both prompts, and a verifier prompt is scored against
 registered findings on `path:line` (3) + message (2) + `rule_id` (1). Regex over
 the prompt templates would break silently whenever a template changed.
+
+`viz/build.py` is the one place the dashboard does something other than review: it
+builds `compile_commands.json` for the current workspace (`POST /api/compiledb`,
+polled through `GET /api/compiledb?since=<cursor>`). It calls the same
+`compiledb.generate()` the CLI does and only supplies the two callbacks the CLI
+leaves empty — a DB built from the page and one built from the terminal must be the
+same DB. On success the built directory is set on the live `Config` object, and —
+unless the page turned it off — written to the workspace's `crex.toml` through
+`repo_config_path()`, the same file the CLI's `compiledb` picks. An empty DB is
+treated as a failure and applied nowhere, because pointing the config at a half-filled
+DB is worse than having none. `RunRegistry` holds reviews and the build slot behind
+one lock, so a review and a `Rebuild` can never run against the same repository at
+once, and the workspace cannot move under either.
 
 Runs execute in a daemon thread; the browser polls
 `GET /api/runs/{id}/events?since=<cursor>`. There is no server-side database —

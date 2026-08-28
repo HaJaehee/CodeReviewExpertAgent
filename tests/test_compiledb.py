@@ -259,6 +259,118 @@ def test_cli_writes_the_path_into_config() -> None:
 
 
 
+def test_output_is_streamed_line_by_line() -> None:
+    """관제 화면은 이 콜백으로 진행 상황을 중계한다.
+
+    빌드가 몇십 분인데 화면이 조용하면 사람은 멈춘 줄 알고 끊는다. 실제 도구를
+    부르지 않고 파이썬으로 대신 출력만 내 본다 — 여기서 확인할 것은 중계 배선이지
+    MSBuild 가 아니다.
+    """
+    from crex.compiledb import _run
+
+    root = _tmp()
+    seen: list[str] = []
+    log_path = root / "run.log"
+    _run(
+        [sys.executable, "-c", "print('첫 줄'); print('둘째 줄')"],
+        what="테스트",
+        cwd=root,
+        capture=True,
+        log_path=log_path,
+        on_line=seen.append,
+    )
+
+    _check(seen == ["첫 줄", "둘째 줄"], f"{seen}")
+    # 콜백이 있어도 전문은 여전히 파일로 남아야 한다 — 화면은 꼬리만 들고 있다.
+    _check(log_path.read_text(encoding="utf-8").splitlines() == seen, log_path.read_text(encoding="utf-8"))
+
+
+def test_utf8_output_survives_a_cp949_console() -> None:
+    """빌드 로그가 깨지면 실패 원인을 읽을 수 없다.
+
+    한국어 Windows 의 시스템 기본 코드페이지는 cp949 인데 MSBuild 는 파이프로
+    UTF-8 을 내보낸다. 시스템 기본값으로 읽으면 로그가 통째로 깨진 글자가 된다 —
+    실제로 그렇게 나왔다(2026-08-29).
+    """
+    from crex.compiledb import _run
+
+    root = _tmp()
+    seen: list[str] = []
+    _run(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write('경과 시간: 0.9\\n'.encode('utf-8'))"],
+        what="테스트",
+        cwd=root,
+        capture=True,
+        on_line=seen.append,
+    )
+    _check(seen == ["경과 시간: 0.9"], f"{seen}")
+
+    # 어느 인코딩도 아닌 바이트가 섞여도 빌드를 세우지 않는다.
+    seen.clear()
+    _run(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff\\xfe ok\\n')"],
+        what="테스트",
+        cwd=root,
+        capture=True,
+        on_line=seen.append,
+    )
+    _check(len(seen) == 1 and seen[0].endswith("ok"), f"{seen}")
+
+
+def test_cancel_stops_the_build_and_says_so() -> None:
+    """중단은 실패와 구분되어야 한다. 화면이 '실패'로 적으면 사람이 원인을 찾아 나선다."""
+    from crex.compiledb import CompileDbCancelled, _run
+
+    root = _tmp()
+    script = (
+        "import sys, time\n"
+        "for i in range(1000):\n"
+        "    print(i, flush=True)\n"
+        "    time.sleep(0.01)\n"
+    )
+    seen: list[str] = []
+    try:
+        _run(
+            [sys.executable, "-c", script],
+            what="테스트",
+            cwd=root,
+            capture=True,
+            on_line=seen.append,
+            cancel=lambda: len(seen) >= 3,
+        )
+    except CompileDbCancelled as exc:
+        _check("중단" in str(exc), str(exc))
+    else:
+        raise AssertionError("중단했는데 예외가 안 나왔다")
+
+    _check(len(seen) < 1000, f"끝까지 돌았다: {len(seen)}줄")
+
+
+def test_status_agrees_with_what_was_built() -> None:
+    """doctor 와 관제 화면이 같은 판정을 쓰게 하는 함수다. 세 상태를 다 본다."""
+    from crex.compiledb import describe_status
+
+    root = _tmp()
+    empty = describe_status(None, root)
+    _check(empty["configured"] is None and empty["error"] is None, f"{empty}")
+
+    missing = describe_status(".crex/compiledb", root)
+    _check(missing["exists"] is False, f"{missing}")
+    _check("없다" in (missing["error"] or ""), str(missing["error"]))
+
+    directory = root / ".crex" / "compiledb"
+    directory.mkdir(parents=True)
+    (directory / "compile_commands.json").write_text(
+        json.dumps([{"file": "a.cpp"}, {"file": "b.cpp"}]), encoding="utf-8"
+    )
+    good = describe_status(".crex/compiledb", root)
+    _check(good["exists"] and good["entries"] == 2 and good["error"] is None, f"{good}")
+
+    (directory / "compile_commands.json").write_text("{깨진 JSON", encoding="utf-8")
+    broken = describe_status(".crex/compiledb", root)
+    _check(broken["exists"] is False and broken["error"], f"{broken}")
+
+
 def test_ensure_logger_returns_the_bundled_dll() -> None:
     """로거는 빌드하지 않는다. 담겨 온 DLL 을 그대로 쓴다."""
     dll = ensure_logger()
@@ -322,6 +434,10 @@ TESTS = [
     test_explicit_project_is_resolved_against_root,
     test_msbuild_command_attaches_logger_and_rebuilds,
     test_msbuild_command_passes_extra_args_last,
+    test_output_is_streamed_line_by_line,
+    test_utf8_output_survives_a_cp949_console,
+    test_cancel_stops_the_build_and_says_so,
+    test_status_agrees_with_what_was_built,
     test_ensure_logger_returns_the_bundled_dll,
     test_batched_cl_command_is_split_per_file,
     test_unbatched_command_is_left_alone,

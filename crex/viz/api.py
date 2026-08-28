@@ -28,9 +28,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from ..compiledb import CompileDbError, describe_status, detect_project
 from ..rules import Taxonomy
 from .. import __version__
 from ..service import ReviewRequestError
+from .build import BuildParams
 from .engine import KINDS, RunRegistry, describe_config
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
@@ -269,6 +271,100 @@ def _run_detail(request: Request, ctx: Context, rest: str) -> Response:
     return json_response(run.head())
 
 
+def _compiledb(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/compiledb` — 지금 상태. `POST` — 빌드 시작.
+
+    화면에서 C++ 저장소를 열었을 때, compile_commands.json 을 만들려고 터미널로
+    돌아가지 않아도 되게 한다. 돌리는 것은 CLI 와 **같은** `compiledb.generate()`
+    다(`viz/build.py`).
+
+    시작은 서버 장비에서 MSBuild/CMake 를 돌리는 일이다. 워크스페이스 변경과 같은
+    이유로 루프백 바인드에서만 받는다 — 이 화면에는 인증이 없다.
+    """
+    if request.method == "GET":
+        return json_response(_compiledb_state(ctx, _int(request.query.get("since"), 0)))
+    if request.method != "POST":
+        return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+    if not ctx.workspace_switchable:
+        return error_response(
+            "이 서버는 루프백이 아닌 주소에 바인드되어 있어 빌드를 시작할 수 없습니다. "
+            "빌드는 서버 장비에서 MSBuild/CMake 를 실행하는 일이라 원격에서는 받지 않습니다. "
+            "대상 장비에서 `python -m crex compiledb` 를 쓰세요.",
+            403,
+        )
+
+    ctx.registry.start_build(_build_params(request.json()))
+    return json_response(_compiledb_state(ctx, 0), 201)
+
+
+def _compiledb_cancel(request: Request, ctx: Context, rest: str) -> Response:
+    if request.method != "POST":
+        return error_response("cancel 은 POST 입니다", 405)
+    if not ctx.registry.cancel_build():
+        return error_response("진행 중인 빌드가 없습니다", 409)
+    return json_response(_compiledb_state(ctx, 0))
+
+
+def _compiledb_state(ctx: Context, since: int) -> dict[str, Any]:
+    """설정·탐지 결과·진행 중인 빌드를 한 응답에 담는다.
+
+    화면이 세 번 물어보게 하지 않는다. 셋이 서로 어긋난 시점의 값이면 "설정은
+    돼 있는데 파일이 없다" 같은 상태를 사람이 조립해야 한다.
+    """
+    registry = ctx.registry
+    root = Path(registry.repo_root)
+    status = describe_status(registry.config.grounding.compile_commands_dir, root)
+
+    project: dict[str, Any] = {"found": None, "kind": None, "error": None}
+    try:
+        found = detect_project(root)
+        project = {"found": str(found.path), "kind": found.kind, "error": None}
+    except CompileDbError as exc:
+        project["error"] = str(exc)
+
+    return {
+        "workspace": str(root),
+        "switchable": ctx.workspace_switchable,
+        "status": status,
+        "project": project,
+        "defaults": BuildParams().to_dict(),
+        **registry.build_state(since),
+    }
+
+
+def _build_params(payload: dict[str, Any]) -> BuildParams:
+    """화면이 보낸 값을 받는다. 모르는 키는 조용히 버리지 않고 막는다 —
+    설정 파일과 같은 이유다(오타난 값은 '설정했는데 안 먹는다'가 된다)."""
+    known = set(BuildParams.__dataclass_fields__)
+    unknown = sorted(set(payload) - known)
+    if unknown:
+        raise ReviewRequestError(f"알 수 없는 빌드 옵션입니다: {unknown}. 가능: {sorted(known)}")
+
+    defaults = BuildParams()
+    project = str(payload.get("project") or "").strip()
+    return BuildParams(
+        project=project or None,
+        configuration=_word(payload.get("configuration"), defaults.configuration, "configuration"),
+        platform=_word(payload.get("platform"), defaults.platform, "platform"),
+        target=_word(payload.get("target"), defaults.target, "target"),
+        generator=str(payload.get("generator") or defaults.generator).strip(),
+        save=bool(payload.get("save", defaults.save)),
+    )
+
+
+def _word(raw: Any, default: str, name: str) -> str:
+    """MSBuild 인자로 그대로 들어가는 값이다. 한 낱말만 받는다.
+
+    셸을 거치지 않으므로 명령 주입은 성립하지 않지만, 공백이 섞이면 사용자가
+    의도하지 않은 스위치를 하나 더 넘기는 모양이 된다. 받지 않는 편이 낫다.
+    """
+    value = str(raw if raw is not None else "").strip() or default
+    if any(ch.isspace() for ch in value):
+        raise ReviewRequestError(f"{name} 에는 공백을 넣을 수 없습니다: {value!r}")
+    return value
+
+
 def _list_drives() -> list[str]:
     if sys.platform == "win32":
         try:
@@ -415,6 +511,8 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
     "/api/workspace": _workspace,
     "/api/runs": _runs,
     "/api/browse": _browse,
+    "/api/compiledb": _compiledb,
+    "/api/compiledb/cancel": _compiledb_cancel,
 }
 
 #: 뒤에 붙는 부분을 핸들러에 넘기는 접두 경로.

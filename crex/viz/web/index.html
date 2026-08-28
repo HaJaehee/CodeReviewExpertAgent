@@ -114,6 +114,73 @@
       </div>
     </section>
 
+    <!--
+      compile_commands.json 만들기.
+
+      C++ 저장소를 열 때마다 터미널로 돌아가지 않게 한다. clang-tidy 는 컴파일
+      명령을 모르면 헤더를 못 찾고, 그 상태의 지적은 절반이 오탐이다.
+    -->
+    <section class="panel panel-build">
+      <details id="build-details">
+        <summary>
+          <h2>compile_commands.json <span class="badge" id="build-badge">—</span></h2>
+        </summary>
+
+        <p class="hint">
+          C++ <code>clang-tidy</code> 는 컴파일 명령을 알아야 헤더를 찾습니다.
+          워크스페이스가 <code>.sln</code>·<code>.vcxproj</code>·<code>CMakeLists.txt</code>
+          가 있는 폴더면 여기서 바로 만듭니다.
+        </p>
+
+        <dl class="paths" id="build-where">
+          <dt>현재 설정</dt>
+          <dd id="build-status">—</dd>
+          <dt>빌드 대상</dt>
+          <dd id="build-project">—</dd>
+        </dl>
+
+        <div class="field">
+          <span>프로젝트 <em>(비우면 자동 탐지)</em></span>
+          <div class="input-with-btn">
+            <input id="build-project-input" type="text" placeholder="src\App.sln" spellcheck="false">
+            <button class="btn btn-ghost btn-sm" id="btn-build-browse" type="button">선택…</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>구성</span>
+            <input id="build-configuration" type="text" placeholder="Debug" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>플랫폼</span>
+            <input id="build-platform" type="text" placeholder="x64" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>타깃</span>
+            <input id="build-target" type="text" placeholder="Rebuild" spellcheck="false">
+          </label>
+        </div>
+
+        <label class="check">
+          <input id="build-save" type="checkbox" checked>
+          <span><code>crex.toml</code> 에도 적기</span>
+        </label>
+        <p class="hint">
+          끄면 이 서버가 사는 동안만 적용됩니다. 켜면 워크스페이스의 설정 파일에
+          <code>compile_commands_dir</code> 를 적어 다음에 띄울 때도 살아 있습니다.
+        </p>
+
+        <div class="row">
+          <button class="btn btn-primary btn-sm" id="btn-build" type="button">생성 시작</button>
+          <button class="btn btn-danger btn-sm" id="btn-build-cancel" type="button" disabled>중단</button>
+        </div>
+
+        <p class="build-state" id="build-state" hidden></p>
+        <pre class="build-log" id="build-log" hidden></pre>
+      </details>
+    </section>
+
     <section class="panel panel-grow">
       <h2>실행 기록 <span class="badge" id="history-count">0</span></h2>
       <p class="hint">브라우저 localStorage 에 남습니다. 서버에는 DB 가 없습니다.</p>

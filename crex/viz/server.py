@@ -74,7 +74,7 @@ def build_context(
 def build_asgi(ctx: Context):
     """의존성 없이 손으로 쓴 ASGI 앱.
 
-    Starlette/FastAPI 를 쓰지 않은 이유는 하나다 — 라우트가 여섯 개인데 반입
+    Starlette/FastAPI 를 쓰지 않은 이유는 하나다 — 라우트가 열 개 남짓인데 반입
     wheel 을 두세 개 더 늘릴 값어치가 없다. ASGI 자체는 인터페이스일 뿐이다.
     """
     import asyncio

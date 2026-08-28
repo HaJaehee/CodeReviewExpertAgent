@@ -56,7 +56,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 128 tests, no LLM or network needed
+python tests/run_all.py                     # 179 tests, no LLM or network needed
 ```
 
 ```bash
@@ -158,6 +158,16 @@ localStorage. It exists because MCP returns only a summary, and prompt tuning ne
 the inside. **Instrumentation must never change results** — pinned by a test that
 compares `Pipeline` and `TracedPipeline` on the same diff.
 
+`crex/viz/build.py` is the one thing the dashboard does besides review: it builds
+`compile_commands.json` for the current workspace so a C++ repo does not send the
+user back to the terminal before the screen is useful. It calls the CLI's own
+`compiledb.generate()` and supplies only the two callbacks the CLI leaves empty
+(`on_line`, `cancel`) — the DB built from the page must be the DB built from the
+command line. On success the directory goes into the live `Config` and, unless the
+page turned it off, into the workspace's `crex.toml` via `repo_config_path()`; an
+empty DB is a failure and is applied nowhere. Reviews and builds share one lock in
+`RunRegistry`, so a `Rebuild` and a review never touch the same repository at once.
+
 Four layers of defense: line annotations remove the need to infer line numbers;
 enum constraints make fabrication impossible at generation time; deterministic
 checks catch anything that slips; cross-model verification catches ungrounded claims.
@@ -217,8 +227,8 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 152 tests passing.
-~7,200 lines of Python in `crex/`, plus ~2,000 lines of front end in `crex/viz/web/`.
+evaluation harness, MCP server, visualizer. 41 rules. 179 tests passing.
+~8,600 lines of Python in `crex/`, plus ~2,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
 
@@ -241,7 +251,9 @@ evaluation harness, MCP server, visualizer. 41 rules. 152 tests passing.
   real — a passing test proves the parser, not the tool.
 - **`crex compiledb`'s CMake path has not run end to end on Windows.** The MSBuild
   path now has (2026-08-27: real `.vcxproj`, MSBuild 17.14.51, logger attached,
-  2 entries, `crex.toml` written). `tests/test_compiledb.py` covers the CMake route
+  2 entries, `crex.toml` written), including from the dashboard (2026-08-29: real
+  `.vcxproj` through `POST /api/compiledb`, 1 entry, log streamed, `crex.toml`
+  written, config applied in-process). `tests/test_compiledb.py` covers the CMake route
   but skips unless `cmake` and `ninja` are on `PATH` — Visual Studio ships both and
   puts neither there, so the skip is a false negative. Configuring with `-G Ninja`
   additionally needs a compiler in the environment (a developer command prompt).

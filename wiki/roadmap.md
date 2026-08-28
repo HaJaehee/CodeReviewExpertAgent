@@ -62,18 +62,19 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Pipeline: `run_diff` / `run_scan` | Complete, 5 end-to-end tests via fake vLLM |
 | Markdown / SARIF / JSON output | Complete |
 | CLI: `review` / `scan` / `doctor` | Complete |
-| `crex compiledb` (compile_commands.json + config write) | CMake path complete and tested end to end; MSBuild path written, never run against a real MSBuild |
-| Workspace resolution (review a repo CREX does not live in) | Complete, 20 tests |
+| `crex compiledb` (compile_commands.json + config write) | CMake path complete and tested end to end; MSBuild path verified against real MSBuild (CLI 2026-08-27, dashboard 2026-08-29) |
+| Workspace resolution (review a repo CREX does not live in) | Complete, 21 tests |
 | Changing the target at runtime (CLI command, dashboard button, MCP tool) | Complete |
 | `ReviewService` (7 MCP operations) | Complete, 20 tests, no FastMCP needed |
 | FastMCP binding (`mcp.py`), stdio + Streamable HTTP | Written; binding tests skip when FastMCP absent |
-| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 19 tests. Runs on stdlib; uvicorn optional |
+| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 29 tests. Runs on stdlib; uvicorn optional |
+| compile_commands.json from the dashboard (`viz/build.py`) | Complete, 9 of the visualizer's tests. Ran end to end against real MSBuild 2026-08-29 |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-152 tests total, all runnable offline.
+179 tests total, all runnable offline.
 
 ## What does not exist
 

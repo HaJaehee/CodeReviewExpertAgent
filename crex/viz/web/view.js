@@ -737,6 +737,9 @@
       toggleWorkspaceEdit(false);
       // 이전 저장소의 결과가 화면에 남아 있으면 다음 실행과 섞여 보인다.
       resetView();
+      // 빌드 패널도 같다 — 옛 저장소의 compile_commands.json 을 보고 판단하게 된다.
+      resetBuildPanel();
+      loadBuildState(false);
       const ws = payload.workspace || {};
       toast('워크스페이스를 바꿨습니다: ' + (ws.root || path) +
         (ws.is_git === false ? ' — .git 이 없어 diff 리뷰는 안 됩니다.' : ''),
@@ -746,6 +749,203 @@
     } finally {
       button.disabled = false;
       button.textContent = '적용';
+    }
+  }
+
+  // ── compile_commands.json 빌드 ────────────────────────────────────
+
+  /*
+   * C++ 저장소를 열 때마다 터미널로 돌아가지 않게 하는 패널.
+   *
+   * 리뷰 실행과 폴링 주기를 달리한다. 빌드는 몇십 분짜리이고 화면에 흘릴 것은
+   * 로그 꼬리뿐이라 400ms 로 물을 이유가 없다.
+   */
+  const BUILD_POLL_MS = 1000;
+
+  let buildState = { cursor: 0, timer: null, running: false, blocked: false, decided: false };
+
+  function renderBuild(payload) {
+    const status = payload.status || {};
+    const project = payload.project || {};
+    const job = payload.job;
+
+    // 현재 설정 — 값이 있는데 파일이 없는 상태를 가장 크게 보여준다. clang-tidy 는
+    // 그 상태에서 조용히 절반만 본다.
+    const statusNode = $('build-status');
+    if (!status.configured) {
+      statusNode.textContent = '없음 — C++ 저장소면 아래에서 만드십시오';
+      statusNode.dataset.warn = 'false';
+      $('build-badge').textContent = '없음';
+    } else if (status.error) {
+      statusNode.textContent = status.error;
+      statusNode.dataset.warn = 'true';
+      $('build-badge').textContent = '깨짐';
+    } else {
+      statusNode.textContent = status.configured + '  (엔트리 ' + status.entries + '개)';
+      statusNode.dataset.warn = status.entries ? 'false' : 'true';
+      $('build-badge').textContent = '엔트리 ' + status.entries;
+    }
+
+    const projectNode = $('build-project');
+    projectNode.textContent = project.found
+      ? project.kind + ': ' + project.found
+      : (project.error || '—');
+    projectNode.dataset.warn = project.found ? 'false' : 'true';
+
+    // 원격 바인드에서는 서버가 빌드 시작을 받지 않는다. 눌러 보고 알게 하지 않는다.
+    buildState.blocked = payload.switchable === false;
+    if (buildState.blocked) {
+      $('btn-build').title = '원격 주소에 바인드된 서버에서는 빌드를 시작할 수 없습니다';
+    }
+    $('btn-build').disabled = buildState.blocked || buildState.running;
+
+    if (payload.defaults) {
+      fillIfEmpty('build-configuration', payload.defaults.configuration);
+      fillIfEmpty('build-platform', payload.defaults.platform);
+      fillIfEmpty('build-target', payload.defaults.target);
+    }
+
+    // 처음 한 번만 자동으로 펼친다 — C++ 저장소인데 쓸 수 있는 DB 가 없을 때다.
+    // 이미 잘 설정된 저장소에서는 접힌 채로 둔다. 왼쪽 열은 이미 길다.
+    if (!buildState.decided) {
+      buildState.decided = true;
+      $('build-details').open = !!project.found && (!status.configured || !!status.error);
+    }
+
+    if (job) renderBuildJob(job);
+    appendBuildLog(payload);
+  }
+
+  function fillIfEmpty(id, value) {
+    if (!$(id).value.trim() && value) $(id).value = value;
+  }
+
+  function renderBuildJob(job) {
+    const running = job.status === 'running';
+    buildState.running = running;
+
+    $('btn-build').disabled = running || buildState.blocked;
+    $('btn-build').textContent = running ? '빌드 중…' : '생성 시작';
+    $('btn-build-cancel').disabled = !running;
+    // 빌드가 산출물을 지웠다 다시 만드는 동안의 DB 는 반쪽이다. 서버도 거부하지만
+    // 버튼부터 막아 두는 편이 설명이 필요 없다. 리뷰가 돌고 있을 때의 버튼 상태는
+    // 그쪽(`setStatus`)이 주인이라 건드리지 않는다.
+    if (running) $('btn-run').disabled = true;
+    else if (state.status !== 'running') $('btn-run').disabled = false;
+
+    const node = $('build-state');
+    node.hidden = false;
+    node.dataset.state = job.status;
+
+    if (running) {
+      node.textContent = job.label + ' — ' + job.elapsed + '초 경과';
+      return;
+    }
+    const result = job.result;
+    if (job.status === 'done' && result) {
+      const where = result.saved_to
+        ? result.saved_to + ' 에 적었습니다.'
+        : '이 서버가 사는 동안만 적용됩니다.';
+      node.textContent = ['완료 — ' + result.json_path + ' (엔트리 ' + result.entries + '개)',
+        where, job.error || ''].filter(Boolean).join('\n');
+    } else if (job.status === 'cancelled') {
+      node.textContent = '중단했습니다. ' + (job.error || '');
+    } else {
+      node.textContent = job.error || '실패했습니다.';
+    }
+  }
+
+  function appendBuildLog(payload) {
+    const lines = payload.lines || [];
+    if (!lines.length) return;
+    const pre = $('build-log');
+    pre.hidden = false;
+    // 서버가 마지막 400줄만 들고 있다. 화면도 같은 만큼만 남긴다 — 전문은
+    // msbuild.log 에 있고, 여기서 보려는 것은 '지금 어디쯤인가' 뿐이다.
+    const kept = (pre.textContent ? pre.textContent.split('\n') : []).concat(lines).slice(-400);
+    pre.textContent = kept.join('\n');
+    pre.scrollTop = pre.scrollHeight;
+    buildState.cursor = payload.cursor || buildState.cursor;
+  }
+
+  function resetBuildPanel() {
+    if (buildState.timer) window.clearTimeout(buildState.timer);
+    buildState = { cursor: 0, timer: null, running: false, blocked: buildState.blocked, decided: false };
+    $('build-project-input').value = '';
+    $('build-log').textContent = '';
+    $('build-log').hidden = true;
+    $('build-state').hidden = true;
+  }
+
+  async function loadBuildState(follow) {
+    try {
+      const payload = await client.compiledb(buildState.cursor);
+      renderBuild(payload);
+      if (follow && payload.job && payload.job.status === 'running') pollBuild();
+      return payload;
+    } catch (err) {
+      $('build-status').textContent = '상태를 읽지 못했습니다: ' + err.message;
+      return null;
+    }
+  }
+
+  function pollBuild() {
+    if (buildState.timer) window.clearTimeout(buildState.timer);
+    buildState.timer = window.setTimeout(async () => {
+      let payload;
+      try {
+        payload = await client.compiledb(buildState.cursor);
+      } catch (err) {
+        toast('빌드 상태를 읽지 못했습니다: ' + err.message, 'error');
+        return;
+      }
+      renderBuild(payload);
+      if (payload.job && payload.job.status === 'running') {
+        pollBuild();
+        return;
+      }
+      buildState.timer = null;
+      await finishBuild(payload.job);
+    }, BUILD_POLL_MS);
+  }
+
+  async function finishBuild(job) {
+    if (!job) return;
+    if (job.status === 'done') {
+      // 만들어진 자리가 지금 설정에 꽂혔다. 머리말이 옛 값을 보여주면 안 된다.
+      try {
+        renderConfig(await client.config());
+      } catch (err) {
+        /* 머리말이 조금 늦어도 빌드 결과는 이미 화면에 있다 */
+      }
+      toast('compile_commands.json 을 만들었습니다 (엔트리 ' +
+        (job.result ? job.result.entries : 0) + '개). 다음 리뷰부터 적용됩니다.', 'ok');
+    } else if (job.status === 'cancelled') {
+      toast('빌드를 중단했습니다.', 'warn');
+    } else {
+      toast('빌드 실패: ' + clip(job.error || '', 200), 'error');
+    }
+    await loadBuildState(false);
+  }
+
+  async function startBuild() {
+    const params = {
+      project: $('build-project-input').value.trim(),
+      configuration: $('build-configuration').value.trim(),
+      platform: $('build-platform').value.trim(),
+      target: $('build-target').value.trim(),
+      save: $('build-save').checked,
+    };
+    $('btn-build').disabled = true;
+    $('build-log').textContent = '';
+    buildState.cursor = 0;
+    try {
+      renderBuild(await client.startCompiledb(params));
+      toast('빌드를 시작했습니다. 큰 솔루션이면 오래 걸립니다.', 'ok');
+      pollBuild();
+    } catch (err) {
+      $('btn-build').disabled = false;
+      toast(err.message, 'error');
     }
   }
 
@@ -994,6 +1194,10 @@
       return;
     }
 
+    // compile_commands.json 상태. 진행 중인 빌드가 있으면 이어서 따라간다 —
+    // 새로고침으로 화면이 죽어도 서버에서는 계속 돌고 있다.
+    await loadBuildState(true);
+
     // 서버가 아직 들고 있는 실행이 있으면 이어서 본다. 새로고침으로 화면이
     // 죽어도 진행 중인 리뷰는 서버에서 계속 돌고 있다.
     try {
@@ -1047,6 +1251,29 @@
     });
   });
 
+  $('btn-build').addEventListener('click', startBuild);
+  $('btn-build-cancel').addEventListener('click', async () => {
+    try {
+      renderBuild(await client.cancelCompiledb());
+      toast('중단을 요청했습니다. 진행 중인 빌드 단계가 끝나면 멈춥니다.', 'warn');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+  $('btn-build-browse').addEventListener('click', () => {
+    const wsRoot = config && config.workspace ? config.workspace.root : '';
+    const current = $('build-project-input').value.trim();
+    openPicker({
+      title: '빌드할 프로젝트 선택',
+      sub: '.sln / .vcxproj / CMakeLists.txt 중 하나를 고르세요. 비워 두면 자동으로 찾습니다',
+      mode: 'file',
+      scope: 'workspace',
+      initialPath: current ? (current.includes(':') ? current : (wsRoot + '/' + current)) : wsRoot,
+      onSelect: (absPath, relPath) => {
+        $('build-project-input').value = relPath || absPath;
+      },
+    });
+  });
   $('btn-path-browse').addEventListener('click', () => {
     const kind = $('kind').value;
     const isFile = kind === 'file';

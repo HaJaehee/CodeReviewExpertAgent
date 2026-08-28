@@ -19,6 +19,7 @@ MSBuild 경로는 Windows + Visual Studio 가 있어야 한다. 로거는
 from __future__ import annotations
 
 import json
+import locale
 import logging
 import os
 import re
@@ -26,7 +27,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,22 @@ DEFAULT_TARGET = "Rebuild"
 
 class CompileDbError(RuntimeError):
     """사용자가 고칠 수 있는 실패. 메시지에 다음 행동이 들어 있어야 한다."""
+
+
+class CompileDbCancelled(CompileDbError):
+    """사용자가 빌드를 중단했다.
+
+    `CompileDbError` 를 상속한다 — 부르는 쪽에서 따로 잡지 않아도 "사용자가
+    고칠 수 있는 실패"와 같은 자리로 떨어지고, 구분이 필요한 쪽(관제 화면)만
+    이 타입을 본다.
+    """
+
+
+#: 빌드 출력 한 줄을 받는 콜백. 관제 화면이 진행 상황을 중계하는 통로다.
+OnLine = Callable[[str], None]
+
+#: 중단 여부를 묻는 콜백. True 를 돌려주면 실행 중인 빌드를 끊는다.
+ShouldCancel = Callable[[], bool]
 
 
 @dataclass(frozen=True)
@@ -366,21 +383,36 @@ def generate(
     output_dir: Path | str | None = None,
     extra_args: Sequence[str] = (),
     env: Mapping[str, str] | None = None,
+    on_line: OnLine | None = None,
+    cancel: ShouldCancel | None = None,
 ) -> Result:
-    """compile_commands.json 을 만들고 그 위치를 돌려준다."""
+    """compile_commands.json 을 만들고 그 위치를 돌려준다.
+
+    `on_line` 을 주면 빌드 출력이 한 줄씩 그리로도 간다. 화면에서 부르는 쪽은
+    빌드가 몇십 분 걸리는 동안 아무것도 못 보면 멈춘 줄 알기 때문이다. CLI 는
+    주지 않는다 — 콘솔에는 이미 진행 표시가 나간다.
+
+    `cancel` 이 True 를 돌려주면 실행 중인 빌드를 끊고 `CompileDbCancelled` 를
+    던진다.
+    """
     root = Path(root).resolve()
     found = detect_project(root, project)
     out_dir = prepare_output_dir(root, output_dir)
     json_path = out_dir / "compile_commands.json"
 
     if found.kind == "cmake":
+        # 콘솔로 흘리면 되는 CLI 와 달리, 화면에서 부르면 출력을 받아야 중계할 수
+        # 있다. `on_line` 이 있을 때만 캡처로 바꾼다.
         _run(
             build_cmake_command(
                 find_cmake(env), root, out_dir, generator=generator, extra=extra_args
             ),
             what="cmake 구성",
             cwd=root,
-            capture=False,
+            capture=on_line is not None,
+            log_path=(out_dir / "cmake.log") if on_line is not None else None,
+            on_line=on_line,
+            cancel=cancel,
         )
         if not json_path.is_file():
             raise CompileDbError(
@@ -404,7 +436,10 @@ def generate(
     )
 
     log.info("%s 를 빌드한다. 큰 솔루션이면 오래 걸린다.", found.path.name)
-    _run(command, what="MSBuild 빌드", cwd=root, capture=True, log_path=log_path)
+    _run(
+        command, what="MSBuild 빌드", cwd=root, capture=True,
+        log_path=log_path, on_line=on_line, cancel=cancel,
+    )
 
     if not staging.is_file():
         raise CompileDbError(
@@ -468,6 +503,39 @@ def _rewrite_batched_commands(json_path: Path) -> None:
         log.warning("컴파일 명령 분리 실패 — 원본을 그대로 둔다: %s", exc)
 
 
+def describe_status(configured: str | None, root: Path) -> dict:
+    """설정된 compile_commands.json 이 실제로 쓸 만한 상태인지 본다.
+
+    설정과 파일을 함께 본다 — 둘 중 하나만 맞아도 clang-tidy 는 눈을 감는다.
+    `doctor` 의 한 줄과 관제 화면의 상태 표시가 같은 판정을 쓰도록 구조로 돌려준다.
+    """
+    if not configured:
+        return {"configured": None, "path": None, "exists": False, "entries": None, "error": None}
+
+    directory = Path(configured)
+    if not directory.is_absolute():
+        directory = Path(root) / directory
+    path = directory / "compile_commands.json"
+    state = {
+        "configured": str(configured),
+        "path": str(path),
+        "exists": False,
+        "entries": None,
+        "error": None,
+    }
+    if not path.is_file():
+        state["error"] = f"{path} 가 없다 — 경로가 맞는지 확인하거나 다시 만들라"
+        return state
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError) as exc:
+        state["error"] = f"{path} 를 읽지 못했다: {exc}"
+        return state
+    state["exists"] = True
+    state["entries"] = len(data) if isinstance(data, list) else 0
+    return state
+
+
 def _count_entries(json_path: Path) -> int:
     try:
         data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
@@ -485,6 +553,8 @@ def _run(
     cwd: Path | None = None,
     capture: bool,
     log_path: Path | None = None,
+    on_line: OnLine | None = None,
+    cancel: ShouldCancel | None = None,
 ) -> None:
     """외부 도구를 돌린다. 실패하면 무엇을 실행했는지까지 함께 알린다.
 
@@ -506,7 +576,7 @@ def _run(
             )
         return
 
-    lines, code = _stream(command, cwd, what, log_path)
+    lines, code = _stream(command, cwd, what, log_path, on_line, cancel)
     if code != 0:
         tail = "\n".join(lines[-20:]) if lines else "(출력 없음)"
         where = f"\n전체 로그: {log_path}" if log_path is not None and lines else ""
@@ -516,8 +586,29 @@ def _run(
         )
 
 
+def _decode(raw: bytes) -> str:
+    """빌드 도구 출력 한 줄을 문자열로. UTF-8 을 먼저 보고, 아니면 시스템 기본값.
+
+    MSBuild 와 CMake 가 어떤 인코딩으로 내보내는지는 장비마다 다르다 — 파이프로
+    내보낼 때 UTF-8 인 판이 있고, 콘솔 코드페이지 그대로인 판이 있다. 한국어
+    Windows 에서 시스템 기본값(cp949)으로 UTF-8 출력을 읽으면 로그가 통째로 깨진
+    글자가 되는데, 그 로그는 실패 원인을 읽으라고 남기는 것이다.
+
+    둘 다 아니면 글자를 바꿔서라도 계속 간다 — 로그 한 줄 때문에 빌드를 세우지 않는다.
+    """
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode(locale.getpreferredencoding(False), errors="replace")
+
+
 def _stream(
-    command: list[str], cwd: Path | None, what: str, log_path: Path | None
+    command: list[str],
+    cwd: Path | None,
+    what: str,
+    log_path: Path | None,
+    on_line: OnLine | None = None,
+    cancel: ShouldCancel | None = None,
 ) -> tuple[list[str], int]:
     """출력을 파일로 받으면서 살아 있다는 표시만 화면에 낸다.
 
@@ -527,34 +618,46 @@ def _stream(
     표시만 내고 전문은 로그로 남긴다.
     """
     try:
+        # 바이트로 받아 직접 해독한다(`_decode`). 텍스트 모드는 시스템 기본
+        # 코드페이지로 읽는데, 한국어 Windows(cp949)에서 MSBuild 가 UTF-8 을
+        # 내보내면 로그 전체가 깨진 글자가 된다 — 실패 원인을 읽으라고 남기는
+        # 로그다.
         process = subprocess.Popen(
             command,
             cwd=str(cwd) if cwd else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            errors="replace",
-            bufsize=1,
         )
     except OSError as exc:
         raise CompileDbError(f"{what} 를 실행하지 못했다 ({command[0]}): {exc}") from exc
 
     lines: list[str] = []
     handle = None
+    cancelled = False
     try:
         if log_path is not None:
             handle = log_path.open("w", encoding="utf-8", errors="replace")
         assert process.stdout is not None
-        for line in process.stdout:
-            line = line.rstrip("\n")
+        for raw in process.stdout:
+            line = _decode(raw).rstrip("\r\n")
             lines.append(line)
             if handle is not None:
                 handle.write(line + "\n")
-            if len(lines) % 500 == 0:
+            if on_line is not None:
+                on_line(line)
+            elif len(lines) % 500 == 0:
                 print(f"  ... {what} 진행 중 ({len(lines):,}줄)", flush=True)
+            # 출력이 한 줄 올 때마다 본다. 빌드가 오래 조용한 구간에서는 중단이
+            # 그만큼 늦게 듣지만, 별도 감시 스레드를 두는 것보다 이쪽이 단순하다.
+            if cancel is not None and cancel():
+                cancelled = True
+                process.terminate()
+                break
     finally:
         if handle is not None:
             handle.close()
         process.wait()
 
+    if cancelled:
+        raise CompileDbCancelled(f"{what} 를 중단했다.")
     return lines, process.returncode

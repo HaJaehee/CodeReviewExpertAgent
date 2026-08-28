@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
-from .config import Config, find_config, load_config
+from .config import Config, DEFAULT_CONFIG_NAMES, find_config, load_config
 from .gitio import resolve_repo_root
 
 log = logging.getLogger(__name__)
@@ -174,6 +174,24 @@ _SECTION_LINE = re.compile(r"^\s*\[")
 def persist_workspace(config_path: Path, root: Path | None) -> Path:
     """`crex.toml` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다."""
     return persist_key(config_path, "workspace", None if root is None else _toml_string(root))
+
+
+def repo_config_path(workspace: Workspace, explicit: Path | str | None = None) -> Path:
+    """저장소마다 다른 설정(`compile_commands_dir`)을 어느 파일에 적을 것인가.
+
+    `workspace` 키를 적을 때와 반대다. 그쪽은 CREX 쪽 설정에 적어도 되지만,
+    이 값은 **저장소마다 다르다.** CREX 루트에 적으면 다음 저장소를 리뷰할 때
+    엉뚱한 경로를 가리킨다. 그래서 지금 쓰이고 있는 설정 파일에 적고, 그런
+    파일이 없으면 워크스페이스 안에 새로 만든다.
+
+    CLI 의 `compiledb` 와 관제 화면이 같은 자리에 적어야 한다 — 화면에서 만든
+    값을 CLI 가 못 보면 "화면에서는 되는데 명령줄에서는 안 된다"가 된다.
+    """
+    if explicit:
+        return Path(explicit)
+    if workspace.config.source is not None:
+        return workspace.config.source
+    return workspace.root / DEFAULT_CONFIG_NAMES[0]
 
 
 def persist_compile_commands_dir(config_path: Path, directory: Path | None) -> Path:
@@ -399,7 +417,9 @@ __all__ = [
     "ENV_WORKSPACE",
     "Workspace",
     "WorkspaceError",
+    "persist_compile_commands_dir",
     "persist_workspace",
+    "repo_config_path",
     "resolve",
     "switch",
 ]

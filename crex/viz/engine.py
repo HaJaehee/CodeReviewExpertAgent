@@ -37,6 +37,7 @@ from ..pipeline import Pipeline
 from ..schema import ReviewChunk, ReviewResult
 from ..service import ReviewRequestError, ReviewService
 from ..workspace import Workspace, WorkspaceError, switch
+from .build import BuildJob, BuildParams, execute as execute_build, new_job
 from .trace import Event, Tracer, clip
 
 log = logging.getLogger(__name__)
@@ -273,6 +274,8 @@ class RunRegistry:
         self._lock = threading.Lock()
         self._runs: dict[str, Run] = {}
         self._order: list[str] = []
+        #: 진행 중이거나 마지막으로 끝난 compile_commands.json 빌드. 한 번에 하나다.
+        self._build: BuildJob | None = None
 
     # -- 대상 ---------------------------------------------------------------
 
@@ -290,6 +293,14 @@ class RunRegistry:
                 raise ReviewRequestError(
                     f"실행 중({running[0]})에는 워크스페이스를 바꿀 수 없습니다. "
                     f"끝나기를 기다리거나 중단하세요."
+                )
+            # 빌드도 같다. 빌드는 지금 저장소를 상대로 돌고 있고, 끝나면 그 결과를
+            # `self.config` 에 꽂는다 — 도중에 대상을 갈아 끼우면 A 저장소를 빌드한
+            # 값이 B 저장소의 설정으로 들어간다.
+            if self._build is not None and self._build.status == "running":
+                raise ReviewRequestError(
+                    "compile_commands.json 빌드 중에는 워크스페이스를 바꿀 수 없습니다. "
+                    "끝나기를 기다리거나 중단하세요."
                 )
             try:
                 changed = switch(self.workspace, path)
@@ -339,6 +350,16 @@ class RunRegistry:
     def start(self, kind: str, params: dict[str, Any]) -> Run:
         if kind not in KINDS:
             raise ReviewRequestError(f"알 수 없는 리뷰 종류입니다: {kind!r}. 가능: {list(KINDS)}")
+
+        # 빌드 중에는 리뷰를 받지 않는다. Rebuild 는 산출물을 지웠다 다시 만들고,
+        # 그 사이의 compile_commands.json 은 반쪽이다. 반쪽짜리 DB 로 도는
+        # clang-tidy 는 조용히 절반만 본다 — 없는 것보다 나쁘다.
+        with self._lock:
+            if self._build is not None and self._build.status == "running":
+                raise ReviewRequestError(
+                    "compile_commands.json 빌드 중에는 리뷰를 시작할 수 없습니다. "
+                    "끝나기를 기다리거나 빌드를 중단하세요."
+                )
 
         run = Run(
             id=uuid.uuid4().hex[:12],
@@ -398,6 +419,52 @@ class RunRegistry:
             result=result.to_dict() if result else None,
             verdicts=_verdicts(result),
         )
+
+    # -- compile_commands.json ---------------------------------------------
+
+    def build_state(self, since: int = 0) -> dict[str, Any]:
+        """진행 중이거나 마지막으로 끝난 빌드의 상태와 로그 꼬리."""
+        job = self._build
+        if job is None:
+            return {"job": None, "lines": [], "cursor": 0, "dropped": 0}
+        return {"job": job.head(), **job.tail(since)}
+
+    def start_build(self, params: BuildParams) -> BuildJob:
+        """compile_commands.json 빌드를 띄운다. 한 번에 하나만 돈다.
+
+        리뷰와 같은 락을 쥐고 등록한다 — `start()` 는 빌드 중인지 보고, 여기서는
+        리뷰 중인지 본다. 둘이 같은 저장소를 동시에 만지지 못하게 하는 것이 요점이다.
+        """
+        with self._lock:
+            if self._build is not None and self._build.status == "running":
+                raise ReviewRequestError(
+                    f"이미 빌드 중입니다({self._build.id}). 끝나기를 기다리거나 중단하세요."
+                )
+            running = [r.id for r in self._runs.values() if r.status == "running"]
+            if running:
+                raise ReviewRequestError(
+                    f"리뷰 실행 중({running[0]})에는 빌드할 수 없습니다. "
+                    f"끝나기를 기다리거나 중단하세요."
+                )
+            job = new_job(params)
+            self._build = job
+            root, config, workspace = self.repo_root, self.config, self.workspace
+
+        threading.Thread(
+            target=execute_build,
+            args=(job, root, config, workspace),
+            name=f"crex-build-{job.id}",
+            daemon=True,
+        ).start()
+        return job
+
+    def cancel_build(self) -> bool:
+        job = self._build
+        if job is None or job.status != "running":
+            return False
+        job.cancel.set()
+        job.append("… 중단을 요청했습니다. 진행 중인 빌드 단계가 끝나면 멈춥니다.")
+        return True
 
     # ------------------------------------------------------------------
 
@@ -474,6 +541,9 @@ def describe_config(config: Config) -> dict[str, Any]:
         "require_changed_line": config.review.require_changed_line,
         "grounding_enabled": config.grounding.enabled,
         "analyzers": config.grounding.analyzers,
+        # C++ 은 이 값이 없으면 clang-tidy 가 헤더를 못 찾는다. 화면 머리말에서
+        # 바로 보여야 "왜 지적이 안 나오지"를 설정에서 확인할 수 있다.
+        "compile_commands_dir": config.grounding.compile_commands_dir,
         "chunking": {
             "expansion_limit": config.chunking.expansion_limit,
             "expansion_truncate": config.chunking.expansion_truncate,
@@ -499,6 +569,8 @@ def _endpoint(endpoint: Any) -> dict[str, Any]:
 
 __all__ = [
     "KINDS",
+    "BuildJob",
+    "BuildParams",
     "MAX_RUNS",
     "Run",
     "RunCancelled",

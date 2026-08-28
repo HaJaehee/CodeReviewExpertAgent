@@ -16,14 +16,13 @@ CREX 를 리뷰 대상 저장소 안에 둘 필요는 없다. 작업 디렉터�
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import shutil
 import sys
 from pathlib import Path
 
 from . import __version__
-from .compiledb import CompileDbError, DEFAULT_TARGET, generate
+from .compiledb import CompileDbError, DEFAULT_TARGET, describe_status, generate
 from .config import DEFAULT_CONFIG_NAMES, find_config
 from .gitio import GitError, diff_range, diff_staged, diff_working_tree, gitpython_available
 from .filter import VERDICT_SCHEMA
@@ -36,6 +35,7 @@ from .workspace import (
     Workspace,
     persist_compile_commands_dir,
     persist_workspace,
+    repo_config_path,
     resolve,
 )
 
@@ -296,7 +296,7 @@ def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
         print(f'  [grounding]\n  compile_commands_dir = "{value.as_posix()}"')
         return 0
 
-    target = _workspace_config_to_write(args, workspace)
+    target = repo_config_path(workspace, args.config)
     try:
         persist_compile_commands_dir(target, value)
     except (OSError, ValueError) as exc:
@@ -321,20 +321,6 @@ def _config_value(directory: Path, root: Path) -> Path:
         return directory.resolve().relative_to(root.resolve())
     except ValueError:
         return directory.resolve()
-
-
-def _workspace_config_to_write(args: argparse.Namespace, workspace: Workspace) -> Path:
-    """어느 설정 파일에 적을 것인가.
-
-    `workspace` 명령과 반대다. compile_commands_dir 는 **저장소마다 다른 값**이라
-    지금 쓰이고 있는 설정 파일에 적고, 없으면 워크스페이스 안에 새로 만든다.
-    CREX 루트에 만들면 다음 저장소를 리뷰할 때 엉뚱한 경로를 가리킨다.
-    """
-    if args.config:
-        return Path(args.config)
-    if workspace.config.source is not None:
-        return workspace.config.source
-    return workspace.root / DEFAULT_CONFIG_NAMES[0]
 
 
 def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
@@ -413,21 +399,14 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
 
 
 def _compiledb_status(configured: str | None, root: Path) -> str:
-    """설정과 실제 파일을 함께 본다. 둘 중 하나만 맞아도 clang-tidy 는 눈을 감는다."""
-    if not configured:
+    """판정은 `compiledb.describe_status` 가 한다. 여기서는 한 줄로 옮기기만 한다 —
+    doctor 와 관제 화면이 서로 다른 기준으로 같은 설정을 평가하면 안 된다."""
+    state = describe_status(configured, root)
+    if state["configured"] is None:
         return "없음 — `python -m crex compiledb` 로 만들 수 있다 (C++ 이 아니면 무시하라)"
-
-    directory = Path(configured)
-    if not directory.is_absolute():
-        directory = root / directory
-    path = directory / "compile_commands.json"
-    if not path.is_file():
-        return f"실패  {path} 가 없다 — 경로가 맞는지 확인하거나 다시 만들라"
-    try:
-        entries = len(json.loads(path.read_text(encoding="utf-8", errors="replace")))
-    except (OSError, ValueError) as exc:
-        return f"실패  {path} 를 읽지 못했다: {exc}"
-    return f"OK  {path} (엔트리 {entries}개)"
+    if state["error"]:
+        return f"실패  {state['error']}"
+    return f"OK  {state['path']} (엔트리 {state['entries']}개)"
 
 
 def _dotnet_project_status(configured: str | None, root: Path) -> str:

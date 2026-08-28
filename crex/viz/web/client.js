@@ -78,6 +78,10 @@ CREX.client = (function () {
     runs: () => request('GET', '/api/runs'),
     start: (kind, params) => request('POST', '/api/runs', { kind: kind, params: params }),
     cancel: (runId) => request('POST', '/api/runs/' + runId + '/cancel', {}),
+    // compile_commands.json 빌드. 상태·로그를 한 응답으로 받는다 (`api.py`).
+    compiledb: (since) => request('GET', '/api/compiledb?since=' + (since || 0)),
+    startCompiledb: (params) => request('POST', '/api/compiledb', params),
+    cancelCompiledb: () => request('POST', '/api/compiledb/cancel', {}),
     browse: (params) => {
       const qs = new URLSearchParams(params || {}).toString();
       return request('GET', '/api/browse' + (qs ? '?' + qs : ''));

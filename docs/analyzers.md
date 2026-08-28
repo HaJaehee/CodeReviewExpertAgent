@@ -95,6 +95,10 @@ D:\work\repo\.crex\compiledb\compile_commands.json
 산출물은 `<저장소>/.crex/compiledb/` 에 들어갑니다. 그 폴더는 스스로를 git 에서
 제외하므로(`.crex/.gitignore`) 저장소의 `.gitignore` 를 고칠 필요가 없습니다.
 
+터미널로 돌아가고 싶지 않다면 관제 화면에서도 같은 일을 할 수 있습니다 —
+[관제 화면](visualizer.md#c-compile_commandsjson-만들기) 의 왼쪽 패널에서 워크스페이스를
+고르고 누르면 됩니다. 돌리는 코드는 이 명령과 같습니다.
+
 자주 쓰는 옵션은 이 정도입니다.
 
 | 옵션 | 언제 |
