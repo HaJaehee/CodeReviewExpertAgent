@@ -56,7 +56,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 179 tests, no LLM or network needed
+python tests/run_all.py                     # 180 tests, no LLM or network needed
 ```
 
 ```bash
@@ -227,7 +227,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 179 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 180 tests passing.
 ~8,600 lines of Python in `crex/`, plus ~2,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**

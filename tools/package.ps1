@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     폐쇄망 반입용 번들을 만든다. 인터넷 되는 장비에서 실행한다.
 
@@ -14,9 +14,9 @@
           wheels/       원본 wheel (직접 pip 하고 싶을 때만)
           crex/ docs/ wiki/ rules/ eval/ tests/ ...
           tools/msbuild-compiledb/   MSBuild -> compile_commands.json 로거 (DLL)
-          crex.cmd       실행 진입점
-          MANIFEST.txt  전 파일 SHA256
-          설치.md        폐쇄망에서 할 일
+          crex.cmd crex-mcp.cmd crex-viz.cmd 테스트.cmd   실행 진입점
+          MANIFEST.txt   전 파일 SHA256
+          docs/transfer.md   폐쇄망에서 할 일 (반입 후 절차)
 
 .PARAMETER PythonVersion
     담을 Python 버전. 3.11 이상이어야 한다 (tomllib).
@@ -35,6 +35,12 @@
     .\tools\package.ps1
     .\tools\package.ps1 -PythonVersion 3.12.10 -SkipDeps
 #>
+#
+# 이 파일은 **UTF-8 BOM** 으로 저장한다. Windows PowerShell 5.1 은 BOM 이 없는
+# .ps1 을 시스템 ANSI 코드페이지(한국어 Windows 에서는 cp949)로 읽는다. 그러면
+# 주석의 한글이 깨지는 데서 끝나지 않는다 — cp949 선행 바이트가 뒤따르는 따옴표나
+# 괄호를 삼켜 스크립트 전체가 파싱 오류로 죽는다. tests/test_cli.py 가 대조한다.
+
 [CmdletBinding()]
 param(
     [string]$PythonVersion = "3.12.10",
@@ -374,3 +380,7 @@ Write-Host "다음:" -ForegroundColor Yellow
 Write-Host "  1. zip 과 .sha256 을 함께 반입 신청한다"
 Write-Host "  2. 폐쇄망에서 압축을 풀고 tools\verify.ps1 을 실행한다"
 Write-Host "  3. 자세한 절차는 번들 안의 docs\transfer.md 를 본다"
+
+# robocopy 는 성공해도 0 이 아닌 코드를 낸다(1 = 복사함). 그 값이 $LASTEXITCODE 에
+# 그대로 남으면, 이 스크립트를 부른 쪽은 번들이 멀쩡히 만들어졌는데도 실패로 읽는다.
+exit 0

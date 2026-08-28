@@ -169,6 +169,32 @@ def test_markdown_survives_cp949_console() -> None:
     _check("cpp.dangling-after-realloc" in decoded, "본문이 유실됐다")
 
 
+def test_powershell_scripts_carry_a_bom() -> None:
+    """한글이 든 .ps1 은 UTF-8 BOM 으로 저장해야 한다.
+
+    Windows PowerShell 5.1(폐쇄망 장비의 기본)은 BOM 이 없는 .ps1 을 시스템 ANSI
+    코드페이지로 읽는다. 한국어 Windows 에서는 cp949 다. 주석의 한글이 깨지는 데서
+    끝나지 않는 것이 문제다 — cp949 선행 바이트가 뒤따르는 따옴표나 괄호를 삼켜
+    스크립트가 통째로 파싱 오류로 죽는다.
+
+    실제로 `tools/package.ps1` 이 그 상태로 들어와 있었다(2026-08-29). 반입 번들을
+    만드는 스크립트라, 못 돌리면 폐쇄망에 아무것도 못 넣는다.
+    """
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for path in sorted(root.rglob("*.ps1")):
+        # 번들 산출물은 소스의 복사본이라 두 번 볼 이유가 없다.
+        if any(part.startswith("dist") or part == ".git" for part in path.parts):
+            continue
+        data = path.read_bytes()
+        # ASCII 만 있는 스크립트는 어느 코드페이지로 읽어도 같다.
+        if all(byte < 128 for byte in data):
+            continue
+        if not data.startswith(b"\xef\xbb\xbf"):
+            offenders.append(str(path.relative_to(root)))
+    _check(not offenders, f"BOM 없는 한글 .ps1: {offenders}")
+
+
 def test_exit_code_signals_high_severity() -> None:
     """CI 게이트로 쓰려면 종료 코드가 정확해야 한다."""
 
@@ -201,6 +227,7 @@ TESTS = [
     test_workspace_command_parses,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,
+    test_powershell_scripts_carry_a_bom,
     test_exit_code_signals_high_severity,
 ]
 

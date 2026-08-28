@@ -209,7 +209,8 @@ Missing argument in parameter list.
 cp949)로 읽습니다.** 한글이 들어간 스크립트는 **UTF-8 BOM 으로 저장**해야 합니다.
 
 저장소의 스크립트에는 BOM 이 들어 있습니다. 편집기로 고친 뒤 이 오류가 나면
-BOM 이 날아간 것입니다.
+BOM 이 날아간 것입니다. `python tests/run_all.py` 가 이것도 확인하므로, 반입 전에
+한 번 돌려 두면 여기서 걸립니다.
 
 ```powershell
 # 확인
