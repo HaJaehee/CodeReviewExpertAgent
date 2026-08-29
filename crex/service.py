@@ -69,7 +69,7 @@ class ReviewService:
     ) -> str:
         """두 참조 사이의 변경을 리뷰한다."""
         if not from_ref:
-            raise ReviewRequestError("from_ref 가 필요하다")
+            raise ReviewRequestError("from_ref 가 필요합니다")
 
         base = from_ref
         if use_merge_base:
@@ -80,7 +80,7 @@ class ReviewService:
             except GitError:
                 # merge-base 가 실패하는 건 정상적인 경우도 있다 (커밋 해시 직접 지정 등).
                 # 그때는 준 대로 비교한다.
-                log.debug("merge-base 실패, %s 를 그대로 쓴다", from_ref)
+                log.debug("merge-base 실패, %s 를 그대로 씁니다", from_ref)
 
         return self._review_diff_text(
             _guard_git(lambda: diff_range(self.repo_root, base, to_ref)),
@@ -102,12 +102,12 @@ class ReviewService:
     def review_file(self, path: str) -> str:
         """파일 하나를 통째로 감사한다."""
         if not path:
-            raise ReviewRequestError("path 가 필요하다")
+            raise ReviewRequestError("path 가 필요합니다")
 
         expansion = _guard_paths(lambda: expand_paths(self.repo_root, [path], max_files=1))
         if not expansion.files:
             raise ReviewRequestError(
-                f"{path} 는 리뷰 대상이 아니다 "
+                f"{path} 는 리뷰 대상이 아닙니다 "
                 f"(지원 언어가 아니거나 exclude 규칙에 걸림). {expansion.summary()}"
             )
         result = self.pipeline_factory(self.config).run_scan(expansion.files, self.repo_root)
@@ -116,13 +116,13 @@ class ReviewService:
     def review_directory(self, path: str, recursive: bool = True) -> str:
         """폴더 아래 지원 언어 파일을 전부 감사한다."""
         if not path:
-            raise ReviewRequestError("path 가 필요하다")
+            raise ReviewRequestError("path 가 필요합니다")
 
         expansion = _guard_paths(
             lambda: expand_paths(self.repo_root, [path], recursive=recursive)
         )
         if not expansion.files:
-            raise ReviewRequestError(f"{path} 아래에 리뷰할 파일이 없다. {expansion.summary()}")
+            raise ReviewRequestError(f"{path} 아래에 리뷰할 파일이 없습니다. {expansion.summary()}")
 
         log.info("%s 감사: %s", path, expansion.summary())
         result = self.pipeline_factory(self.config).run_scan(expansion.files, self.repo_root)
@@ -139,7 +139,7 @@ class ReviewService:
         대화 한 번이 다음 사람의 실행 대상까지 바꿔 놓는다.
         """
         if not path or not path.strip():
-            raise ReviewRequestError("path 가 필요하다")
+            raise ReviewRequestError("path 가 필요합니다")
 
         previous = self.repo_root
         try:
@@ -153,15 +153,15 @@ class ReviewService:
         self.out_dir = changed.reports
         log.info("워크스페이스 변경: %s → %s", previous, changed.root)
 
-        lines = [f"워크스페이스를 {changed.root} 로 바꿨다 (이전: {previous})."]
+        lines = [f"워크스페이스를 {changed.root} 로 바꿨습니다 (이전: {previous})."]
         if not changed.is_git:
             lines.append(
-                "다만 .git 이 없다. diff 리뷰(review_diff/review_staged/"
-                "review_working_tree)는 할 수 없고 파일·폴더 감사만 된다."
+                "다만 .git 이 없습니다. diff 리뷰(review_diff/review_staged/"
+                "review_working_tree)는 할 수 없고 파일·폴더 감사만 됩니다."
             )
         lines.append(f"설정: {changed.config.source or '기본값'}")
         lines.append(f"리포트: {changed.reports}")
-        lines.append("이 서버가 살아 있는 동안만 유지된다. 설정 파일은 바뀌지 않았다.")
+        lines.append("이 서버가 살아 있는 동안만 유지됩니다. 설정 파일은 바뀌지 않았습니다.")
         return "\n".join(lines)
 
     def describe_workspace(self) -> str:
@@ -170,7 +170,7 @@ class ReviewService:
         if self.workspace is not None:
             lines[0] += f" (출처: {self.workspace.origin})"
             if not self.workspace.is_git:
-                lines.append("경고: .git 이 없다 — diff 리뷰 불가, 파일·폴더 감사만 가능")
+                lines.append("경고: .git 이 없습니다 — diff 리뷰 불가, 파일·폴더 감사만 가능")
         lines.append(f"설정: {self.config.source or '기본값'}")
         lines.append(f"리포트: {self.out_dir}")
         return "\n".join(lines)
@@ -179,7 +179,7 @@ class ReviewService:
 
     def _review_diff_text(self, diff: str, paths: list[str] | None, tool: str) -> str:
         if not diff.strip():
-            return "변경된 내용이 없다."
+            return "변경된 내용이 없습니다."
         result = self.pipeline_factory(self.config).run_diff(
             diff, self.repo_root, only_paths=paths
         )
@@ -195,9 +195,9 @@ class ReviewService:
                 lines = ["지적 사항 없음."]
             else:
                 lines = [
-                    f"리뷰가 온전히 끝나지 않았다 — 오류 {len(result.errors)}건 "
+                    f"리뷰가 온전히 끝나지 않았습니다 — 오류 {len(result.errors)}건 "
                     f"(생성 {result.generation_errors}, 검증 {result.verification_errors}). "
-                    "지적 0건은 코드가 깨끗하다는 뜻이 아니다.",
+                    "지적 0건은 코드가 깨끗하다는 뜻이 아닙니다.",
                 ]
                 lines.extend(f"  - {e.splitlines()[0]}" for e in result.errors[:3])
             lines.append(f"청크 {result.chunks_reviewed}개 검토. 전체 리포트: {report_path}")

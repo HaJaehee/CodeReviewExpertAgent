@@ -25,7 +25,7 @@ CREX.client = (function () {
     try {
       payload = text ? JSON.parse(text) : {};
     } catch (err) {
-      throw new Error('서버 응답을 해석할 수 없다: ' + text.slice(0, 200));
+      throw new Error('서버 응답을 해석할 수 없습니다: ' + text.slice(0, 200));
     }
     if (!response.ok) {
       throw new Error(payload.error || ('HTTP ' + response.status));

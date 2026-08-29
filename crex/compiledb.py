@@ -110,7 +110,7 @@ def detect_project(root: Path, explicit: Path | str | None = None) -> Project:
         if not path.is_absolute():
             path = root / path
         if not path.exists():
-            raise CompileDbError(f"{path} 가 없다.")
+            raise CompileDbError(f"{path} 가 없습니다.")
         return Project(_kind_of(path), path)
 
     cmake_lists = root / "CMakeLists.txt"
@@ -124,12 +124,12 @@ def detect_project(root: Path, explicit: Path | str | None = None) -> Project:
         if len(found) > 1:
             names = ", ".join(p.relative_to(root).as_posix() for p in found)
             raise CompileDbError(
-                f"{pattern} 가 여러 개다 ({names}). --project 로 하나를 지정하라."
+                f"{pattern} 가 여러 개입니다 ({names}). --project 로 하나를 지정하십시오."
             )
 
     raise CompileDbError(
-        f"{root} 에서 CMakeLists.txt / .sln / .vcxproj 를 찾지 못했다. "
-        f"--project 로 직접 지정하거나, --workspace 로 프로젝트 루트를 가리키라."
+        f"{root} 에서 CMakeLists.txt / .sln / .vcxproj 를 찾지 못했습니다. "
+        f"--project 로 직접 지정하거나, --workspace 로 프로젝트 루트를 가리키십시오."
     )
 
 
@@ -140,7 +140,7 @@ def _kind_of(path: Path) -> str:
     if path.name.lower() == "cmakelists.txt":
         return "cmake"
     raise CompileDbError(
-        f"{path.name} 로는 무엇을 할지 알 수 없다. .sln, .vcxproj, CMakeLists.txt 중 하나여야 한다."
+        f"{path.name} 로는 무엇을 할지 알 수 없습니다. .sln, .vcxproj, CMakeLists.txt 중 하나여야 합니다."
     )
 
 
@@ -173,8 +173,8 @@ def find_msbuild(env: Mapping[str, str] | None = None) -> Path:
         return Path(from_path)
 
     raise CompileDbError(
-        "MSBuild 를 찾지 못했다. Visual Studio(또는 Build Tools)가 설치된 장비에서 "
-        "실행하거나, 'x64 Native Tools Command Prompt' 에서 다시 시도하라."
+        "MSBuild 를 찾지 못했습니다. Visual Studio(또는 Build Tools)가 설치된 장비에서 "
+        "실행하거나, 'x64 Native Tools Command Prompt' 에서 다시 시도하십시오."
     )
 
 
@@ -199,8 +199,8 @@ def find_cmake(env: Mapping[str, str] | None = None) -> Path:
             return found[0]
 
     raise CompileDbError(
-        "cmake 를 찾지 못했다. PATH 에 넣거나, Visual Studio 설치 관리자에서 "
-        "'Windows용 C++ CMake 도구' 를 추가하라."
+        "cmake 를 찾지 못했습니다. PATH 에 넣거나, Visual Studio 설치 관리자에서 "
+        "'Windows용 C++ CMake 도구' 를 추가하십시오."
     )
 
 
@@ -352,7 +352,7 @@ def prepare_output_dir(root: Path, output_dir: Path | str | None = None) -> Path
         try:
             marker.write_text("*\n", encoding="utf-8")
         except OSError as exc:  # pragma: no cover - 권한 문제는 치명적이지 않다
-            log.debug(".gitignore 를 쓰지 못했다: %s", exc)
+            log.debug(".gitignore 를 쓰지 못했습니다: %s", exc)
     return directory
 
 
@@ -366,7 +366,7 @@ def ensure_logger() -> Path:
     dll = vendored_dir() / LOGGER_DLL
     if not dll.is_file():
         raise CompileDbError(
-            f"로거를 찾지 못했다: {dll}. 반입 번들에서 tools/ 가 빠졌을 수 있다."
+            f"로거를 찾지 못했습니다: {dll}. 반입 번들에서 tools/ 가 빠졌을 수 있습니다."
         )
     return dll
 
@@ -416,8 +416,8 @@ def generate(
         )
         if not json_path.is_file():
             raise CompileDbError(
-                f"cmake 는 끝났는데 {json_path} 가 없다. 제너레이터가 Ninja 가 맞는지, "
-                f"CMake 3.5 이상인지 확인하라."
+                f"cmake 는 끝났는데 {json_path} 가 없습니다. 제너레이터가 Ninja 가 맞는지, "
+                f"CMake 3.5 이상인지 확인하십시오."
             )
         return Result(found, out_dir, json_path, _count_entries(json_path))
 
@@ -435,7 +435,7 @@ def generate(
         target=target, verbosity=verbosity, extra=extra_args,
     )
 
-    log.info("%s 를 빌드한다. 큰 솔루션이면 오래 걸린다.", found.path.name)
+    log.info("%s 를 빌드합니다. 큰 솔루션이면 오래 걸립니다.", found.path.name)
     _run(
         command, what="MSBuild 빌드", cwd=root, capture=True,
         log_path=log_path, on_line=on_line, cancel=cancel,
@@ -443,7 +443,7 @@ def generate(
 
     if not staging.is_file():
         raise CompileDbError(
-            f"빌드는 끝났는데 {staging} 이 없다. 로거가 붙지 않았을 수 있다 — {log_path} 를 보라."
+            f"빌드는 끝났는데 {staging} 이 없습니다. 로거가 붙지 않았을 수 있습니다 — {log_path} 를 보십시오."
         )
     _rewrite_batched_commands(staging)
     staging.replace(json_path)
@@ -498,9 +498,9 @@ def _rewrite_batched_commands(json_path: Path) -> None:
             json_path.write_text(
                 json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-            log.info("묶여 있던 컴파일 명령 %d건을 파일 단위로 풀었다", changed)
+            log.info("묶여 있던 컴파일 명령 %d건을 파일 단위로 풀었습니다", changed)
     except (OSError, ValueError, TypeError) as exc:
-        log.warning("컴파일 명령 분리 실패 — 원본을 그대로 둔다: %s", exc)
+        log.warning("컴파일 명령 분리 실패 — 원본을 그대로 둡니다: %s", exc)
 
 
 def describe_status(configured: str | None, root: Path) -> dict:
@@ -524,12 +524,12 @@ def describe_status(configured: str | None, root: Path) -> dict:
         "error": None,
     }
     if not path.is_file():
-        state["error"] = f"{path} 가 없다 — 경로가 맞는지 확인하거나 다시 만들라"
+        state["error"] = f"{path} 가 없습니다 — 경로가 맞는지 확인하거나 다시 만드십시오"
         return state
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError) as exc:
-        state["error"] = f"{path} 를 읽지 못했다: {exc}"
+        state["error"] = f"{path} 를 읽지 못했습니다: {exc}"
         return state
     state["exists"] = True
     state["entries"] = len(data) if isinstance(data, list) else 0
@@ -540,9 +540,9 @@ def _count_entries(json_path: Path) -> int:
     try:
         data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError) as exc:
-        raise CompileDbError(f"{json_path} 를 읽지 못했다: {exc}") from exc
+        raise CompileDbError(f"{json_path} 를 읽지 못했습니다: {exc}") from exc
     if not isinstance(data, list):
-        raise CompileDbError(f"{json_path} 이 JSON 배열이 아니다. 생성이 중간에 끊겼을 수 있다.")
+        raise CompileDbError(f"{json_path} 이 JSON 배열이 아닙니다. 생성이 중간에 끊겼을 수 있습니다.")
     return len(data)
 
 
@@ -568,7 +568,7 @@ def _run(
         try:
             completed = subprocess.run(command, cwd=str(cwd) if cwd else None, check=False)
         except OSError as exc:
-            raise CompileDbError(f"{what} 를 실행하지 못했다 ({command[0]}): {exc}") from exc
+            raise CompileDbError(f"{what} 를 실행하지 못했습니다 ({command[0]}): {exc}") from exc
         if completed.returncode != 0:
             raise CompileDbError(
                 f"{what} 실패 (종료 코드 {completed.returncode}).\n"
@@ -629,7 +629,7 @@ def _stream(
             stderr=subprocess.STDOUT,
         )
     except OSError as exc:
-        raise CompileDbError(f"{what} 를 실행하지 못했다 ({command[0]}): {exc}") from exc
+        raise CompileDbError(f"{what} 를 실행하지 못했습니다 ({command[0]}): {exc}") from exc
 
     lines: list[str] = []
     handle = None
@@ -659,5 +659,5 @@ def _stream(
         process.wait()
 
     if cancelled:
-        raise CompileDbCancelled(f"{what} 를 중단했다.")
+        raise CompileDbCancelled(f"{what} 를 중단했습니다.")
     return lines, process.returncode

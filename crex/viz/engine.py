@@ -399,7 +399,7 @@ class RunRegistry:
         except ReviewRequestError as exc:
             run.status = "failed"
             run.error = str(exc)
-            run.tracer.emit("run.failed", error=str(exc), kind="request")
+            run.tracer.emit("run.failed", error=run.error, kind="request")
             return
         except Exception as exc:  # noqa: BLE001 - 실행 스레드에서 새어 나가면 안 된다
             log.exception("실행 %s 실패", run.id)

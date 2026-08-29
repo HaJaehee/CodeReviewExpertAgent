@@ -12,7 +12,7 @@ CREX 는 LLM 을 부르기 **전에** 정적분석기를 돌립니다. 그 결�
 없다고 멈춰서는 안 되기 때문입니다.
 
 ```
-INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
+INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없습니다
 ```
 
 다만 그만큼 근거 없는 지적이 늘어납니다. 쓰는 언어에 해당하는 것만이라도
@@ -263,8 +263,8 @@ dotnet build --nologo --no-incremental -v normal <대상>
 않습니다. 그럴 때는 이렇게 나옵니다.
 
 ```
-INFO    crex.ground: [roslyn] 건너뜀 — 빌드할 .csproj/.sln 을 정하지 못했다
-                     — grounding.dotnet_project 를 지정하라
+INFO    crex.ground: [roslyn] 건너뜀 — 빌드할 .csproj/.sln 을 정하지 못했습니다
+                     — grounding.dotnet_project 를 지정하십시오
 ```
 
 지금 무엇이 잡히는지는 `python -m crex doctor` 에 나옵니다.

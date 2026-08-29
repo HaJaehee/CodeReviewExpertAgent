@@ -81,9 +81,9 @@ def _failure_banner(result: ReviewResult) -> str:
 
     detail = ", ".join(causes) or f"오류 {len(result.errors)}건"
     return (
-        f"> ⚠️ **이 결과는 신뢰할 수 없다 — {detail}.**\n"
+        f"> ⚠️ **이 결과는 신뢰할 수 없습니다 — {detail}.**\n"
         "> 지적이 0건인 것은 코드가 깨끗해서가 아니라 파이프라인이 끝까지 돌지\n"
-        "> 못했기 때문이다. `python -m crex doctor` 로 엔드포인트를 점검하라."
+        "> 못했기 때문입니다. `python -m crex doctor` 로 엔드포인트를 점검하십시오."
     )
 
 

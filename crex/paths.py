@@ -67,7 +67,7 @@ def expand_paths(
         elif absolute.is_dir():
             candidates = sorted(absolute.rglob("*") if recursive else absolute.glob("*"))
         else:
-            raise FileNotFoundError(f"경로를 찾을 수 없다: {target}")
+            raise FileNotFoundError(f"경로를 찾을 수 없습니다: {target}")
 
         for candidate in candidates:
             if not candidate.is_file():
@@ -76,7 +76,7 @@ def expand_paths(
                 relative = candidate.relative_to(repo_root.resolve()).as_posix()
             except ValueError:
                 # 저장소 밖의 경로. 정적분석 결과와 매칭이 안 되므로 받지 않는다.
-                raise ValueError(f"저장소 밖의 경로다: {candidate}") from None
+                raise ValueError(f"저장소 밖의 경로입니다: {candidate}") from None
 
             if relative in seen:
                 continue
@@ -93,9 +93,9 @@ def expand_paths(
 
     if len(expansion.files) > max_files:
         raise TooManyFiles(
-            f"대상 파일이 {len(expansion.files)}개로 상한 {max_files}개를 넘는다. "
-            f"폴더 감사는 파일당 LLM 호출이 여러 번이라 비용이 크다. "
-            f"하위 폴더를 나눠 지정하거나 recursive 를 끄고 다시 시도하라."
+            f"대상 파일이 {len(expansion.files)}개로 상한 {max_files}개를 넘습니다. "
+            f"폴더 감사는 파일당 LLM 호출이 여러 번이라 비용이 큽니다. "
+            f"하위 폴더를 나눠 지정하거나 recursive 를 끄고 다시 시도하십시오."
         )
 
     return expansion

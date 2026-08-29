@@ -279,7 +279,7 @@ def test_zero_findings_with_errors_is_not_reported_as_clean() -> None:
     _check(not broken.healthy, "실패가 있으면 healthy 가 아니다")
     markdown = to_markdown(broken)
     _check("지적 사항 없음" not in markdown, "고장을 '지적 사항 없음'으로 보고하면 안 된다")
-    _check("신뢰할 수 없다" in markdown, f"경고가 없다:\n{markdown}")
+    _check("신뢰할 수 없습니다" in markdown, f"경고가 없다:\n{markdown}")
     _check("doctor" in markdown, "다음에 뭘 할지 알려줘야 한다")
 
     clean = ReviewResult(chunks_reviewed=3)

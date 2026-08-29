@@ -101,7 +101,7 @@ class EndpointConfig:
     def __post_init__(self) -> None:
         if self.structured_output_mode not in STRUCTURED_MODES + ("auto",):
             raise ValueError(
-                f"structured_output_mode = {self.structured_output_mode!r} 가 잘못되었다. "
+                f"structured_output_mode = {self.structured_output_mode!r} 가 잘못되었습니다. "
                 f"사용 가능: {['auto', *STRUCTURED_MODES]}"
             )
 
@@ -209,7 +209,7 @@ class LLMClient:
         except json.JSONDecodeError:
             extracted = _extract_first_json_object(raw)
             if extracted is None:
-                raise LLMError(f"JSON 파싱 실패, guided decoding 설정을 확인하라: {raw[:400]!r}")
+                raise LLMError(f"JSON 파싱 실패, guided decoding 설정을 확인하십시오: {raw[:400]!r}")
             return extracted
 
     def health(self) -> tuple[bool, str]:
@@ -275,16 +275,16 @@ class LLMClient:
                 )
             return ProbeStep(
                 f"구조화 출력 ({name})", False,
-                f"{note} — 스키마가 강제되지 않는다 (설명이 섞여 나옴). "
-                "vLLM 의 guided decoding 백엔드를 확인하라",
+                f"{note} — 스키마가 강제되지 않습니다 (설명이 섞여 나옴). "
+                "vLLM 의 guided decoding 백엔드를 확인하십시오",
             )
 
         violations = _enum_violations(parsed, schema)
         if violations:
             return ProbeStep(
                 f"구조화 출력 ({name})", False,
-                f"{note} — 요청은 통과했으나 enum 이 지켜지지 않는다: {violations[0]}. "
-                "이 상태에서는 라인 번호 환각을 막지 못한다",
+                f"{note} — 요청은 통과했으나 enum 이 지켜지지 않습니다: {violations[0]}. "
+                "이 상태에서는 라인 번호 환각을 막지 못합니다",
             )
         return ProbeStep(f"구조화 출력 ({name})", True, f"{note} — enum 준수 확인")
 
@@ -325,12 +325,12 @@ class LLMClient:
             return raw
 
         failure = StructuredOutputError(
-            "guided decoding 을 성립시키지 못했다 — 이 엔드포인트로는 리뷰가 불가능하다.\n"
+            "guided decoding 을 성립시키지 못했습니다 — 이 엔드포인트로는 리뷰가 불가능합니다.\n"
             f"  엔드포인트: {self.config.model} @ {self.config.base_url}\n"
             f"  시도: {', '.join(attempted) or '(없음)'}\n"
             f"  마지막 응답: {last}\n"
             "  vLLM 이 --guided-decoding-backend 와 함께 떠 있는지, "
-            "llm.*.structured_output_mode 설정이 서버 버전과 맞는지 확인하라."
+            "llm.*.structured_output_mode 설정이 서버 버전과 맞는지 확인하십시오."
         )
         with self._lock:
             self._structured_failed = failure
@@ -360,8 +360,8 @@ class LLMClient:
         )
         if relax:
             log.warning(
-                "스키마의 길이·개수 제약을 떼어야 통과했다. enum 은 유지되므로 라인·룰 "
-                "환각 차단은 그대로지만, 서버의 guided decoding 백엔드를 점검하라."
+                "스키마의 길이·개수 제약을 떼어야 통과했습니다. enum 은 유지되므로 라인·룰 "
+                "환각 차단은 그대로지만, 서버의 guided decoding 백엔드를 점검하십시오."
             )
 
     def _post_with_retry(self, payload: dict[str, Any]) -> str:
@@ -497,7 +497,7 @@ def _enum_violations(value: Any, schema: Any, path: str = "$") -> list[str]:
     if allowed is not None and value not in allowed:
         preview = allowed[:5]
         more = f" 외 {len(allowed) - 5}개" if len(allowed) > 5 else ""
-        return [f"{path}={value!r} 은 허용값 {preview}{more} 에 없다"]
+        return [f"{path}={value!r} 은 허용값 {preview}{more} 에 없습니다"]
 
     found: list[str] = []
     if isinstance(value, dict):

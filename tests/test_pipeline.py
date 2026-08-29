@@ -311,7 +311,7 @@ def test_unimplemented_mode_is_rejected_loudly() -> None:
     try:
         ReviewConfig(mode="ocr")
     except ValueError as exc:
-        _check("구현되지 않았다" in str(exc), f"오류 메시지가 불명확: {exc}")
+        _check("구현되지 않았습니다" in str(exc), f"오류 메시지가 불명확: {exc}")
     else:
         raise AssertionError("mode='ocr' 이 조용히 통과됨")
 

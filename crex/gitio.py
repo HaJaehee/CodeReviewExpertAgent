@@ -112,9 +112,9 @@ def _diff_gitpython(repo_root: Path, args: list[str]) -> str:
         # GitPython 은 후행 개행을 떼어낸다. 파서가 줄 단위로 읽으므로 무해하다.
         return repo.git.diff(*_BASE_ARGS, *args)
     except git.exc.InvalidGitRepositoryError as exc:
-        raise GitError(f"{repo_root} 는 git 저장소가 아니다") from exc
+        raise GitError(f"{repo_root} 는 git 저장소가 아닙니다") from exc
     except git.exc.NoSuchPathError as exc:
-        raise GitError(f"경로가 없다: {repo_root}") from exc
+        raise GitError(f"경로가 없습니다: {repo_root}") from exc
     except git.exc.GitCommandError as exc:
         raise GitError(f"git diff 실패: {_reason(exc)}") from exc
 

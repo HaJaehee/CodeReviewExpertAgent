@@ -134,9 +134,9 @@ streams it to a browser. It adds no required wheel; see
 | Tier | Module | Lines | Responsibility |
 |---|---|---|---|
 | Engine | `viz/trace.py` | 242 | Event model, `Tracer`, prompt↔chunk↔finding correlation |
-| Engine | `viz/engine.py` | 581 | `TracedPipeline` / `TracedLLMClient`, `RunRegistry` (one thread per run, plus the one build slot) |
+| Engine | `viz/engine.py` | 584 | `TracedPipeline` / `TracedLLMClient`, `RunRegistry` (one thread per run, plus the one build slot) |
 | Engine | `viz/build.py` | 266 | `compile_commands.json` builds driven from the page — calls `compiledb.generate()`, keeps a bounded log tail |
-| Application | `viz/api.py` | 534 | Transport-agnostic router. `Request → Response`, nothing else |
+| Application | `viz/api.py` | 541 | Transport-agnostic router. `Request → Response`, nothing else |
 | Application | `viz/server.py` | 264 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
 | Presentation | `viz/web/*` | 2932 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
 
@@ -168,6 +168,15 @@ treated as a failure and applied nowhere, because pointing the config at a half-
 DB is worse than having none. `RunRegistry` holds reviews and the build slot behind
 one lock, so a review and a `Rebuild` can never run against the same repository at
 once, and the workspace cannot move under either.
+
+Only a part of what the dashboard displays is written inside `crex/viz/`. A failed
+workspace switch shows `workspace.py`'s sentence; a failed build shows
+`compiledb.py`'s; a dead endpoint shows `llm.py`'s. They need no adaptation: every
+sentence addressed to the user is written in 합쇼체 wherever it is raised, because the
+same person reads the terminal and this page (see the language table in `CLAUDE.md`,
+enforced by `test_user_facing_text_is_written_in_polite_form`). LLM-authored text
+(findings, reject reasons) and the agent summary pass through untouched — showing
+those verbatim is the point of the screen.
 
 Runs execute in a daemon thread; the browser polls
 `GET /api/runs/{id}/events?since=<cursor>`. There is no server-side database —

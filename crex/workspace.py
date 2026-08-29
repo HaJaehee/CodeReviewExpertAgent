@@ -165,7 +165,7 @@ def switch(
 
 #: 설정 파일이 없을 때 만들어 넣는 머리말.
 _NEW_CONFIG_HEADER = (
-    "#  CREX 설정. 전체 항목은 crex.example.toml 과 docs/configuration.md 를 보라.\n"
+    "#  CREX 설정. 전체 항목은 crex.example.toml 과 docs/configuration.md 를 보십시오.\n"
 )
 
 _SECTION_LINE = re.compile(r"^\s*\[")
@@ -356,22 +356,22 @@ def _validate(candidate: Path | str | None, base: Path) -> tuple[Path, bool]:
     path = _expand(candidate, base)
     if not path.exists():
         raise WorkspaceError(
-            f"워크스페이스 경로가 없다: {path}\n"
-            f"  .git 이 있는 프로젝트 루트를 지정하라. 예: --workspace D:\\work\\myrepo"
+            f"워크스페이스 경로가 없습니다: {path}\n"
+            f"  .git 이 있는 프로젝트 루트를 지정하십시오. 예: --workspace D:\\work\\myrepo"
         )
     if not path.is_dir():
-        raise WorkspaceError(f"워크스페이스는 디렉터리여야 한다: {path}")
+        raise WorkspaceError(f"워크스페이스는 디렉터리여야 합니다: {path}")
 
     root = resolve_repo_root(path)
     if root != path:
         # 하위 디렉터리를 줬다. 상대경로 기준이 흔들리면 정적분석 결과와 청크가
         # 어긋나므로 항상 저장소 루트로 올린다.
-        log.info("워크스페이스를 저장소 루트로 올린다: %s → %s", path, root)
+        log.info("워크스페이스를 저장소 루트로 올립니다: %s → %s", path, root)
 
     is_git = (root / ".git").exists()
     if not is_git:
         log.warning(
-            "%s 에 .git 이 없다. diff 리뷰(review)는 할 수 없고 scan 만 동작한다.", root
+            "%s 에 .git 이 없습니다. diff 리뷰(review)는 할 수 없고 scan 만 동작합니다.", root
         )
     return root, is_git
 
@@ -380,7 +380,7 @@ def _expand(value: Path | str, base: Path) -> Path:
     """`~`, `%VAR%`, `$VAR` 를 풀고 상대경로는 base 기준으로 맞춘다."""
     text = os.path.expandvars(str(value)).strip()
     if not text:
-        raise WorkspaceError("워크스페이스 경로가 비어 있다")
+        raise WorkspaceError("워크스페이스 경로가 비어 있습니다")
     path = Path(text).expanduser()
     if not path.is_absolute():
         path = base / path

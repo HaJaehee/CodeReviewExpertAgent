@@ -311,7 +311,8 @@ def test_request_error_becomes_a_failed_run_not_a_crash() -> None:
         _check(payload["run"]["status"] == "failed", f"상태: {payload['run']['status']}")
         failures = _of_type(events, "run.failed")
         _check(failures, "실패 이벤트가 없다")
-        _check("리뷰 대상이 아니다" in failures[0]["error"], f"사유: {failures[0]['error']}")
+        # 문장은 service.py 것이지만(해라체), 화면으로 나올 때는 합쇼체다.
+        _check("리뷰 대상이 아닙니다" in failures[0]["error"], f"사유: {failures[0]['error']}")
 
 
 # --------------------------------------------------------------------------
@@ -421,7 +422,8 @@ def test_workspace_switch_validates_like_startup() -> None:
 
         bad = _post_workspace(ctx, str(Path(tmp) / "없는폴더"))
         _check(bad.status == 400, f"상태: {bad.status}")
-        _check("없다" in json.loads(bad.body)["error"], json.loads(bad.body)["error"])
+        # workspace.py 는 "없다" 라고 하지만 화면에는 "없습니다" 로 나가야 한다.
+        _check("없습니다" in json.loads(bad.body)["error"], json.loads(bad.body)["error"])
         _check(ctx.registry.repo_root == repo, "실패했는데 대상이 바뀌었다")
 
         empty = _post_workspace(ctx, "   ")
@@ -519,7 +521,7 @@ def test_compiledb_detection_failure_is_reported_not_raised() -> None:
         _check(response.status == 200, f"상태: {response.status}")
         state = json.loads(response.body)
         _check(state["project"]["found"] is None, f"없는 프로젝트를 찾았다: {state['project']}")
-        _check("찾지 못했다" in (state["project"]["error"] or ""), str(state["project"]["error"]))
+        _check("찾지 못했습니다" in (state["project"]["error"] or ""), str(state["project"]["error"]))
 
 
 def test_compiledb_success_applies_to_config_and_writes_toml() -> None:

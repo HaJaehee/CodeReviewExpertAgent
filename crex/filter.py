@@ -204,7 +204,7 @@ class ReviewFilter:
         if chunk is None:
             return FilterVerdict(
                 finding, False,
-                f"{finding.path}:{finding.line} 를 포함하는 리뷰 청크가 없다 — 라인 번호 환각",
+                f"{finding.path}:{finding.line} 를 포함하는 리뷰 청크가 없습니다 — 라인 번호 환각",
                 RejectReason.LINE_OUT_OF_RANGE, short_circuited=True,
             )
 
@@ -212,14 +212,14 @@ class ReviewFilter:
             return FilterVerdict(
                 finding, False,
                 f"지적 라인 {finding.line} 이 청크 범위 "
-                f"[{chunk.start_line}-{chunk.end_line}] 밖이다",
+                f"[{chunk.start_line}-{chunk.end_line}] 밖입니다",
                 RejectReason.LINE_OUT_OF_RANGE, short_circuited=True,
             )
 
         if self.require_changed_line and finding.line not in chunk.changed_linenos:
             return FilterVerdict(
                 finding, False,
-                f"라인 {finding.line} 은 이번 변경에 포함되지 않았다 (diff 리뷰 범위 밖)",
+                f"라인 {finding.line} 은 이번 변경에 포함되지 않았습니다 (diff 리뷰 범위 밖)",
                 RejectReason.LINE_NOT_CHANGED, short_circuited=True,
             )
 
@@ -281,7 +281,7 @@ class ReviewFilter:
 
         if not response.get("code_present", True):
             return FilterVerdict(
-                finding, False, reason or "지적이 묘사하는 코드가 스니펫에 없다",
+                finding, False, reason or "지적이 묘사하는 코드가 스니펫에 없습니다",
                 RejectReason.CODE_NOT_FOUND,
             )
 

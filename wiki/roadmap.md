@@ -67,14 +67,14 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | Changing the target at runtime (CLI command, dashboard button, MCP tool) | Complete |
 | `ReviewService` (7 MCP operations) | Complete, 20 tests, no FastMCP needed |
 | FastMCP binding (`mcp.py`), stdio + Streamable HTTP | Written; binding tests skip when FastMCP absent |
-| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 29 tests. Runs on stdlib; uvicorn optional |
+| Visualizer (`crex/viz/`, `python -m crex.viz`) | Complete, 33 tests. Runs on stdlib; uvicorn optional |
 | compile_commands.json from the dashboard (`viz/build.py`) | Complete, 9 of the visualizer's tests. Ran end to end against real MSBuild 2026-08-29 |
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
 | Korean user manual (`docs/`) | Complete, claims cross-checked against code |
 
-180 tests total, all runnable offline.
+181 tests total, all runnable offline.
 
 ## What does not exist
 

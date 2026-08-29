@@ -110,6 +110,18 @@ class FileDiff:
 # 정적분석 그라운딩
 # --------------------------------------------------------------------------
 
+#: 프롬프트에 그대로 들어가는 문장이다. 사람이 읽는 화면 글이 아니라 **모델에게
+#: 주는 지시**라, 사용자 대상 글의 합쇼체 규칙을 따르지 않는다. 이름 끝의
+#: `_PROMPT` 가 그 표시이고, 말투 검사(`tests/test_cli.py`)가 그것으로 걸러 낸다.
+STATIC_FINDING_HINT_PROMPT = (
+    "→ 검토 지침: 이 정적분석 지적이 타당하다면 해당 라인의 결함으로 적극 채택하고 "
+    "적합한 룰 ID를 부여하라."
+)
+
+#: 같은 이유로 모델에게 주는 문장이다. "아무것도 못 찾았다"를 모델이 오해하지
+#: 않도록 범위를 밝혀 준다.
+NO_STATIC_FINDINGS_PROMPT = "(없음 — 정적분석 도구가 이 범위에서 아무것도 보고하지 않았다)"
+
 
 @dataclass
 class StaticFinding:
@@ -130,7 +142,7 @@ class StaticFinding:
         return (
             f"- [{self.tool}:{self.rule_id}] {loc} (심각도: {self.severity.value})\n"
             f"  내용: {self.message}\n"
-            f"  → 검토 지침: 이 정적분석 지적이 타당하다면 해당 라인의 결함으로 적극 채택하고 적합한 룰 ID를 부여하라."
+            f"  {STATIC_FINDING_HINT_PROMPT}"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -181,7 +193,7 @@ class ReviewChunk:
 
     def render_static_findings(self) -> str:
         if not self.static_findings:
-            return "(없음 — 정적분석 도구가 이 범위에서 아무것도 보고하지 않았다)"
+            return NO_STATIC_FINDINGS_PROMPT
         return "\n".join(f.render() for f in self.static_findings)
 
     def render_ast_context(self) -> str:

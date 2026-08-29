@@ -76,12 +76,12 @@ class ReviewConfig:
     def __post_init__(self) -> None:
         if self.mode not in SUPPORTED_MODES:
             raise ValueError(
-                f"review.mode = {self.mode!r} 는 아직 구현되지 않았다. "
+                f"review.mode = {self.mode!r} 는 아직 구현되지 않았습니다. "
                 f"사용 가능: {list(SUPPORTED_MODES)}"
             )
         if self.min_severity not in SEVERITY_ORDER:
             raise ValueError(
-                f"review.min_severity = {self.min_severity!r} 가 잘못되었다. "
+                f"review.min_severity = {self.min_severity!r} 가 잘못되었습니다. "
                 f"사용 가능: {list(SEVERITY_ORDER)}"
             )
 

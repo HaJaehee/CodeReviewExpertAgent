@@ -443,7 +443,7 @@ python -m crex review -v
 ```
 INFO    crex.pipeline: 청크 25개 생성
 INFO    crex.ground: [clang-tidy] 7건 보고
-INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없다
+INFO    crex.ground: [cppcheck] 건너뜀 — cppcheck 를 PATH 에서 찾을 수 없습니다
 INFO    crex.filter: 검증 12건 → 유지 5건 (기각률 58.3%: 결정론적 3, LLM 4, 오류 0)
 ```
 

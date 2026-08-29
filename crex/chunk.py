@@ -487,9 +487,9 @@ class Chunker:
         detail = "\n".join(mismatches[:10])
         more = f"\n  ... 외 {len(mismatches) - 10}건" if len(mismatches) > 10 else ""
         message = (
-            f"diff 와 파일 내용이 {len(mismatches)}곳에서 불일치한다 ({file_diff.path}).\n"
-            f"diff 생성 이후 작업 트리가 변경되었을 가능성이 높다. "
-            f"diff 를 다시 생성하거나 해당 커밋을 체크아웃하라.\n{detail}{more}"
+            f"diff 와 파일 내용이 {len(mismatches)}곳에서 불일치합니다 ({file_diff.path}).\n"
+            f"diff 생성 이후 작업 트리가 변경되었을 가능성이 높습니다. "
+            f"diff 를 다시 생성하거나 해당 커밋을 체크아웃하십시오.\n{detail}{more}"
         )
         if self.on_mismatch == "raise":
             raise DiffSourceMismatch(message)

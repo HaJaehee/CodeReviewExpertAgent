@@ -136,7 +136,7 @@ def test_empty_diff_says_so() -> None:
         with FakeVLLM() as fake:
             text = ReviewService(repo, _config(fake.base_url), out_dir=Path(tmp) / "r").review_staged()
 
-        _check("변경된 내용이 없다" in text, f"빈 diff 안내 없음: {text}")
+        _check("변경된 내용이 없습니다" in text, f"빈 diff 안내 없음: {text}")
 
 
 def test_review_file_and_directory() -> None:
@@ -147,7 +147,7 @@ def test_review_file_and_directory() -> None:
 
             svc.review_file("src/buffer.cpp")   # 예외 없이 끝나야 한다
 
-            for bad, reason in (("src/notes.txt", "리뷰 대상이 아니다"), ("src/nope.cpp", "")):
+            for bad, reason in (("src/notes.txt", "리뷰 대상이 아닙니다"), ("src/nope.cpp", "")):
                 try:
                     svc.review_file(bad)
                 except ReviewRequestError as exc:
@@ -167,7 +167,7 @@ def test_path_filter_narrows_diff() -> None:
         with FakeVLLM(on_findings=_emit_finding) as fake:
             svc = ReviewService(repo, _config(fake.base_url), out_dir=Path(tmp) / "r")
             _check("지적 1건" in svc.review_staged(["src"]), "src 필터가 걸러버림")
-            _check("변경된 내용이 없다" in svc.review_staged(["docs"]) or
+            _check("변경된 내용이 없습니다" in svc.review_staged(["docs"]) or
                    "지적 사항 없음" in svc.review_staged(["docs"]),
                    "관계없는 경로가 통과됨")
 
@@ -327,7 +327,7 @@ def test_set_workspace_moves_repo_config_and_reports() -> None:
         )
         _check(str(second.resolve()) in message, f"요약에 새 경로가 없다: {message}")
         # 설정 파일을 조용히 고쳐 쓰지 않는다는 것을 사용자가 알아야 한다.
-        _check("설정 파일은 바뀌지 않았다" in message, f"요약: {message}")
+        _check("설정 파일은 바뀌지 않았습니다" in message, f"요약: {message}")
 
 
 def test_set_workspace_rejects_bad_path_as_user_error() -> None:
@@ -358,7 +358,7 @@ def test_set_workspace_flags_non_git_directory() -> None:
         service = ReviewService(repo, workspace.config, workspace=workspace)
 
         message = service.set_workspace(str(plain))
-        _check(".git 이 없다" in message, f"경고가 없다: {message}")
+        _check(".git 이 없습니다" in message, f"경고가 없다: {message}")
         _check("감사" in message, f"대안 안내가 없다: {message}")
 
 

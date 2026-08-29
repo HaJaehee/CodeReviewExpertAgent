@@ -34,20 +34,31 @@ Do not "clean these up" by translating.
 
 | Where | Language |
 |---|---|
-| Code comments, docstrings | **Korean** |
-| LLM prompt templates | **Korean** |
-| Log messages, CLI output, errors | **Korean** |
-| `docs/` user manual | **Korean** |
-| `crex/viz/` UI strings and the errors it raises | **Korean, 합쇼체 (~니다)** |
+| **Anything a user reads** — CLI output, argparse help, log messages, errors, `crex/viz/` UI, reports | **Korean, 합쇼체 (~니다)** |
+| `docs/` user manual | **Korean, 합쇼체** |
+| Code comments, docstrings | **Korean, 해라체** |
+| LLM prompt templates | **Korean, 해라체** |
 | MCP tool docstrings and server instructions | English |
 | `wiki/`, `AGENTS.md`, this file | English |
 | Identifiers, type names, rule IDs | English |
 
-Two of those look like exceptions but aren't. MCP tool docstrings *are* the tool
-schema the agent reads, and `AGENTS.md` is written for the same reader — both are
-addressed to a model, not to the user. The dashboard is the one surface a user reads
-as a product rather than as a terminal, so it uses 합쇼체 while CLI and log output
-keep the terse 해라체.
+The split is by **reader**, not by module. One person reads the terminal and the
+dashboard in the same afternoon; a message that speaks 해라체 in one place and 합쇼체
+in the other reads like two different products. So every sentence addressed to the
+user is 합쇼체 wherever it is raised — `workspace.py`'s errors surface in the CLI,
+in the MCP panel, and on the dashboard, and it is the same sentence in all three.
+
+The two 해라체 rows are not addressed to the user. Comments and docstrings are for
+whoever edits the file next. Prompt templates are instructions **to a model**, and
+rewording them can change what the review does — they live in constants named
+`*_PROMPT` / `*_SYSTEM` / `*_USER`, and that suffix is what the tone test uses to
+skip them. Put prompt text in such a constant rather than inline.
+
+MCP tool docstrings are English because they *are* the tool schema the agent reads,
+and `AGENTS.md` is written for that same reader.
+
+`test_user_facing_text_is_written_in_polite_form` (`tests/test_cli.py`) reads every
+runtime string in `crex/` plus the screen files and fails on a 해라체 ending.
 
 The user is a Korean-speaking engineer. Match the surrounding comment style:
 direct, explaining *why* rather than restating *what*, willing to state trade-offs
@@ -56,7 +67,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 180 tests, no LLM or network needed
+python tests/run_all.py                     # 181 tests, no LLM or network needed
 ```
 
 ```bash
@@ -227,7 +238,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 180 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 181 tests passing.
 ~8,600 lines of Python in `crex/`, plus ~2,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**

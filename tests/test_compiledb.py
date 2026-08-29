@@ -356,7 +356,7 @@ def test_status_agrees_with_what_was_built() -> None:
 
     missing = describe_status(".crex/compiledb", root)
     _check(missing["exists"] is False, f"{missing}")
-    _check("없다" in (missing["error"] or ""), str(missing["error"]))
+    _check("없습니다" in (missing["error"] or ""), str(missing["error"]))
 
     directory = root / ".crex" / "compiledb"
     directory.mkdir(parents=True)

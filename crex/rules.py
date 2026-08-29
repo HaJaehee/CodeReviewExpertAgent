@@ -26,6 +26,12 @@ DEFAULT_TAXONOMY = Path(__file__).resolve().parent.parent / "rules" / "taxonomy.
 #: 청크 하나에 주입할 룰 개수 상한. 늘리면 재현율은 오르지만 정밀도가 떨어진다.
 MAX_RULES_PER_CHUNK = 15
 
+#: OCR rule.json 의 rule 본문. 모델에게 주는 지시라 사용자 대상 글의 합쇼체
+#: 규칙을 따르지 않는다 — 이름 끝의 `_PROMPT` 가 그 표시다.
+OCR_RULE_PROMPT = (
+    "다음 항목을 중심으로 검토하라. 각 지적에는 반드시 룰 ID를 대괄호로 표기하라.\n{body}"
+)
+
 #: 언어별 glob 패턴. OCR rule.json 생성에 쓴다.
 LANGUAGE_GLOBS: dict[Language, str] = {
     Language.CPP: "**/*.{cpp,cc,cxx,c,h,hpp,hh,hxx}",
@@ -131,15 +137,7 @@ class Taxonomy:
             if not rules:
                 continue
             body = "\n".join(f"{i}. {r.render_compact()}" for i, r in enumerate(rules, 1))
-            entries.append(
-                {
-                    "path": glob,
-                    "rule": (
-                        "다음 항목을 중심으로 검토하라. 각 지적에는 반드시 룰 ID를 "
-                        f"대괄호로 표기하라.\n{body}"
-                    ),
-                }
-            )
+            entries.append({"path": glob, "rule": OCR_RULE_PROMPT.format(body=body)})
 
         payload: dict = {"rules": entries}
         if include:
@@ -168,7 +166,7 @@ def load_taxonomy(path: Path | str = DEFAULT_TAXONOMY) -> Taxonomy:
                 chunk_local=bool(raw.get("chunk_local", True)),
             )
         except (KeyError, ValueError) as exc:
-            raise ValueError(f"{path} 의 {index + 1}번째 룰이 잘못되었다: {exc}") from exc
+            raise ValueError(f"{path} 의 {index + 1}번째 룰이 잘못되었습니다: {exc}") from exc
 
         if rule.id in seen:
             # 룰 ID 는 평가·플라이휠의 조인 키다. 중복되면 통계가 조용히 뒤섞인다.
@@ -177,7 +175,7 @@ def load_taxonomy(path: Path | str = DEFAULT_TAXONOMY) -> Taxonomy:
         rules.append(rule)
 
     if not rules:
-        raise ValueError(f"{path} 에 룰이 하나도 없다")
+        raise ValueError(f"{path} 에 룰이 하나도 없습니다")
 
     return Taxonomy(rules, version=str(data.get("meta", {}).get("version", "")))
 
@@ -199,12 +197,12 @@ def _collapse(text: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m crex.rules",
-        description="룰 택소노미를 검증하고 OCR rule.json 을 생성한다.",
+        description="룰 택소노미를 검증하고 OCR rule.json 을 생성합니다.",
     )
     parser.add_argument("--taxonomy", type=Path, default=DEFAULT_TAXONOMY)
     parser.add_argument(
         "--out", type=Path, default=None,
-        help="rule.json 출력 경로 (예: .opencodereview/rule.json). 생략하면 검증만 한다.",
+        help="rule.json 출력 경로 (예: .opencodereview/rule.json). 생략하면 검증만 합니다.",
     )
     parser.add_argument(
         "--include", nargs="*", default=None,

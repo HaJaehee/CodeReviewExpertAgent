@@ -81,7 +81,7 @@ class Analyzer(ABC):
         if not self.available():
             return AnalyzerResult(
                 self.name, skipped=True,
-                skip_reason=f"{self.executable} 를 PATH 에서 찾을 수 없다",
+                skip_reason=f"{self.executable} 를 PATH 에서 찾을 수 없습니다",
             )
 
         command = self.build_command(paths)
@@ -399,7 +399,7 @@ class DotnetProjectAnalyzer(Analyzer):
 
     #: 프로젝트를 정하지 못했을 때 남길 이유. 다음 행동이 들어 있어야 한다.
     NO_PROJECT = (
-        "빌드할 .csproj/.sln 을 정하지 못했다 — grounding.dotnet_project 를 지정하라"
+        "빌드할 .csproj/.sln 을 정하지 못했습니다 — grounding.dotnet_project 를 지정하십시오"
     )
 
     def __init__(self, *, project: str | None = None, **kwargs) -> None:

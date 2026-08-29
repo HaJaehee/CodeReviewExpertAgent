@@ -100,7 +100,7 @@ def build_asgi(ctx: Context):
                 return
             body.extend(message.get("body", b""))
             if len(body) > MAX_BODY:
-                return await _send(send, error_response("요청 본문이 너무 크다", 413))
+                return await _send(send, error_response("요청 본문이 너무 큽니다", 413))
             if not message.get("more_body"):
                 break
 
@@ -149,7 +149,7 @@ def serve_stdlib(ctx: Context, host: str, port: int) -> None:
         def _dispatch(self, method: str) -> None:
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
-                self._write(error_response("요청 본문이 너무 크다", 413))
+                self._write(error_response("요청 본문이 너무 큽니다", 413))
                 return
             raw = self.rfile.read(length) if length else b""
             split = urlsplit(self.path)
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
                              "CREX_WORKSPACE → crex.toml 의 workspace → 현재 디렉터리 순")
     parser.add_argument("--config", type=Path, default=None, help="crex.toml 경로")
     parser.add_argument("--out", type=Path, default=None, help="리포트 저장 위치")
-    parser.add_argument("--stdlib", action="store_true", help="uvicorn 이 있어도 stdlib 서버를 쓴다")
+    parser.add_argument("--stdlib", action="store_true", help="uvicorn 이 있어도 stdlib 서버를 씁니다")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("워크스페이스 %s [%s]", registry.repo_root,
              registry.workspace.origin if registry.workspace else "현재 디렉터리")
     if registry.workspace is not None and not registry.workspace.is_git:
-        log.warning("%s 에 .git 이 없다 — diff 리뷰는 못 하고 파일·폴더 감사만 된다.",
+        log.warning("%s 에 .git 이 없습니다 — diff 리뷰는 못 하고 파일·폴더 감사만 됩니다.",
                     registry.repo_root)
     log.info("%s", registry.config.describe())
     log.info("리포트 %s", registry.out_dir)
@@ -230,15 +230,15 @@ def main(argv: list[str] | None = None) -> int:
     ctx.workspace_switchable = args.host in LOOPBACK
     if args.host not in LOOPBACK:
         log.warning(
-            "%s 에 바인드한다. 관제 화면에는 소스 코드와 프롬프트가 그대로 실린다.", args.host
+            "%s 에 바인드합니다. 관제 화면에는 소스 코드와 프롬프트가 그대로 실립니다.", args.host
         )
-        log.warning("원격 바인드이므로 화면에서 워크스페이스를 바꿀 수 없게 한다.")
+        log.warning("원격 바인드이므로 화면에서 워크스페이스를 바꿀 수 없게 합니다.")
 
     uvicorn = None if args.stdlib else _import_uvicorn()
     print(f"\n  http://{args.host}:{args.port}\n", file=sys.stderr)
 
     if uvicorn is None:
-        log.info("stdlib http.server 로 뜬다 (uvicorn 없음)")
+        log.info("stdlib http.server 로 뜹니다 (uvicorn 없음)")
         serve_stdlib(ctx, args.host, args.port)
         return 0
 

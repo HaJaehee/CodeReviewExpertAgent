@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
 import io
 import re
@@ -169,6 +170,114 @@ def test_markdown_survives_cp949_console() -> None:
     _check("cpp.dangling-after-realloc" in decoded, "본문이 유실됐다")
 
 
+#: 존댓말 종결. 이것으로 끝나면 검사를 통과한다.
+_POLITE_TAILS = ("니다", "십시오", "시오", "세요")
+
+#: 종결어미처럼 보이지만 아닌 것들. 조사(`저장소마다`)와 연결어미(`번이라`,
+#: `아니라`, `이에 따라`)가 같은 글자로 끝난다.
+_NOT_ENDINGS = ("마다", "이라", "아니라", "따라", "보다", "대로", "하나", "가지")
+
+
+def _plain_form_words(text: str) -> list[str]:
+    """해라체로 끝나는 낱말을 찾는다. 없으면 빈 목록."""
+    hits = []
+    for word in re.findall(r"[가-힣]+", text):
+        if len(word) < 2 or not word.endswith(("다", "라")):
+            continue
+        if word.endswith(_POLITE_TAILS) or word.endswith(_NOT_ENDINGS):
+            continue
+        hits.append(word)
+    return hits
+
+
+def _runtime_strings(path: Path):
+    """런타임 문자열만 준다 — 주석·독스트링·프롬프트 상수는 뺀다.
+
+    프롬프트는 **모델에게 주는 지시**라 사람에게 하는 말의 규칙을 따르지 않는다.
+    이름 끝의 `_PROMPT`/`_SYSTEM`/`_USER` 가 그 표시다.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    parents = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc is not None:
+                docstrings.add(doc)
+
+    def is_prompt(node) -> bool:
+        current = node
+        for _ in range(8):
+            current = parents.get(current)
+            if current is None:
+                return False
+            if isinstance(current, ast.Assign):
+                return any(
+                    isinstance(t, ast.Name) and t.id.endswith(("_PROMPT", "_SYSTEM", "_USER"))
+                    for t in current.targets
+                )
+        return False
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if node.value in docstrings or not re.search(r"[가-힣]", node.value):
+            continue
+        if is_prompt(node):
+            continue
+        yield node.lineno, node.value
+
+
+def test_user_facing_text_is_written_in_polite_form() -> None:
+    """사용자가 읽는 한국어는 전부 합쇼체다 — CLI 도, 화면도 (`CLAUDE.md` 의 언어 표).
+
+    코드 주석과 독스트링은 대상이 아니다. 개발자가 읽는 글이라 해라체가 맞고,
+    그것까지 바꾸면 diff 만 커진다. LLM 프롬프트도 아니다 — 모델에게 주는 지시는
+    말투가 아니라 지시문이고, 건드리면 리뷰 동작이 바뀔 수 있다.
+
+    한 곳이라도 반말이 남으면 사용자는 그 한 줄만 유독 다르게 읽는다.
+    """
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    checked = 0
+
+    for path in sorted((root / "crex").rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        for line, value in _runtime_strings(path):
+            checked += 1
+            words = _plain_form_words(value)
+            if words:
+                rel = path.relative_to(root).as_posix()
+                offenders.append(f"{rel}:{line} {words} — {' '.join(value.split())[:60]}")
+
+    _check(checked > 100, f"검사한 문자열이 너무 적다({checked}건) — 수집이 깨졌다")
+
+    # 화면 파일: JS 는 문자열 리터럴만, HTML 은 주석을 뺀 텍스트만 본다.
+    web = root / "crex" / "viz" / "web"
+    literal = re.compile(r"'((?:[^'\\\n]|\\.)*)'|\"((?:[^\"\\\n]|\\.)*)\"", re.S)
+    for path in sorted(web.glob("*.js")):
+        source = path.read_text(encoding="utf-8")
+        for match in literal.finditer(source):
+            value = next(g for g in match.groups() if g is not None)
+            words = _plain_form_words(value)
+            if words:
+                line = source[: match.start()].count("\n") + 1
+                offenders.append(f"web/{path.name}:{line} {words} — {value[:60]}")
+
+    html = re.sub(r"<!--.*?-->", "", (web / "index.html").read_text(encoding="utf-8"), flags=re.S)
+    for chunk in re.split(r"<[^>]*>", html):
+        words = _plain_form_words(chunk)
+        if words:
+            offenders.append(f"web/index.html {words} — {' '.join(chunk.split())[:60]}")
+
+    _check(not offenders, "사용자에게 반말을 합니다:\n" + "\n".join(offenders))
+
+
 def test_powershell_scripts_carry_a_bom() -> None:
     """한글이 든 .ps1 은 UTF-8 BOM 으로 저장해야 한다.
 
@@ -227,6 +336,7 @@ TESTS = [
     test_workspace_command_parses,
     test_scan_paths_still_parse,
     test_markdown_survives_cp949_console,
+    test_user_facing_text_is_written_in_polite_form,
     test_powershell_scripts_carry_a_bom,
     test_exit_code_signals_high_severity,
 ]

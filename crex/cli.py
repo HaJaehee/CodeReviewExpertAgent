@@ -81,46 +81,46 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     _add_global_args(common, suppress=True)
 
-    review = sub.add_parser("review", help="diff 를 리뷰한다", parents=[common])
+    review = sub.add_parser("review", help="diff 를 리뷰합니다", parents=[common])
     source = review.add_mutually_exclusive_group()
     source.add_argument("--staged", action="store_true", help="스테이징된 변경만")
-    source.add_argument("--diff-file", type=Path, help="파일에서 unified diff 를 읽는다")
+    source.add_argument("--diff-file", type=Path, help="파일에서 unified diff 를 읽습니다")
     review.add_argument("--from", dest="from_ref", default=None, help="비교 시작 ref")
     review.add_argument("--to", dest="to_ref", default="HEAD", help="비교 끝 ref")
     _add_output_args(review)
 
-    scan = sub.add_parser("scan", help="파일 전체를 감사한다 (diff 없음)", parents=[common])
+    scan = sub.add_parser("scan", help="파일 전체를 감사합니다 (diff 없음)", parents=[common])
     scan.add_argument("paths", nargs="+", help="저장소 루트 기준 상대 경로")
     _add_output_args(scan)
 
     compiledb = sub.add_parser(
         "compiledb",
-        help="compile_commands.json 을 만들고 crex.toml 에 적는다 (C++ clang-tidy 용)",
+        help="compile_commands.json 을 만들고 crex.toml 에 적습니다 (C++ clang-tidy 용)",
         parents=[common],
     )
     compiledb.add_argument("--project", type=Path, default=None,
-                           help="대상 .sln/.vcxproj/CMakeLists.txt. 생략하면 워크스페이스에서 찾는다")
+                           help="대상 .sln/.vcxproj/CMakeLists.txt. 생략하면 워크스페이스에서 찾습니다")
     compiledb.add_argument("--configuration", default="Debug", help="MSBuild 구성 (기본 Debug)")
     compiledb.add_argument("--platform", default="x64", help="MSBuild 플랫폼 (기본 x64)")
     compiledb.add_argument("--target", default=DEFAULT_TARGET,
-                           help="MSBuild 타깃 (기본 Rebuild — 증분 빌드는 반쪽짜리 DB 를 만든다)")
+                           help="MSBuild 타깃 (기본 Rebuild — 증분 빌드는 반쪽짜리 DB 를 만듭니다)")
     compiledb.add_argument("--generator", default="Ninja", help="CMake 제너레이터 (기본 Ninja)")
     compiledb.add_argument("--out-dir", type=Path, default=None,
                            help="산출물 위치 (기본 <워크스페이스>/.crex/compiledb)")
     compiledb.add_argument("--msbuild-arg", action="append", default=[], dest="extra_args",
-                           metavar="ARG", help="빌드 도구에 그대로 넘길 인자. 여러 번 쓸 수 있다")
+                           metavar="ARG", help="빌드 도구에 그대로 넘길 인자. 여러 번 쓸 수 있습니다")
     compiledb.add_argument("--no-save", action="store_true",
-                           help="crex.toml 에 compile_commands_dir 를 적지 않는다")
+                           help="crex.toml 에 compile_commands_dir 를 적지 않습니다")
 
-    sub.add_parser("doctor", help="엔드포인트·분석기·택소노미 상태를 점검한다", parents=[common])
+    sub.add_parser("doctor", help="엔드포인트·분석기·택소노미 상태를 점검합니다", parents=[common])
 
     workspace = sub.add_parser(
-        "workspace", help="리뷰 대상 저장소를 확인하거나 crex.toml 에 고정한다", parents=[common]
+        "workspace", help="리뷰 대상 저장소를 확인하거나 crex.toml 에 고정합니다", parents=[common]
     )
     workspace.add_argument("path", nargs="?", default=None,
-                           help="새 워크스페이스 경로. 생략하면 현재 상태만 보여준다")
+                           help="새 워크스페이스 경로. 생략하면 현재 상태만 보여줍니다")
     workspace.add_argument("--clear", action="store_true",
-                           help="crex.toml 에서 workspace 키를 지운다")
+                           help="crex.toml 에서 workspace 키를 지웁니다")
     return parser
 
 
@@ -164,7 +164,7 @@ def _add_global_args(parser: argparse.ArgumentParser, *, suppress: bool = False)
                         default=default_workspace,
                         help="리뷰 대상 저장소 루트 (.git 이 있는 폴더). "
                              "생략하면 CREX_WORKSPACE → crex.toml 의 workspace → "
-                             "현재 디렉터리 순으로 찾는다")
+                             "현재 디렉터리 순으로 찾습니다")
     parser.add_argument("-v", "--verbose", action="store_true", default=default_verbose)
 
 
@@ -181,7 +181,7 @@ def _cmd_review(args: argparse.Namespace, workspace: Workspace) -> int:
     if diff_text is None:
         return 2
     if not diff_text.strip():
-        print("변경된 내용이 없다.", file=sys.stderr)
+        print("변경된 내용이 없습니다.", file=sys.stderr)
         return 0
 
     log = logging.getLogger(__name__)
@@ -206,7 +206,7 @@ def _cmd_workspace(args: argparse.Namespace, workspace: Workspace) -> int:
     하는데, 그 "어딘가"를 사람이 직접 찾아 열게 하지 않는다.
     """
     if args.path and args.clear:
-        print("경로와 --clear 를 같이 줄 수 없다.", file=sys.stderr)
+        print("경로와 --clear 를 같이 줄 수 없습니다.", file=sys.stderr)
         return 2
 
     if not args.path and not args.clear:
@@ -223,8 +223,8 @@ def _cmd_workspace(args: argparse.Namespace, workspace: Workspace) -> int:
     try:
         if args.clear:
             persist_workspace(target, None)
-            print(f"{target} 에서 workspace 키를 지웠다.")
-            print("이제 현재 디렉터리에서 git 루트를 찾는다.")
+            print(f"{target} 에서 workspace 키를 지웠습니다.")
+            print("이제 현재 디렉터리에서 git 루트를 찾습니다.")
             return 0
 
         # 쓰기 전에 검증한다. 없는 경로를 설정 파일에 박아두면 다음 실행이 죽는다.
@@ -234,10 +234,10 @@ def _cmd_workspace(args: argparse.Namespace, workspace: Workspace) -> int:
         print(f"{exc}", file=sys.stderr)
         return 2
 
-    print(f"워크스페이스를 {resolved.root} 로 고정했다.")
+    print(f"워크스페이스를 {resolved.root} 로 고정했습니다.")
     print(f"  기록한 파일: {target}")
     if not resolved.is_git:
-        print("  경고: .git 이 없다 — review 는 못 하고 scan 만 된다.")
+        print("  경고: .git 이 없습니다 — review 는 못 하고 scan 만 됩니다.")
     return 0
 
 
@@ -282,9 +282,9 @@ def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
 
     if result.entries == 0:
         # 파일은 생겼는데 내용이 없다. 이걸 설정에 적으면 '설정했는데 왜 안 되지'가 된다.
-        print("\n비어 있다. 설정에 적지 않는다.", file=sys.stderr)
-        print("  - 증분 빌드였을 수 있다. 이미 최신인 파일은 기록되지 않는다.", file=sys.stderr)
-        print("  - --configuration/--platform 이 실제 빌드되는 조합인지 확인하라.", file=sys.stderr)
+        print("\n비어 있습니다. 설정에 적지 않습니다.", file=sys.stderr)
+        print("  - 증분 빌드였을 수 있습니다. 이미 최신인 파일은 기록되지 않습니다.", file=sys.stderr)
+        print("  - --configuration/--platform 이 실제 빌드되는 조합인지 확인하십시오.", file=sys.stderr)
         if result.log_path:
             print(f"  - 빌드 로그: {result.log_path}", file=sys.stderr)
         return 1
@@ -292,7 +292,7 @@ def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
     value = _config_value(result.directory, workspace.root)
 
     if args.no_save:
-        print("\n설정에 적으려면 --no-save 를 빼고 다시 돌리거나, 직접 적으라:")
+        print("\n설정에 적으려면 --no-save 를 빼고 다시 돌리거나, 직접 적으십시오:")
         print(f'  [grounding]\n  compile_commands_dir = "{value.as_posix()}"')
         return 0
 
@@ -300,14 +300,14 @@ def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
     try:
         persist_compile_commands_dir(target, value)
     except (OSError, ValueError) as exc:
-        print(f"설정에 적지 못했다: {exc}", file=sys.stderr)
+        print(f"설정에 적지 못했습니다: {exc}", file=sys.stderr)
         return 2
 
     print(f"  기록   : {target}")
     if not target.resolve().is_relative_to(workspace.root.resolve()):
-        print("  참고: 이 설정 파일은 워크스페이스 밖에 있다. 저장소마다 다른 값이므로, "
+        print("  참고: 이 설정 파일은 워크스페이스 밖에 있습니다. 저장소마다 다른 값이므로, "
               "여러 저장소를 이 파일 하나로 쓰고 있다면 "
-              f"{workspace.root / DEFAULT_CONFIG_NAMES[0]} 로 옮기라.")
+              f"{workspace.root / DEFAULT_CONFIG_NAMES[0]} 로 옮기십시오.")
     return 0
 
 
@@ -383,17 +383,17 @@ def _cmd_doctor(args: argparse.Namespace, workspace: Workspace) -> int:
             __import__(module)
             print(f"  OK  {module}")
         except ImportError:
-            print(f"  없음 {module} — 휴리스틱 폴백으로 동작한다")
+            print(f"  없음 {module} — 휴리스틱 폴백으로 동작합니다")
 
     print("\n런타임 (requirements.txt)")
     print(f"  {'OK ' if gitpython_available() else '없음'} GitPython"
-          f"{'' if gitpython_available() else ' — subprocess 폴백으로 동작한다'}")
+          f"{'' if gitpython_available() else ' — subprocess 폴백으로 동작합니다'}")
     try:
         import fastmcp
 
         print(f"  OK  fastmcp {getattr(fastmcp, '__version__', '')}")
     except ImportError:
-        print("  없음 fastmcp — `python -m crex.mcp` 를 쓸 수 없다 (CLI 는 정상)")
+        print("  없음 fastmcp — `python -m crex.mcp` 를 쓸 수 없습니다 (CLI 는 정상)")
 
     return 0 if ok else 1
 
@@ -403,7 +403,7 @@ def _compiledb_status(configured: str | None, root: Path) -> str:
     doctor 와 관제 화면이 서로 다른 기준으로 같은 설정을 평가하면 안 된다."""
     state = describe_status(configured, root)
     if state["configured"] is None:
-        return "없음 — `python -m crex compiledb` 로 만들 수 있다 (C++ 이 아니면 무시하라)"
+        return "없음 — `python -m crex compiledb` 로 만들 수 있습니다 (C++ 이 아니면 무시하십시오)"
     if state["error"]:
         return f"실패  {state['error']}"
     return f"OK  {state['path']} (엔트리 {state['entries']}개)"
@@ -422,13 +422,13 @@ def _dotnet_project_status(configured: str | None, root: Path) -> str:
         if not path.is_absolute():
             path = root / path
         if not path.exists():
-            return f"실패  {path} 가 없다 — grounding.dotnet_project 를 확인하라"
+            return f"실패  {path} 가 없습니다 — grounding.dotnet_project 를 확인하십시오"
         return f"OK  {path} (dotnet_project 설정)"
 
     found = find_dotnet_project(root)
     if found is None:
-        return ("없음 — 자동으로 정할 수 없다. C# 을 리뷰한다면 "
-                "grounding.dotnet_project 를 지정하라 (C# 이 아니면 무시하라)")
+        return ("없음 — 자동으로 정할 수 없습니다. C# 을 리뷰한다면 "
+                "grounding.dotnet_project 를 지정하십시오 (C# 이 아니면 무시하십시오)")
     return f"OK  {found} (자동 탐색)"
 
 
@@ -458,13 +458,13 @@ def _collect_diff(args: argparse.Namespace, workspace: Workspace) -> str | None:
         try:
             return args.diff_file.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            print(f"diff 파일을 읽을 수 없다: {exc}", file=sys.stderr)
+            print(f"diff 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
             return None
 
     if not workspace.is_git:
-        print(f"{workspace.root} 는 git 저장소가 아니다 (.git 이 없다). "
+        print(f"{workspace.root} 는 git 저장소가 아닙니다 (.git 이 없습니다). "
               f"--workspace 로 프로젝트 루트를 지정하거나, diff 없이 볼 것이면 "
-              f"scan 을 쓰라.", file=sys.stderr)
+              f"scan 을 쓰십시오.", file=sys.stderr)
         return None
 
     try:
@@ -490,9 +490,9 @@ def _emit(result, args: argparse.Namespace) -> int:
         # 파이프라인이 끝까지 못 갔으면 "지적 없음"으로 통과시키면 안 된다.
         # high 지적(1)과 구분되는 코드를 써서 CI 가 둘을 다르게 다룰 수 있게 한다.
         print(
-            f"\n경고: 오류 {len(result.errors)}건으로 리뷰가 온전히 끝나지 않았다 "
+            f"\n경고: 오류 {len(result.errors)}건으로 리뷰가 온전히 끝나지 않았습니다 "
             f"(생성 {result.generation_errors}, 검증 {result.verification_errors}).\n"
-            "      `python -m crex doctor` 로 엔드포인트를 점검하라.",
+            "      `python -m crex doctor` 로 엔드포인트를 점검하십시오.",
             file=sys.stderr,
         )
         for message in result.errors[:3]:

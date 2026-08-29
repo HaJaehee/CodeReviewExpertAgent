@@ -321,6 +321,7 @@ def _compiledb_state(ctx: Context, since: int) -> dict[str, Any]:
         found = detect_project(root)
         project = {"found": str(found.path), "kind": found.kind, "error": None}
     except CompileDbError as exc:
+        # 화면의 '빌드 대상' 줄에 그대로 실린다.
         project["error"] = str(exc)
 
     return {

@@ -98,7 +98,7 @@ class Pipeline:
     ) -> ReviewResult:
         result.chunks_reviewed = len(chunks)
         if not chunks:
-            log.info("리뷰할 청크가 없다")
+            log.info("리뷰할 청크가 없습니다")
             return result
 
         log.info("청크 %d개 생성", len(chunks))
@@ -127,8 +127,8 @@ class Pipeline:
             if checker.errors and not raw:
                 # 이 조합이 사고의 정체였다. 로그에만 남기면 "깨끗한 코드"로 읽힌다.
                 log.error(
-                    "청크 %d개가 모두 생성에 실패했다 — 0건은 코드가 깨끗해서가 아니다. "
-                    "`python -m crex doctor` 로 구조화 출력을 점검하라.",
+                    "청크 %d개가 모두 생성에 실패했습니다 — 0건은 코드가 깨끗해서가 아닙니다. "
+                    "`python -m crex doctor` 로 구조화 출력을 점검하십시오.",
                     len(checker.errors),
                 )
 
@@ -144,7 +144,7 @@ class Pipeline:
             result.errors.extend(review_filter.errors)
             if review_filter.errors and not kept:
                 log.error(
-                    "지적 %d건이 전부 검증 호출 실패로 기각됐다 — 검증 엔드포인트를 점검하라.",
+                    "지적 %d건이 전부 검증 호출 실패로 기각됐습니다 — 검증 엔드포인트를 점검하십시오.",
                     len(review_filter.errors),
                 )
 
@@ -270,8 +270,8 @@ class Pipeline:
                 continue
             if cls is Semgrep and not grounding.semgrep_config:
                 log.warning(
-                    "semgrep 을 요청했으나 grounding.semgrep_config 가 없다. "
-                    "폐쇄망에서 'auto' 는 동작하지 않으므로 건너뛴다."
+                    "semgrep 을 요청했으나 grounding.semgrep_config 가 없습니다. "
+                    "폐쇄망에서 'auto' 는 동작하지 않으므로 건너뜁니다."
                 )
                 continue
             seen.add(cls)
@@ -320,7 +320,7 @@ def _read(path: Path, result: ReviewResult) -> str | None:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        message = f"{path} 를 읽을 수 없다: {exc}"
+        message = f"{path} 를 읽을 수 없습니다: {exc}"
         result.errors.append(message)
         log.warning("%s", message)
         return None

@@ -126,12 +126,12 @@ class RuleChecker:
     def review_chunk(self, chunk: ReviewChunk) -> list[Finding]:
         rules = self.taxonomy.for_language(chunk.language)
         if not rules:
-            log.debug("%s: 적용할 룰이 없다 (%s)", chunk.chunk_id, chunk.language.value)
+            log.debug("%s: 적용할 룰이 없습니다 (%s)", chunk.chunk_id, chunk.language.value)
             return []
 
         allowed_lines = self._allowed_lines(chunk)
         if not allowed_lines:
-            log.debug("%s: 지적 가능한 라인이 없다", chunk.chunk_id)
+            log.debug("%s: 지적 가능한 라인이 없습니다", chunk.chunk_id)
             return []
 
         schema = build_findings_schema(

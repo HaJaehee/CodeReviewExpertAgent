@@ -102,7 +102,7 @@ _service: ReviewService | None = None
 
 def service() -> ReviewService:
     if _service is None:
-        raise ToolError("서버가 초기화되지 않았다")
+        raise ToolError("서버가 초기화되지 않았습니다")
     return _service
 
 
@@ -251,9 +251,9 @@ def set_workspace(path: str) -> str:
     if not _workspace_switchable:
         # 전송 계층의 판단이라 여기에 둔다. 서비스는 누가 부르는지 모른다.
         raise ToolError(
-            "이 서버는 루프백이 아닌 주소에 HTTP 로 열려 있어 워크스페이스를 바꿀 수 없다. "
+            "이 서버는 루프백이 아닌 주소에 HTTP 로 열려 있어 워크스페이스를 바꿀 수 없습니다. "
             "대상 변경은 이 장비의 임의 디렉터리를 열 수 있게 하는 일이라, 인증 없는 "
-            "원격 연결에서는 받지 않는다. CREX_WORKSPACE 를 주고 서버를 다시 띄우라."
+            "원격 연결에서는 받지 않습니다. CREX_WORKSPACE 를 주고 서버를 다시 띄우십시오."
         )
     return _call(lambda: service().set_workspace(path))
 
@@ -267,8 +267,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--transport", choices=("stdio", "http"), default="stdio",
-        help="stdio(기본) — 에디터가 프로세스를 자식으로 띄운다. "
-             "http — Streamable HTTP 엔드포인트를 연다",
+        help="stdio(기본) — 에디터가 프로세스를 자식으로 띄웁니다. "
+             "http — Streamable HTTP 엔드포인트를 엽니다",
     )
     parser.add_argument("--host", default=DEFAULT_HTTP_HOST,
                         help=f"http 전송의 바인드 주소 (기본 {DEFAULT_HTTP_HOST})")
@@ -293,7 +293,7 @@ def run_http(host: str, port: int, path: str) -> None:
     except ValueError as exc:
         if "transport" not in str(exc).lower():
             raise
-        log.info("이 FastMCP 는 'http' 를 모른다. 'streamable-http' 로 다시 시도한다.")
+        log.info("이 FastMCP 는 'http' 를 모릅니다. 'streamable-http' 로 다시 시도합니다.")
         mcp.run(transport="streamable-http", host=host, port=port, path=path)
 
 
@@ -343,10 +343,10 @@ def main(argv: list[str] | None = None) -> int:
     log.info("Streamable HTTP — http://%s:%d%s", args.host, args.port, args.path)
     if not _workspace_switchable:
         log.warning(
-            "%s 에 바인드한다. 이 엔드포인트에는 인증이 없다 — 붙을 수 있는 사람은 "
-            "누구나 이 저장소의 소스를 리뷰에 태울 수 있다.", args.host
+            "%s 에 바인드합니다. 이 엔드포인트에는 인증이 없습니다 — 붙을 수 있는 사람은 "
+            "누구나 이 저장소의 소스를 리뷰에 태울 수 있습니다.", args.host
         )
-        log.warning("원격 바인드이므로 set_workspace 를 막는다.")
+        log.warning("원격 바인드이므로 set_workspace 를 막습니다.")
     run_http(args.host, args.port, args.path)
     return 0
 
