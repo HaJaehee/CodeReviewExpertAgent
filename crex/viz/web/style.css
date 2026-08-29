@@ -101,21 +101,35 @@ code, pre, .mono { font-family: var(--mono); }
 
 /* ── 레이아웃 ──────────────────────────────────────────────────────── */
 
+/* 좌우가 각자 스크롤한다. 하나의 스크롤 컨테이너를 공유하면 왼쪽 위에서 굴린
+   휠이 오른쪽 본문을 밀어서, 실행 기록의 아래쪽이나 '기록 비우기' 버튼을 보려면
+   본문을 끝까지 내려야 했다. 행 높이를 minmax(0, 1fr) 로 못 박아야 두 칸이
+   컨테이너 높이를 넘지 않고 각자 넘치는 만큼만 스크롤한다. */
 .layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  align-items: start;
+  overflow: hidden;
+  align-items: stretch;
 }
 
 /* min-width:0 이 없으면 320px 트랙 안에서 긴 경로가 칸을 밀고 나간다.
-   그리드 아이템의 기본 min-width 는 auto(=내용 너비)라 축소되지 않는다. */
-.side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; min-width: 0; }
-.main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+   그리드 아이템의 기본 min-width 는 auto(=내용 너비)라 축소되지 않는다.
+   overscroll-behavior 는 끝까지 굴렸을 때 스크롤이 옆 칸으로 넘어가는 것을 막는다. */
+.side,
+.main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.side { display: flex; flex-direction: column; gap: 14px; }
+.main { display: flex; flex-direction: column; gap: 14px; }
 
 .panel {
   background: var(--bg-panel);
@@ -683,8 +697,14 @@ input::placeholder { color: var(--fg-faint); }
 .toast[data-kind="ok"] { border-left-color: var(--keep); }
 
 @media (max-width: 860px) {
-  .layout { grid-template-columns: minmax(0, 1fr); }
-  .side { position: static; }
+  /* 한 칸으로 접히면 나눌 좌우가 없다. 페이지 하나로 다시 스크롤한다. */
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    overflow: auto;
+    align-items: start;
+  }
+  .side, .main { overflow-y: visible; overscroll-behavior: auto; }
   .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stage { border-radius: 0 !important; border-left: 1px solid var(--line) !important; }
   .stage + .stage::before { display: none; }
