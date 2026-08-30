@@ -225,6 +225,39 @@ Pinned by `test_unknown_top_level_config_key_is_rejected`.
 
 ---
 
+## The config file is JSON, with two conventions layered on top
+
+`crex.json` / `.crex.json`, read with stdlib `json`. JSON has no comments and no
+multi-line strings, and this file is one a human reads and edits, so two rules fill
+those gaps without touching the parser — any JSON tool still opens the file.
+
+- **A key starting with `//` is documentation.** `strip_comment_keys()` removes them
+  recursively before validation, `extra_body` included. Skipping `extra_body` would
+  leave no way to explain the one place that most needs explaining — a model's magic
+  parameters — and no inference server accepts a parameter named `// ...`.
+- **A string setting may be written as an array of strings**, joined with `\n` on
+  read. Long prose — `system_prompt`, `prompt_template` — squeezed onto one escaped
+  line makes the file unreadable.
+
+The second rule is scoped by **declared field type**, not by an allow-list of key
+names: `_text_fields()` reads the dataclass annotations, so `analyzers: list[str]`
+stays a list and a new string setting needs no registration. Joining `analyzers`
+would fuse three analyzer names into one, and the result of that is zero findings
+with no error — indistinguishable from a clean review.
+
+The comment rule buys something TOML could not give: because documentation is
+*data*, `persist_key()` reads the file, edits it, and writes the whole thing back
+without losing it. Under TOML the writer had to splice individual lines, since
+`tomllib` is read-only and any round-trip dropped every comment.
+
+A leftover `crex.toml` is **reported, not ignored** — `_reject_legacy()` raises and
+names the file. Silently skipping it is the same failure this section is about:
+someone edits a config and nothing happens.
+
+Pinned by `tests/test_config.py`.
+
+---
+
 ## One workspace resolution rule, shared by every entry point
 
 CLI, MCP server, and dashboard all call `crex/workspace.py :: resolve()`. They each
@@ -239,7 +272,7 @@ Two properties within it are load-bearing:
   static-analyzer path is relative to that root. A shifted base makes grounding match
   nothing, silently.
 - **Config discovery for a given workspace never walks above it.** Picking up a
-  `crex.toml` from some ancestor directory means nobody can tell which file applied.
+  `crex.json` from some ancestor directory means nobody can tell which file applied.
 
 Changing the target later goes through the same door: `switch()` calls `resolve()`
 instead of re-checking anything itself. A second validation path is a second set of
@@ -247,7 +280,7 @@ rules, and the looser one wins the moment they disagree.
 
 Two more, on who may change it:
 
-- **Only the CLI writes to `crex.toml`.** The dashboard button and the MCP
+- **Only the CLI writes to `crex.json`.** The dashboard button and the MCP
   `set_workspace` tool change the running process and say so. A click or an agent
   turn must not decide what the next person's run targets.
 - **No switching mid-run.** `RunRegistry.retarget()` refuses while a run is in
@@ -351,7 +384,7 @@ tracking a moving spec; GitPython did not have to (hence the fallback).
 
 ## Korean stays Korean
 
-Code comments, docstrings, prompts, log messages, CLI output, and `docs/` are
+Code comments, docstrings, prompts, log messages, CLI output, and `docs/user_manual/` are
 Korean. Identifiers and rule IDs are English. This wiki is English.
 
 Don't translate Korean comments to English as "cleanup."

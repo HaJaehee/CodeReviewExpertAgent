@@ -262,7 +262,7 @@ def test_clang_tidy_respects_project_config() -> None:
 
 
 def test_clang_tidy_checks_configurable() -> None:
-    """crex.toml 에서 체크 목록을 바꿀 수 있어야 한다."""
+    """crex.json 에서 체크 목록을 바꿀 수 있어야 한다."""
     from crex.config import GroundingConfig
 
     config = GroundingConfig(clang_tidy_checks="-*,modernize-*")

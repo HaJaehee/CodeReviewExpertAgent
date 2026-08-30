@@ -95,7 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     compiledb = sub.add_parser(
         "compiledb",
-        help="compile_commands.json 을 만들고 crex.toml 에 적습니다 (C++ clang-tidy 용)",
+        help="compile_commands.json 을 만들고 crex.json 에 적습니다 (C++ clang-tidy 용)",
         parents=[common],
     )
     compiledb.add_argument("--project", type=Path, default=None,
@@ -110,17 +110,17 @@ def _build_parser() -> argparse.ArgumentParser:
     compiledb.add_argument("--msbuild-arg", action="append", default=[], dest="extra_args",
                            metavar="ARG", help="빌드 도구에 그대로 넘길 인자. 여러 번 쓸 수 있습니다")
     compiledb.add_argument("--no-save", action="store_true",
-                           help="crex.toml 에 compile_commands_dir 를 적지 않습니다")
+                           help="crex.json 에 compile_commands_dir 를 적지 않습니다")
 
     sub.add_parser("doctor", help="엔드포인트·분석기·택소노미 상태를 점검합니다", parents=[common])
 
     workspace = sub.add_parser(
-        "workspace", help="리뷰 대상 저장소를 확인하거나 crex.toml 에 고정합니다", parents=[common]
+        "workspace", help="리뷰 대상 저장소를 확인하거나 crex.json 에 고정합니다", parents=[common]
     )
     workspace.add_argument("path", nargs="?", default=None,
                            help="새 워크스페이스 경로. 생략하면 현재 상태만 보여줍니다")
     workspace.add_argument("--clear", action="store_true",
-                           help="crex.toml 에서 workspace 키를 지웁니다")
+                           help="crex.json 에서 workspace 키를 지웁니다")
     return parser
 
 
@@ -163,7 +163,7 @@ def _add_global_args(parser: argparse.ArgumentParser, *, suppress: bool = False)
     parser.add_argument("--workspace", "--repo", dest="workspace", type=Path,
                         default=default_workspace,
                         help="리뷰 대상 저장소 루트 (.git 이 있는 폴더). "
-                             "생략하면 CREX_WORKSPACE → crex.toml 의 workspace → "
+                             "생략하면 CREX_WORKSPACE → crex.json 의 workspace → "
                              "현재 디렉터리 순으로 찾습니다")
     parser.add_argument("-v", "--verbose", action="store_true", default=default_verbose)
 
@@ -200,7 +200,7 @@ def _cmd_scan(args: argparse.Namespace, workspace: Workspace) -> int:
 
 
 def _cmd_workspace(args: argparse.Namespace, workspace: Workspace) -> int:
-    """리뷰 대상을 확인하고, `crex.toml` 에 고정한다.
+    """리뷰 대상을 확인하고, `crex.json` 에 고정한다.
 
     `--workspace` 는 그 실행에만 적용된다. 매번 치지 않으려면 어딘가에 적어야
     하는데, 그 "어딘가"를 사람이 직접 찾아 열게 하지 않는다.
@@ -257,7 +257,7 @@ def _config_to_write(args: argparse.Namespace) -> Path:
 def _cmd_compiledb(args: argparse.Namespace, workspace: Workspace) -> int:
     """compile_commands.json 을 만들고, 만든 자리를 설정에 적는다.
 
-    두 번째 절반이 핵심이다. 파일만 만들어 주고 "이제 crex.toml 을 여세요" 하면
+    두 번째 절반이 핵심이다. 파일만 만들어 주고 "이제 crex.json 을 여세요" 하면
     거기서 절반이 떨어져 나간다 — 그래서 clang-tidy 가 반쯤 눈을 감은 채로
     돌던 것이다.
     """

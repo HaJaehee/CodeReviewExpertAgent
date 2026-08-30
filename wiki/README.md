@@ -1,7 +1,7 @@
 # CREX — Agent Orientation Wiki
 
 English reference for AI agents working on this codebase.
-The user-facing manual in [`docs/`](../docs/index.md) is Korean; this wiki is not
+The user-facing manual in [`docs/`](../docs/user_manual/index.md) is Korean; this wiki is not
 a translation of it. It covers what an agent needs to make correct changes.
 
 ## What this project is
@@ -26,7 +26,7 @@ precision deliberately and says so out loud.
 If you only read one, read [invariants.md](invariants.md). Several parts of this
 system look arbitrary but are load-bearing.
 
-For how the tool is meant to be *used*, see [`docs/workflow.md`](../docs/workflow.md).
+For how the tool is meant to be *used*, see [`docs/user_manual/workflow.md`](../docs/user_manual/workflow.md).
 It is MCP-first: developers call the review tools from Zed's agent panel, and the
 CLI is documented there only as maintainer tooling (golden set, rule tuning).
 
@@ -36,7 +36,7 @@ CLI is documented there only as maintainer tooling (golden set, rule tuning).
   (`requirements.txt`: FastMCP, GitPython). tree-sitter and GitPython both have
   working fallbacks — see [invariants.md](invariants.md).
 - **~6,137 lines** across 20 modules in `crex/`.
-- **181 tests**, all runnable without an LLM or network: `python tests/run_all.py`
+- **210 tests**, all runnable without an LLM or network: `python tests/run_all.py`
 - **41 rules** in `rules/taxonomy.toml` (C++ 14, C# 15, Python 14).
 - Entry point: `python -m crex {review|scan|doctor|workspace}`
 
@@ -47,7 +47,7 @@ This matters — don't normalize it away.
 | Where | Language |
 |---|---|
 | Code comments, docstrings | Korean |
-| `docs/` user manual | Korean |
+| `docs/user_manual/` user manual | Korean |
 | LLM prompts (system/user templates) | Korean |
 | Log messages, CLI output, error messages | Korean |
 | Identifiers, type names, rule IDs | English |
@@ -59,7 +59,7 @@ the surrounding tone: direct, explaining *why* rather than restating *what*.
 ## Orientation by task
 
 **Adding a review rule** → `rules/taxonomy.toml`, then read
-[`docs/writing-rules.md`](../docs/writing-rules.md). Rule IDs are join keys for
+[`docs/user_manual/writing-rules.md`](../docs/user_manual/writing-rules.md). Rule IDs are join keys for
 evaluation statistics; never rename one.
 
 **Changing chunking** → `crex/chunk.py`. Read the expansion-cap section in

@@ -62,7 +62,7 @@ class BuildParams:
     platform: str = "x64"
     target: str = DEFAULT_TARGET
     generator: str = "Ninja"
-    #: 만든 자리를 `crex.toml` 에 적을지. 끄면 이 서버가 사는 동안만 적용된다.
+    #: 만든 자리를 `crex.json` 에 적을지. 끄면 이 서버가 사는 동안만 적용된다.
     save: bool = True
 
     def describe(self) -> str:
@@ -151,12 +151,12 @@ def execute(
 ) -> None:
     """빌드를 돌리고, 성공하면 그 자리를 지금 설정에 꽂는다.
 
-    **만들기만 하고 끝내지 않는다.** 파일만 만들어 두고 "이제 crex.toml 을
+    **만들기만 하고 끝내지 않는다.** 파일만 만들어 두고 "이제 crex.json 을
     여세요" 하면 거기서 절반이 떨어져 나간다 — CLI 의 `compiledb` 가 만든 자리를
     바로 적는 것과 같은 이유다. 화면에서는 두 단계로 나눠 적용한다.
 
     1. 돌고 있는 설정 객체에 꽂는다. 다음 리뷰가 곧바로 그 DB 를 쓴다.
-    2. `save` 면 `crex.toml` 에도 적는다. 다음에 띄울 때도 살아 있어야 한다.
+    2. `save` 면 `crex.json` 에도 적는다. 다음에 띄울 때도 살아 있어야 한다.
 
     2번은 남의 저장소 파일을 고치는 일이라 화면에서 체크박스로 끌 수 있다.
     """
@@ -246,7 +246,7 @@ def _describe(result: Result, *, applied: str | None, saved_to: str | None) -> d
         "log_path": str(result.log_path) if result.log_path else None,
         #: 지금 설정에 꽂힌 값(`grounding.compile_commands_dir`).
         "applied": applied,
-        #: `crex.toml` 에 적었다면 그 파일.
+        #: `crex.json` 에 적었다면 그 파일.
         "saved_to": saved_to,
     }
 

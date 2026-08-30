@@ -12,7 +12,7 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 |---|---|
 | [시작하기](getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
 | [워크플로](workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
-| [설정](configuration.md) | `crex.toml` 의 모든 항목과 손대야 할 때 |
+| [설정](configuration.md) | `crex.json` 의 모든 항목과 손대야 할 때 |
 | [정적분석 도구](analyzers.md) | clang-tidy·cppcheck·ruff 설치, 라이선스, 반입 |
 | [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
 | [평가와 튜닝](evaluation.md) | 골든셋 만들기, KBI/FAR 해석, 룰 폐기 |
@@ -25,7 +25,7 @@ Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어
 ## 30초 요약
 
 ```bash
-cp crex.example.toml crex.toml  # 엔드포인트 주소만 고치면 됩니다
+cp crex.example.json crex.json  # 엔드포인트 주소만 고치면 됩니다
 python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
 python -m crex review --staged  # 스테이징된 변경 리뷰
 ```

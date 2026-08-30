@@ -22,10 +22,13 @@ confidently invent line numbers, APIs, and defects.
 - [`wiki/invariants.md`](wiki/invariants.md) — **do not break these**
 - [`wiki/roadmap.md`](wiki/roadmap.md) — what exists, what doesn't, what's next
 
-[`docs/`](docs/index.md) is the Korean end-user manual. Don't duplicate it in the wiki.
-[`docs/workflow.md`](docs/workflow.md) is the MCP/Zed usage flow — which tool gets
+[`docs/user_manual/`](docs/user_manual/index.md) is the Korean end-user manual.
+Don't duplicate it in the wiki. `python tools/render_docs.py` renders it to
+`docs/user_manual_html/` (stdlib only, self-contained pages) and fails on a
+broken cross-link.
+[`docs/user_manual/workflow.md`](docs/user_manual/workflow.md) is the MCP/Zed usage flow — which tool gets
 called by which phrasing, and what to do with a finding.
-[`docs/visualizer.md`](docs/visualizer.md) is the dashboard manual. Maintainer-only work
+[`docs/user_manual/visualizer.md`](docs/user_manual/visualizer.md) is the dashboard manual. Maintainer-only work
 (golden set, rule tuning) is a short section at the end pointing elsewhere.
 
 ## Language conventions
@@ -35,7 +38,7 @@ Do not "clean these up" by translating.
 | Where | Language |
 |---|---|
 | **Anything a user reads** — CLI output, argparse help, log messages, errors, `crex/viz/` UI, reports | **Korean, 합쇼체 (~니다)** |
-| `docs/` user manual | **Korean, 합쇼체** |
+| `docs/user_manual/` user manual | **Korean, 합쇼체** |
 | Code comments, docstrings | **Korean, 해라체** |
 | LLM prompt templates | **Korean, 해라체** |
 | MCP tool docstrings and server instructions | English |
@@ -67,7 +70,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 181 tests, no LLM or network needed
+python tests/run_all.py                     # 210 tests, no LLM or network needed
 ```
 
 ```bash
@@ -79,11 +82,11 @@ python -m crex review --from main --to HEAD  # diff review
 python -m crex review --staged --out reports/
 python -m crex scan src/legacy.cpp           # whole-file audit, no diff
 python -m crex review --workspace D:/work/repo --staged   # target a repo elsewhere
-python -m crex workspace D:/work/repo         # pin it in crex.toml (--clear to unpin)
+python -m crex workspace D:/work/repo         # pin it in crex.json (--clear to unpin)
 ```
 
 ```bash
-python -m crex compiledb                     # compile_commands.json, and write it into crex.toml
+python -m crex compiledb                     # compile_commands.json, and write it into crex.json
 python -m crex compiledb --configuration Release --project src/App.vcxproj
 ```
 
@@ -96,6 +99,11 @@ python -m crex.mcp --transport http   # Streamable HTTP, 127.0.0.1:18766/mcp
 ```bash
 python -m crex.viz  # pipeline dashboard, http://127.0.0.1:18765
                     # uvicorn if installed, stdlib otherwise
+```
+
+```bash
+python tools/render_docs.py           # docs/user_manual/ → docs/user_manual_html/
+python tools/render_docs.py --check   # cross-links and anchors only, writes nothing
 ```
 
 ```bash
@@ -132,7 +140,7 @@ git diff → chunk → ground → generate → filter → report
 - **report** (`crex/report.py`) — Markdown / SARIF 2.1.0 / JSON.
 
 `crex/compiledb.py` builds `compile_commands.json` for the target repository and
-writes the path into `crex.toml` itself — CMake by configuring with Ninja, MSBuild by
+writes the path into `crex.json` itself — CMake by configuring with Ninja, MSBuild by
 building with a vendored logger DLL attached (`tools/msbuild-compiledb/`, MIT;
 prebuilt, not built on site). It exists because clang-tidy without a compile DB is
 half-blind, and because the procedure differs per project format — one command
@@ -141,14 +149,14 @@ replaces a page of instructions.
 `crex/workspace.py` decides *which* repository is being reviewed. CREX does not have
 to sit inside the target repo — one installed copy (one import bundle to keep intact)
 serves many repositories. CLI, MCP server, and dashboard all resolve it here so they
-cannot drift apart: `--workspace` > `CREX_WORKSPACE`/`CREX_REPO` > `crex.toml`'s
+cannot drift apart: `--workspace` > `CREX_WORKSPACE`/`CREX_REPO` > `crex.json`'s
 `workspace` > git root of the current directory. When the workspace is set that way and
-no config is named, `<workspace>/crex.toml` wins over the one next to CREX — per-repo
+no config is named, `<workspace>/crex.json` wins over the one next to CREX — per-repo
 `compile_commands_dir` and `dotnet_project` differ.
 
 It can also be changed mid-run — `switch()` behind the dashboard's 변경 button and the
 MCP `set_workspace` tool, `persist_workspace()` behind `python -m crex workspace`. Only
-the CLI command writes to `crex.toml`; a click or an agent turn must not change what the
+the CLI command writes to `crex.json`; a click or an agent turn must not change what the
 next person's run targets. The dashboard refuses a switch while a review is in flight
 (one report would mix two repositories) and when bound to a non-loopback address (the
 page has no auth, and switching turns "this repo" into "any directory").
@@ -175,7 +183,7 @@ user back to the terminal before the screen is useful. It calls the CLI's own
 `compiledb.generate()` and supplies only the two callbacks the CLI leaves empty
 (`on_line`, `cancel`) — the DB built from the page must be the DB built from the
 command line. On success the directory goes into the live `Config` and, unless the
-page turned it off, into the workspace's `crex.toml` via `repo_config_path()`; an
+page turned it off, into the workspace's `crex.json` via `repo_config_path()`; an
 empty DB is a failure and is applied nowhere. Reviews and builds share one lock in
 `RunRegistry`, so a `Rebuild` and a review never touch the same repository at once.
 
@@ -198,6 +206,12 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
   appears not to work. This now covers top-level keys too: `workspase` must fail
   loudly, because silently ignoring it points the review at a different repository.
+- **Config is JSON, with two conventions** — a key starting with `//` is
+  documentation (`strip_comment_keys()`, `extra_body` included); a string setting
+  may be written as an array of strings, joined with `\n`. The second is scoped by
+  **declared field type**, never by a list of key names — `analyzers: list[str]`
+  must stay a list, and fusing analyzer names yields zero findings with no error.
+  A leftover `crex.toml` is reported, not ignored.
 - **Core stays dependency-free** — only `crex/mcp.py` may require a wheel (FastMCP).
   `python -m crex review|scan|doctor`, `python -m crex.viz`, and `tests/run_all.py`
   must work with nothing installed; each wheel costs a security review on every
@@ -212,7 +226,7 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 ## Working style in this repo
 
 **Verify claims against code.** Documentation drift is a real failure here.
-`docs/` was cross-checked against the source (config keys, analyzer names, enum
+`docs/user_manual/` was cross-checked against the source (config keys, analyzer names, enum
 values, defaults, rule counts, anchor links) and two dead settings were found and
 fixed during that pass. Do the same for anything you add.
 
@@ -222,7 +236,7 @@ development. `tests/test_pipeline.py` builds a real temporary git repo and uses 
 
 **Rules go in one at a time.** Add a rule, run the golden set, compare. Batching
 five means you can't tell which one raised FAR. See
-[`docs/writing-rules.md`](docs/writing-rules.md).
+[`docs/user_manual/writing-rules.md`](docs/user_manual/writing-rules.md).
 
 **The version lives in exactly two places.** `crex/__init__.py :: __version__` is
 the source; `README.md` is the one copy a human maintains. CLI (`--version`,
@@ -238,7 +252,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 181 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 210 tests passing.
 ~8,600 lines of Python in `crex/`, plus ~2,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**
@@ -262,8 +276,8 @@ evaluation harness, MCP server, visualizer. 41 rules. 181 tests passing.
   real — a passing test proves the parser, not the tool.
 - **`crex compiledb`'s CMake path has not run end to end on Windows.** The MSBuild
   path now has (2026-08-27: real `.vcxproj`, MSBuild 17.14.51, logger attached,
-  2 entries, `crex.toml` written), including from the dashboard (2026-08-29: real
-  `.vcxproj` through `POST /api/compiledb`, 1 entry, log streamed, `crex.toml`
+  2 entries, `crex.json` written), including from the dashboard (2026-08-29: real
+  `.vcxproj` through `POST /api/compiledb`, 1 entry, log streamed, `crex.json`
   written, config applied in-process). `tests/test_compiledb.py` covers the CMake route
   but skips unless `cmake` and `ninja` are on `PATH` — Visual Studio ships both and
   puts neither there, so the skip is a false negative. Configuring with `-G Ninja`

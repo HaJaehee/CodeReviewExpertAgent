@@ -79,8 +79,8 @@ catches servers that accept the schema and ignore it.
 | `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
 | `crex/config.py` | 234 | TOML config loading with unknown-key rejection (sections *and* top level) |
 | `crex/cli.py` | 507 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
-| `crex/compiledb.py` | 645 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.toml`. Optional `on_line`/`cancel` callbacks let the dashboard stream and stop a build without re-implementing it |
-| `crex/workspace.py` | 404 | Which repository is under review — resolve, switch at runtime, pin to `crex.toml`. One rule shared by CLI, MCP, and dashboard |
+| `crex/compiledb.py` | 645 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.json`. Optional `on_line`/`cancel` callbacks let the dashboard stream and stop a build without re-implementing it |
+| `crex/workspace.py` | 404 | Which repository is under review — resolve, switch at runtime, pin to `crex.json`. One rule shared by CLI, MCP, and dashboard |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
 | `crex/service.py` | 268 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
@@ -105,7 +105,7 @@ CREX does not have to live inside the repository it reviews, and in an air-gappe
 setup it should not: one imported copy stays verifiable, many copies do not. The
 working directory is CREX's own root; the target is named separately.
 
-    --workspace  >  CREX_WORKSPACE / CREX_REPO  >  crex.toml `workspace`  >  git root of cwd
+    --workspace  >  CREX_WORKSPACE / CREX_REPO  >  crex.json `workspace`  >  git root of cwd
 
 `crex/workspace.py` returns a `Workspace` (root, config, reports dir, origin,
 `is_git`) and is the *only* place that reads those environment variables — CLI, MCP
@@ -113,7 +113,7 @@ server, and dashboard used to each read them separately, which is exactly how th
 entry points end up reviewing three different repositories. A subdirectory argument
 is promoted to the git root, because every path in a chunk and every static-analyzer
 finding is relative to that root. When the workspace comes from an argument or the
-environment and no config file is named, `<workspace>/crex.toml` wins over CREX's own
+environment and no config file is named, `<workspace>/crex.json` wins over CREX's own
 — per-repository `compile_commands_dir` and `dotnet_project` differ — and the search
 never walks above the workspace.
 
@@ -122,7 +122,7 @@ than re-implementing its checks, so the dashboard button and the MCP `set_worksp
 tool cannot be a looser path in than startup was. Whatever the user pinned explicitly
 (`--config`, `--out`) follows the switch; everything else follows the new workspace.
 Only `persist_workspace()` — the `python -m crex workspace` command — writes to
-`crex.toml`; a dashboard click or an agent turn stays in-process, because neither
+`crex.json`; a dashboard click or an agent turn stays in-process, because neither
 should decide what the next person's run targets.
 
 ### `crex/viz/` — the observability surface
@@ -162,7 +162,7 @@ polled through `GET /api/compiledb?since=<cursor>`). It calls the same
 `compiledb.generate()` the CLI does and only supplies the two callbacks the CLI
 leaves empty — a DB built from the page and one built from the terminal must be the
 same DB. On success the built directory is set on the live `Config` object, and —
-unless the page turned it off — written to the workspace's `crex.toml` through
+unless the page turned it off — written to the workspace's `crex.json` through
 `repo_config_path()`, the same file the CLI's `compiledb` picks. An empty DB is
 treated as a failure and applied nowhere, because pointing the config at a half-filled
 DB is worse than having none. `RunRegistry` holds reviews and the build slot behind
@@ -213,7 +213,7 @@ FilterVerdict:
 
 `ReviewResult.reject_rate` is the health signal to watch. 40–60% is normal;
 outside that range something is wrong (see
-[`docs/troubleshooting.md`](../docs/troubleshooting.md)).
+[`docs/user_manual/troubleshooting.md`](../docs/user_manual/troubleshooting.md)).
 
 ## Chunking details
 

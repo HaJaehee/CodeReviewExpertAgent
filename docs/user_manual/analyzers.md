@@ -82,14 +82,14 @@ clang-tidy 는 컴파일 명령을 알아야 헤더를 찾습니다. 없으면 �
 python -m crex compiledb
 ```
 
-워크스페이스에서 CMake/MSBuild 프로젝트를 찾아 만들고, 나온 자리를 `crex.toml` 의
+워크스페이스에서 CMake/MSBuild 프로젝트를 찾아 만들고, 나온 자리를 `crex.json` 의
 `compile_commands_dir` 에 적는 것까지 합니다. 다음 리뷰부터 바로 적용됩니다.
 
 ```
 D:\work\repo\.crex\compiledb\compile_commands.json
   대상   : msbuild: D:\work\repo\App.sln
   엔트리 : 412개
-  기록   : D:\work\repo\crex.toml
+  기록   : D:\work\repo\crex.json
 ```
 
 산출물은 `<저장소>/.crex/compiledb/` 에 들어갑니다. 그 폴더는 스스로를 git 에서
@@ -126,7 +126,7 @@ compile_commands.json (C++ clang-tidy)
 **MSBuild 프로젝트**(`.sln`/`.vcxproj`)면 MSBuild 로거를 붙여 빌드하면서 실제
 `cl.exe` 호출을 기록합니다. property sheet·매크로·상속된 include 경로가 전부
 반영된 정확한 결과가 나옵니다. 로거는 빌드된 DLL 로 함께 담겨 있어 그대로
-실행됩니다 ([`tools/msbuild-compiledb/`](../tools/msbuild-compiledb/README.md), MIT).
+실행됩니다 ([`tools/msbuild-compiledb/`](../../tools/msbuild-compiledb/README.md), MIT).
 
 MSBuild 쪽에는 알아둘 것이 둘 있습니다.
 
@@ -174,16 +174,17 @@ MSBuild 프로젝트를 직접 다루겠다면 선택지가 셋입니다. `crex 
 어느 쪽이든 만든 **디렉터리**를 설정에 적습니다. 상대 경로는 리뷰 대상 저장소
 루트 기준입니다.
 
-```toml
-[grounding]
-compile_commands_dir = "build"
+```json
+{
+  "grounding": { "compile_commands_dir": "build" }
+}
 ```
 
 #### MSVC 플래그와 clang-tidy
 
 엔트리의 컴파일러가 `cl.exe` 면 clang 툴링이 알아서 CL 드라이버 모드로 붙습니다.
 그래도 `/ZI`, `/Gm`, C++/CLI, 일부 PCH 옵션에서는 clang-tidy 가 오류를 냅니다.
-`crex.toml` 에는 clang-tidy 추가 인자를 넣는 설정이 없으니, 이때는 저장소의
+`crex.json` 에는 clang-tidy 추가 인자를 넣는 설정이 없으니, 이때는 저장소의
 `.clang-tidy` 에 `ExtraArgs` / `ExtraArgsBefore` 로 넣으세요.
 
 여기까지가 부담스럽다면 clang-tidy 를 포기하고 cppcheck 만 쓰는 것도 나쁘지
@@ -310,9 +311,12 @@ dotnet tool install -g roslynator.dotnet.cli
 > 참조하는 분석기를 돌립니다. 아무것도 참조하지 않는 프로젝트라면 설치해도
 > 0건이 나옵니다.
 
-```toml
-[grounding]
-analyzers = ["clang-tidy", "cppcheck", "roslyn", "ruff", "mypy", "bandit", "roslynator"]
+```json
+{
+  "grounding": {
+    "analyzers": ["clang-tidy", "cppcheck", "roslyn", "ruff", "mypy", "bandit", "roslynator"]
+  }
+}
 ```
 
 > `analyzers` 를 비우면 기본 6종이 전부 돕니다. **이름을 하나라도 적으면 적은
@@ -358,9 +362,10 @@ mypy 는 타입 힌트가 거의 없는 코드베이스에서는 얻는 게 적�
 git clone --depth 1 https://github.com/semgrep/semgrep-rules /tmp/semgrep-rules
 ```
 
-```toml
-[grounding]
-semgrep_config = "/opt/semgrep-rules"
+```json
+{
+  "grounding": { "semgrep_config": "/opt/semgrep-rules" }
+}
 ```
 
 지정하지 않으면 semgrep 은 아예 실행되지 않습니다. 다른 분석기는 그대로 돕니다.

@@ -72,9 +72,9 @@ configuration is ready. Grounding and ReviewFilter are reusable either way.
 | git access (GitPython + subprocess fallback) | Complete |
 | Path expansion + diff path filtering | Complete |
 | Golden-set evaluation harness | Complete, 7 metric tests |
-| Korean user manual (`docs/`) | Complete, claims cross-checked against code |
+| Korean user manual (`docs/user_manual/`) | Complete, claims cross-checked against code |
 
-181 tests total, all runnable offline.
+210 tests total, all runnable offline.
 
 ## What does not exist
 
@@ -96,7 +96,7 @@ tool selection are all unverified. First run inside the network should be
 
 **A real MSBuild under `crex compiledb`.** The CMake path is exercised end to end
 in CI (configure with Ninja, read back the entries, check the value written to
-`crex.toml`). The MSBuild path — vswhere discovery, building the vendored logger
+`crex.json`). The MSBuild path — vswhere discovery, building the vendored logger
 with the VS toolchain, attaching it to a build — is tested only up to command
 assembly, because Windows and MSBuild do not exist in this repo's CI. Two choices
 there are deliberate and worth re-measuring on the first real run: `/t:Rebuild`
@@ -108,7 +108,7 @@ against the number of .cpp files actually built.
 **OCR comparison.** `review.mode = "ocr"` raises rather than running.
 
 **Outdated Rate.** The flywheel metric — whether flagged lines get modified in later
-commits. Documented in `docs/evaluation.md` as a Phase 4 item and explicitly marked
+commits. Documented in `docs/user_manual/evaluation.md` as a Phase 4 item and explicitly marked
 as not implemented.
 
 **Path-scoped rules in native mode.** OCR's `rule.json` supports per-glob rules;

@@ -78,47 +78,53 @@ enum 에 넣는다. 모델은 그 밖의 토큰을 생성할 수 없다. 사후 
 에이전트가 도구를 안 부르고 직접 리뷰해 버리는 게 가장 흔한 문제다.
 [`AGENTS.md`](AGENTS.md) 를 리뷰 대상 저장소 루트에 복사하면 대부분 해결된다.
 
-전체 흐름과 담당자 작업(골든셋·룰 튜닝)은 [워크플로 문서](docs/workflow.md)에 있다.
-설정은 [Zed 연동](docs/operations.md#zed-연동-mcp)을 보라.
+전체 흐름과 담당자 작업(골든셋·룰 튜닝)은 [워크플로 문서](docs/user_manual/workflow.md)에 있다.
+설정은 [Zed 연동](docs/user_manual/operations.md#zed-연동-mcp)을 보라.
 
 ---
 
 ## 문서
 
-자세한 사용법은 [`docs/`](docs/index.md) 에 있습니다.
+자세한 사용법은 [`docs/user_manual/`](docs/user_manual/index.md) 에 있습니다.
+마크다운 뷰어가 없는 장비에서는 HTML 로 뽑아서 보십시오 — 외부 패키지도,
+인터넷도 필요 없습니다.
+
+```bash
+python tools/render_docs.py   # → docs/user_manual_html/index.html
+```
 
 | | |
 |---|---|
-| [시작하기](docs/getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
-| [워크플로](docs/workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
-| [설정](docs/configuration.md) | `crex.toml` 전체 항목 |
-| [정적분석 도구](docs/analyzers.md) | clang-tidy·cppcheck·ruff 설치, 라이선스, 반입 |
-| [룰 작성법](docs/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
-| [평가와 튜닝](docs/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
-| [관제 화면](docs/visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 보기 |
-| [반입](docs/transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
-| [운영](docs/operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
-| [문제 해결](docs/troubleshooting.md) | 증상별 원인과 조치 |
-| [동작 원리](docs/internals.md) | 내부 구조와 설계 의도 |
+| [시작하기](docs/user_manual/getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
+| [워크플로](docs/user_manual/workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
+| [설정](docs/user_manual/configuration.md) | `crex.json` 전체 항목 |
+| [정적분석 도구](docs/user_manual/analyzers.md) | clang-tidy·cppcheck·ruff 설치, 라이선스, 반입 |
+| [룰 작성법](docs/user_manual/writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
+| [평가와 튜닝](docs/user_manual/evaluation.md) | 골든셋, KBI/FAR, 룰 폐기 |
+| [관제 화면](docs/user_manual/visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 보기 |
+| [반입](docs/user_manual/transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
+| [운영](docs/user_manual/operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
+| [문제 해결](docs/user_manual/troubleshooting.md) | 증상별 원인과 조치 |
+| [동작 원리](docs/user_manual/internals.md) | 내부 구조와 설계 의도 |
 
 ## 빠른 시작
 
 ```bash
 python -m crex --version        # crex 0.1
-cp crex.example.toml crex.toml  # 엔드포인트·모델명 수정
+cp crex.example.json crex.json  # 엔드포인트·모델명 수정
 python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
 python -m crex review --from HEAD~1 --to HEAD
 ```
 
 CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은 한 자리에 두고
-`--workspace` 로 대상만 가리킵니다. 매번 치기 싫으면 `crex.toml` 에
+`--workspace` 로 대상만 가리킵니다. 매번 치기 싫으면 `crex.json` 에
 `workspace = "D:/work/myrepo"` 를 적거나 `CREX_WORKSPACE` 를 씁니다.
 
 ```bash
 cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
 
-python -m crex workspace D:\work\myrepo   # crex.toml 에 고정 (--clear 로 해제)
+python -m crex workspace D:\work\myrepo   # crex.json 에 고정 (--clear 로 해제)
 python -m crex workspace                  # 지금 무엇을 보고 있나
 ```
 
@@ -135,7 +141,7 @@ python -m crex scan src/legacy.cpp    # diff 없이 전체 파일 감사
 
 C++ 저장소라면 처음 한 번 이것도 돌립니다. clang-tidy 가 헤더를 찾으려면
 `compile_commands.json` 이 있어야 하는데, CMake 든 Visual Studio 든 이 명령이
-만들고 `crex.toml` 에 적어줍니다.
+만들고 `crex.json` 에 적어줍니다.
 
 ```bash
 python -m crex compiledb
@@ -158,7 +164,7 @@ python -m crex.mcp --transport http   # Streamable HTTP — http://127.0.0.1:187
 ```
 
 HTTP 엔드포인트에는 인증이 없습니다. 루프백에 묶어 두거나 접근 제어가 있는 망
-안에서만 여세요 — [운영](docs/operations.md#streamable-http-엔드포인트) 참고.
+안에서만 여세요 — [운영](docs/user_manual/operations.md#streamable-http-엔드포인트) 참고.
 
 테스트 (외부 의존 없음, LLM 불필요):
 
@@ -205,7 +211,7 @@ python -m crex doctor    # 무엇이 있고 무엇이 없는지 한 화면에
 
 내려받는 곳, 폐쇄망 반입 절차(해시 대조 포함), `compile_commands.json` 이 왜
 필요한지, semgrep 룰팩의 별도 라이선스까지는
-**[정적분석 도구 문서](docs/analyzers.md)** 에 있습니다.
+**[정적분석 도구 문서](docs/user_manual/analyzers.md)** 에 있습니다.
 
 하나만 고르라면 쓰는 언어의 도구 하나입니다 — C++ 은 cppcheck, Python 은 ruff 가
 설치 비용 대비 효과가 가장 큽니다.
@@ -218,19 +224,19 @@ python -m crex doctor    # 무엇이 있고 무엇이 없는지 한 화면에
 CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `requirements.txt` 가
 필요하다.
 
-- [ ] Python 3.11 이상 확인 (`tomllib` 이 3.11부터 stdlib)
+- [ ] Python 3.11 이상 확인 (룰 택소노미를 읽는 `tomllib` 이 3.11부터 stdlib)
 - [ ] `crex/`, `rules/`, `eval/`, `tests/`, `wiki/`, `docs/` 디렉터리 복사
-- [ ] `crex.example.toml` → `crex.toml` 로 복사 후 엔드포인트 수정
+- [ ] `crex.example.json` → `crex.json` 로 복사 후 엔드포인트 수정
 - [ ] `python tests/run_all.py` 로 반입 무결성 확인
 - [ ] `python -m crex doctor` 로 엔드포인트·분석기 상태 확인
 - [ ] vLLM 이 guided decoding 을 지원하는지 확인 — `doctor` 의 LLM 항목은
       **연결·모델**과 **구조화 출력** 두 줄로 나온다. 둘 다 OK 여야 한다.
       연결만 OK 면 리뷰는 전 청크가 실패해 지적이 0건이 된다
-      ([문제 해결](docs/troubleshooting.md#지적이-항상-0건입니다))
+      ([문제 해결](docs/user_manual/troubleshooting.md#지적이-항상-0건입니다))
 - [ ] (선택) MCP 서버를 쓸 장비에만 `pip install -r requirements.txt`
 - [ ] (선택) tree-sitter wheel 반입 — `requirements-optional.txt` 참고
 - [ ] (선택) 정적분석 도구 반입 — clang-tidy / cppcheck / ruff 등,
-      [설치 가이드](docs/analyzers.md) 참고. 없으면 그 분석기만 건너뛴다
+      [설치 가이드](docs/user_manual/analyzers.md) 참고. 없으면 그 분석기만 건너뛴다
 - [ ] (선택) Semgrep 룰팩 반입 — `"auto"` 는 폐쇄망에서 동작하지 않는다
 - [ ] C++ 이라면 `python -m crex compiledb` 로 `compile_commands.json` 생성
       (CMake·MSBuild 모두 처리한다. 없으면 clang-tidy 가 절반쯤 눈을 감는다)

@@ -16,13 +16,13 @@ CREX 는 반입 절차를 거쳐 한 자리에 풀어두는 물건이고, 리뷰
 |---|---|---|
 | 1 | 명령줄 인자 | `--workspace D:\\work\\myrepo` (`--repo` 도 같다) |
 | 2 | 환경변수 | `CREX_WORKSPACE`, 이전 이름 `CREX_REPO` |
-| 3 | 설정 파일 | `crex.toml` 의 `workspace = "..."` |
+| 3 | 설정 파일 | `crex.json` 의 `"workspace": "..."` |
 | 4 | 없으면 | 현재 디렉터리에서 git 루트 탐색 (예전 동작) |
 
 ## 설정 파일은 워크스페이스 것을 먼저 본다
 
 1·2번으로 워크스페이스가 정해졌고 `--config` 도 `CREX_CONFIG` 도 없으면,
-`<워크스페이스>/crex.toml` 을 먼저 찾는다. 저장소마다 `compile_commands_dir`,
+`<워크스페이스>/crex.json` 을 먼저 찾는다. 저장소마다 `compile_commands_dir`,
 `dotnet_project`, 쓸 분석기가 다르기 때문이다. 없으면 예전처럼 현재
 디렉터리에서 위로 올라가며 찾는다 (= CREX 루트의 설정).
 
@@ -35,17 +35,17 @@ CLI·MCP 서버·관제 화면 세 진입점이 전부 이 모듈 하나를 쓴�
 MCP 의 `set_workspace`). 처음 정할 때와 **완전히 같은 검증**을 거친다 — 여기서만
 느슨하면 "처음엔 거부당했는데 바꾸기로는 통과하는" 경로가 생긴다.
 
-`persist_workspace()` 는 `crex.toml` 의 최상위 `workspace` 키를 갱신한다
+`persist_workspace()` 는 `crex.json` 의 최상위 `workspace` 키를 갱신한다
 (CLI 의 `workspace` 명령). 다음 실행부터 적용된다. 같은 방식으로
-`persist_compile_commands_dir()` 는 `[grounding]` 안의 값을 갱신한다
+`persist_compile_commands_dir()` 는 `grounding` 객체 안의 값을 갱신한다
 (CLI 의 `compiledb` 명령) — 설정 파일을 고치는 창구를 여기 하나로 모아 둔다.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -137,7 +137,7 @@ def switch(
     """돌고 있는 프로세스의 리뷰 대상을 바꾼다.
 
     `resolve()` 를 그대로 다시 태운다 — 존재 확인, 저장소 루트 승격, `.git` 확인,
-    워크스페이스 안의 `crex.toml` 우선까지 전부 같다. 검증을 여기서 따로 쓰면
+    워크스페이스 안의 `crex.json` 우선까지 전부 같다. 검증을 여기서 따로 쓰면
     두 경로의 판정이 언젠가 갈린다.
 
     사용자가 **직접 지정한 것은 따라간다.** `--config` 로 설정 파일을 고정했다면
@@ -163,17 +163,13 @@ def switch(
     return changed
 
 
-#: 설정 파일이 없을 때 만들어 넣는 머리말.
-_NEW_CONFIG_HEADER = (
-    "#  CREX 설정. 전체 항목은 crex.example.toml 과 docs/configuration.md 를 보십시오.\n"
-)
-
-_SECTION_LINE = re.compile(r"^\s*\[")
+#: 설정 파일이 없을 때 만들어 넣는 머리말. `//` 로 시작하므로 설정이 아니라 설명이다.
+_NEW_CONFIG_NOTE = "CREX 설정. 전체 항목은 crex.example.json 과 docs/user_manual/configuration.md 를 보십시오."
 
 
 def persist_workspace(config_path: Path, root: Path | None) -> Path:
-    """`crex.toml` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다."""
-    return persist_key(config_path, "workspace", None if root is None else _toml_string(root))
+    """`crex.json` 의 최상위 `workspace` 키를 갱신한다. `root=None` 이면 지운다."""
+    return persist_key(config_path, "workspace", None if root is None else _path_value(root))
 
 
 def repo_config_path(workspace: Workspace, explicit: Path | str | None = None) -> Path:
@@ -195,81 +191,59 @@ def repo_config_path(workspace: Workspace, explicit: Path | str | None = None) -
 
 
 def persist_compile_commands_dir(config_path: Path, directory: Path | None) -> Path:
-    """`[grounding]` 의 `compile_commands_dir` 를 갱신한다 (CLI 의 `compiledb` 명령).
+    """`grounding` 의 `compile_commands_dir` 를 갱신한다 (CLI 의 `compiledb` 명령).
 
     저장소마다 다른 값이다. 만든 쪽이 바로 적어 두면 사람이 옮겨 적을 일이 없다.
     """
-    value = None if directory is None else _toml_string(Path(directory))
+    value = None if directory is None else _path_value(Path(directory))
     return persist_key(config_path, "compile_commands_dir", value, section="grounding")
 
 
 def persist_key(
     config_path: Path, key: str, value: str | None, *, section: str | None = None
 ) -> Path:
-    """`crex.toml` 의 키 하나를 갱신한다. `value=None` 이면 지운다.
+    """`crex.json` 의 키 하나를 갱신한다. `value=None` 이면 지운다.
 
-    TOML 을 다시 써 내지 않고 **그 줄만 갈아 끼운다.** 표준 라이브러리에는 TOML
-    작성기가 없고(`tomllib` 은 읽기 전용), 있다 해도 주석을 전부 날려버린다.
-    이 파일은 사람이 읽고 고치는 물건이라 주석이 내용의 절반이다.
+    **읽고, 고치고, 통째로 다시 써 낸다.** TOML 이던 시절에는 그럴 수 없어서
+    해당 줄만 갈아 끼웠다 — 주석이 문법이라 파서를 거치면 사라졌고, 이 파일은
+    사람이 읽고 고치는 물건이라 설명이 내용의 절반이다. JSON 에서는 설명이
+    `"// ..."` 키로 **데이터 안에** 있으므로 읽고 쓰는 것만으로 살아남고,
+    사람이 적어 둔 키 순서도 dict 가 그대로 지킨다.
 
-    `section=None` 이면 최상위 키다 — 첫 `[section]` 앞쪽 구간만 본다. 그 뒤의
-    같은 이름은 어느 섹션에 속한 다른 키이므로 손대지 않는다. `section` 을 주면
-    그 섹션 안쪽만 본다. 섹션이 없으면 파일 끝에 만든다.
+    `section=None` 이면 최상위 키, 주면 그 객체 안의 키다. 객체가 없으면 만든다.
     """
     # 줄바꿈 방식을 바꾸지 않는다. 윈도우에서 CRLF 파일을 LF 로 되돌려 놓으면
     # 한 줄 고쳤는데 git 이 파일 전체가 바뀐 것으로 본다. 그래서 읽을 때도
     # 개행 변환을 끈다(`newline=""`) — 켜져 있으면 CRLF 였다는 사실 자체가 지워진다.
+    # utf-8-sig 는 메모장이 붙여 놓은 BOM 을 걷어낸다 (없으면 그냥 utf-8 이다).
     text = ""
     if config_path.is_file():
-        with config_path.open("r", encoding="utf-8", newline="") as handle:
+        with config_path.open("r", encoding="utf-8-sig", newline="") as handle:
             text = handle.read()
     newline = "\r\n" if "\r\n" in text else "\n"
-    lines = text.splitlines()
 
-    start, limit = _key_span(lines, section)
-    key_line = re.compile(rf"^\s*{re.escape(key)}\s*=", re.IGNORECASE)
-    found = next(
-        (i for i in range(start, limit) if key_line.match(lines[i])), None
-    )
+    data = json.loads(text) if text.strip() else {"//": _NEW_CONFIG_NOTE}
+    if not isinstance(data, dict):
+        raise ValueError(f"{config_path} 의 최상위는 객체여야 합니다.")
+
+    table = data
+    if section:
+        table = data.get(section)
+        if table is None:
+            table = {}
+            _put(data, section, table)
+        elif not isinstance(table, dict):
+            raise ValueError(f"{config_path} 의 {section} 은 객체여야 합니다.")
 
     if value is None:
-        if found is not None:
-            del lines[found]
-            # 키를 지우고 남은 빈 줄이 쌓이지 않게 한 줄만 정리한다.
-            if found < len(lines) and not lines[found].strip() and (
-                found == 0 or not lines[found - 1].strip()
-            ):
-                del lines[found]
+        table.pop(key, None)
     else:
-        entry = f'{key} = "{value}"'
-        if found is not None:
-            lines[found] = entry
-        elif not lines:
-            lines = [_NEW_CONFIG_HEADER.rstrip("\n"), ""]
-            if section:
-                lines.append(f"[{section}]")
-            lines.append(entry)
-        elif section and start == limit == len(lines):
-            # 섹션이 아예 없다. 파일 끝에 만든다.
-            if lines[-1].strip():
-                lines.append("")
-            lines.extend([f"[{section}]", entry])
-        elif section:
-            # 섹션 안, 마지막 내용 줄 바로 뒤에 붙인다.
-            insert = limit
-            while insert > start and not lines[insert - 1].strip():
-                insert -= 1
-            lines[insert:insert] = [entry]
-        else:
-            # 첫 섹션 바로 앞에 넣는다. 파일 맨 위 설명 주석을 밀어내지 않는다.
-            insert = limit
-            while insert > 0 and not lines[insert - 1].strip():
-                insert -= 1
-            lines[insert:insert] = [entry, ""] if insert == 0 else ["", entry]
+        _put(table, key, value)
 
+    body = json.dumps(data, ensure_ascii=False, indent=2)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        newline.join(lines).rstrip("\r\n") + newline, encoding="utf-8", newline=""
+        newline.join(body.splitlines()) + newline, encoding="utf-8", newline=""
     )
 
     # 쓴 것을 바로 다시 읽어 검증한다. 망가진 설정을 남기고 성공을 알리지 않는다.
@@ -277,28 +251,36 @@ def persist_key(
     return config_path
 
 
-def _key_span(lines: list[str], section: str | None) -> tuple[int, int]:
-    """키를 찾고 넣을 구간 [start, limit). 섹션이 없으면 (len, len) 을 준다."""
-    if section is None:
-        limit = next(
-            (i for i, line in enumerate(lines) if _SECTION_LINE.match(line)), len(lines)
+def _put(table: dict, key: str, value: object) -> None:
+    """키를 넣거나 갱신한다. 이미 있으면 있던 자리를 지킨다.
+
+    새로 넣는 스칼라는 중첩 객체들 **앞**에 둔다. 위에서부터 읽는 파일이라
+    `grounding` 덩어리 뒤에 최상위 키가 붙으면 어디에 속한 값인지 헷갈린다.
+    바로 앞의 `"// ..."` 설명과도 그래야 붙어 있는다.
+    """
+    if key in table:
+        table[key] = value
+        return
+    items = list(table.items())
+    at = (
+        len(items)
+        if isinstance(value, dict)
+        else next(
+            (i for i, (_, held) in enumerate(items) if isinstance(held, dict)), len(items)
         )
-        return 0, limit
-
-    header = re.compile(rf"^\s*\[\s*{re.escape(section)}\s*\]", re.IGNORECASE)
-    start = next((i for i, line in enumerate(lines) if header.match(line)), None)
-    if start is None:
-        return len(lines), len(lines)
-    start += 1
-    limit = next(
-        (i for i in range(start, len(lines)) if _SECTION_LINE.match(lines[i])), len(lines)
     )
-    return start, limit
+    items.insert(at, (key, value))
+    table.clear()
+    table.update(items)
 
 
-def _toml_string(root: Path) -> str:
-    """TOML 기본 문자열 값. 윈도우 경로도 `/` 로 적어 역슬래시 이스케이프를 피한다."""
-    return root.as_posix().replace("\\", "\\\\").replace('"', '\\"')
+def _path_value(root: Path) -> str:
+    """설정에 적을 경로 문자열. 윈도우 경로도 `/` 로 적어 역슬래시를 피한다.
+
+    JSON 이 역슬래시를 이스케이프해 주기는 하지만, `D:\\\\work\\\\repo` 로 적힌 파일을
+    사람이 다시 열었을 때 읽기 나쁘다.
+    """
+    return root.as_posix()
 
 
 # --------------------------------------------------------------------------
@@ -324,7 +306,7 @@ def _choose_config(
     candidate: Path | str | None,
     base: Path,
 ) -> Path | None:
-    """명시 > 워크스페이스의 crex.toml > 현재 디렉터리에서 위로 탐색."""
+    """명시 > 워크스페이스의 crex.json > 현재 디렉터리에서 위로 탐색."""
     if config_path:
         return Path(config_path)
     from_env = (env.get(ENV_CONFIG) or "").strip()

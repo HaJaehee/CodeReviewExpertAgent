@@ -2,15 +2,16 @@
 
 ## 준비물
 
-Python 3.11 이상이면 됩니다. 3.11부터 `tomllib` 이 표준 라이브러리에 들어왔고,
-CLI 는 그것 말고 외부 패키지를 쓰지 않습니다. **`pip install` 없이 바로 씁니다.**
+Python 3.11 이상이면 됩니다. 룰 택소노미(`rules/taxonomy.toml`)를 읽는
+`tomllib` 이 3.11부터 표준 라이브러리에 들어왔고, CLI 는 그것 말고 외부 패키지를
+쓰지 않습니다. **`pip install` 없이 바로 씁니다.**
 
 ```
 python --version
 ```
 
 3.10 이하라면 동작하지 않습니다. `tomllib` 대신 `tomli` 를 넣는 식으로 우회할
-수는 있지만 권장하지 않습니다.
+수는 있지만 권장하지 않습니다. (설정 파일은 JSON 이라 이 제약과 무관합니다.)
 
 Zed 에이전트 패널에서 부르려면(MCP) 그때만 설치가 필요합니다.
 
@@ -34,30 +35,38 @@ pip install -r requirements.txt
 예시를 복사해서 씁니다.
 
 ```bash
-cp crex.example.toml crex.toml
+cp crex.example.json crex.json
 ```
 
 처음에는 엔드포인트 주소와 모델 이름만 고치면 됩니다. 나머지 기본값은 그대로
-두세요. 특히 `max_input_tokens = 8192` 는 손대지 마십시오 — 왜 그런지는
+두세요. 특히 `max_input_tokens` 의 8192 는 손대지 마십시오 — 왜 그런지는
 [설정](configuration.md#입력-토큰-상한을-왜-8192-로-두나)에 적어뒀습니다.
 
-```toml
-[llm.generator]
-base_url = "http://vllm-qwen:8000/v1"
-model = "Qwen3.6-27B"
-
-[llm.verifier]
-base_url = "http://vllm-gemma:8000/v1"
-model = "gemma-4-26b-it"
+```json
+{
+  "llm": {
+    "generator": {
+      "base_url": "http://vllm-qwen:8000/v1",
+      "model": "Qwen3.6-27B"
+    },
+    "verifier": {
+      "base_url": "http://vllm-gemma:8000/v1",
+      "model": "gemma-4-26b-it"
+    }
+  }
+}
 ```
 
-vLLM 인스턴스가 하나뿐이라면 `[llm.verifier]` 블록을 통째로 지우세요. 그러면
-생성 쪽 설정을 재사용합니다. 교차 모델 검증의 이점은 사라지지만 파이프라인은
-돕니다. GPU 가 확보되는 대로 두 번째 인스턴스를 띄우는 걸 권합니다.
+예시 파일의 `"// ..."` 로 시작하는 키는 설명입니다. JSON 에는 주석이 없어서
+설명을 데이터로 적습니다 — 지워도 되고, 그대로 둬도 설정에 영향이 없습니다.
 
-`crex.toml` 은 현재 디렉터리에서 위로 올라가며 찾습니다. 저장소 루트에 두면
+vLLM 인스턴스가 하나뿐이라면 `verifier` 를 통째로 지우세요. 그러면 생성 쪽
+설정을 재사용합니다. 교차 모델 검증의 이점은 사라지지만 파이프라인은 돕니다.
+GPU 가 확보되는 대로 두 번째 인스턴스를 띄우는 걸 권합니다.
+
+`crex.json` 은 현재 디렉터리에서 위로 올라가며 찾습니다. 저장소 루트에 두면
 하위 어디서 실행해도 잡힙니다. `--workspace` 로 다른 저장소를 지정했다면 그
-저장소 안의 `crex.toml` 을 먼저 봅니다 — 아래 [CREX 는 어디에 두나](#crex-는-어디에-두나)를
+저장소 안의 `crex.json` 을 먼저 봅니다 — 아래 [CREX 는 어디에 두나](#crex-는-어디에-두나)를
 보세요.
 
 ## 첫 점검
@@ -72,7 +81,7 @@ python -m crex doctor
 워크스페이스: D:\work\myrepo
   출처=--workspace git=OK 리포트=D:\work\myrepo\reports
 
-설정 파일: D:\work\myrepo\crex.toml
+설정 파일: D:\work\myrepo\crex.json
   모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000/v1 검증=gemma-4-26b-it@... 입력상한=8192토큰 그라운딩=on
 
 택소노미
@@ -122,7 +131,7 @@ cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
 ```
 
-매번 치기 싫으면 명령 한 줄로 `crex.toml` 에 고정합니다.
+매번 치기 싫으면 명령 한 줄로 `crex.json` 에 고정합니다.
 
 ```bash
 python -m crex workspace D:\work\myrepo     # 고정
@@ -132,8 +141,10 @@ python -m crex workspace --clear            # 해제
 
 직접 적어도 됩니다.
 
-```toml
-workspace = "D:/work/myrepo"
+```json
+{
+  "workspace": "D:/work/myrepo"
+}
 ```
 
 ```powershell
@@ -146,7 +157,7 @@ clang-tidy 가 헤더를 못 찾아 절반쯤 눈을 감습니다
 ([자세히](analyzers.md#compile_commandsjson-이-없으면-반쯤-눈을-감습니다)).
 
 저장소마다 설정이 다르다면(C++ 프로젝트의 `compile_commands_dir`, C# 의
-`dotnet_project` 등) 각 저장소 루트에 `crex.toml` 을 두세요. `--workspace` 로
+`dotnet_project` 등) 각 저장소 루트에 `crex.json` 을 두세요. `--workspace` 로
 지정하면 그 파일을 먼저 씁니다. 전체 규칙은 [설정](configuration.md#workspace--리뷰-대상-저장소)에
 있습니다.
 

@@ -369,8 +369,9 @@ def test_workspace_switch_updates_everything_at_once() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         first = _make_repo(Path(tmp) / "first")
         second = _make_repo(Path(tmp) / "second")
-        (second / "crex.toml").write_text(
-            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        (second / "crex.json").write_text(
+            json.dumps({"llm": {"generator": {"model": "두번째-모델"}}}, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         ctx = _context(first, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
@@ -386,7 +387,7 @@ def test_workspace_switch_updates_everything_at_once() -> None:
         _check(payload["workspace"]["root"] == str(second.resolve()), "대상이 안 바뀌었다")
         _check(ctx.registry.repo_root == second.resolve(), "레지스트리 대상이 안 바뀌었다")
         _check(ctx.registry.out_dir == second.resolve() / "reports", f"리포트: {ctx.registry.out_dir}")
-        # 새 저장소 안의 crex.toml 을 따라가야 한다.
+        # 새 저장소 안의 crex.json 을 따라가야 한다.
         _check(
             ctx.registry.config.generator.model == "두번째-모델",
             f"설정이 안 따라왔다: {ctx.registry.config.generator.model}",
@@ -524,13 +525,15 @@ def test_compiledb_detection_failure_is_reported_not_raised() -> None:
         _check("찾지 못했습니다" in (state["project"]["error"] or ""), str(state["project"]["error"]))
 
 
-def test_compiledb_success_applies_to_config_and_writes_toml() -> None:
+def test_compiledb_success_applies_to_config_and_writes_the_config_file() -> None:
     """만들기만 하고 끝나면 절반이 떨어져 나간다 — 만든 자리가 설정에 꽂혀야 한다."""
     import crex.viz.build as build
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = _make_repo(Path(tmp))
-        (repo / "crex.toml").write_text("[grounding]\ntimeout = 30.0\n", encoding="utf-8")
+        (repo / "crex.json").write_text(
+            json.dumps({"grounding": {"timeout": 30.0}}), encoding="utf-8"
+        )
 
         ctx = _context(repo, "http://127.0.0.1:1/v1", Path(tmp) / "reports")
         ctx.registry.workspace = resolve(repo, start=Path(tmp), env={})
@@ -551,11 +554,14 @@ def test_compiledb_success_applies_to_config_and_writes_toml() -> None:
             ctx.registry.config.grounding.compile_commands_dir == ".crex/compiledb",
             f"설정에 안 꽂혔다: {ctx.registry.config.grounding.compile_commands_dir!r}",
         )
-        # 2) crex.toml 에도 적혔다 — 다음에 띄울 때도 살아 있다.
-        written = (repo / "crex.toml").read_text(encoding="utf-8")
-        _check('compile_commands_dir = ".crex/compiledb"' in written, written)
-        _check("timeout = 30.0" in written, f"기존 설정이 날아갔다: {written}")
-        _check(job["result"]["saved_to"] == str(repo / "crex.toml"), str(job["result"]["saved_to"]))
+        # 2) crex.json 에도 적혔다 — 다음에 띄울 때도 살아 있다.
+        raw = (repo / "crex.json").read_text(encoding="utf-8")
+        written = json.loads(raw)
+        _check(
+            written["grounding"]["compile_commands_dir"] == ".crex/compiledb", raw
+        )
+        _check(written["grounding"]["timeout"] == 30.0, f"기존 설정이 날아갔다: {raw}")
+        _check(job["result"]["saved_to"] == str(repo / "crex.json"), str(job["result"]["saved_to"]))
 
         # 상태 응답도 같이 따라와야 한다 — 화면이 옛 값을 보여주면 안 된다.
         after = json.loads(handle(Request("GET", "/api/compiledb"), ctx).body)
@@ -563,7 +569,7 @@ def test_compiledb_success_applies_to_config_and_writes_toml() -> None:
         _check(after["status"]["error"] is None, f"상태 오류: {after['status']['error']}")
 
 
-def test_compiledb_without_save_leaves_toml_alone() -> None:
+def test_compiledb_without_save_leaves_the_config_file_alone() -> None:
     """체크박스를 끄면 남의 저장소 파일을 고치지 않는다. 적용은 이 서버 안에서만."""
     import crex.viz.build as build
 
@@ -581,7 +587,7 @@ def test_compiledb_without_save_leaves_toml_alone() -> None:
             build.generate = original
 
         _check(state["job"]["status"] == "done", str(state["job"]["error"]))
-        _check(not (repo / "crex.toml").exists(), "save=False 인데 설정 파일을 만들었다")
+        _check(not (repo / "crex.json").exists(), "save=False 인데 설정 파일을 만들었다")
         _check(
             ctx.registry.config.grounding.compile_commands_dir == ".crex/compiledb",
             "이 서버 안에서도 적용이 안 됐다",
@@ -612,7 +618,7 @@ def test_compiledb_empty_result_is_not_applied() -> None:
             ctx.registry.config.grounding.compile_commands_dir is None,
             f"빈 DB 가 설정에 꽂혔다: {ctx.registry.config.grounding.compile_commands_dir!r}",
         )
-        _check(not (repo / "crex.toml").exists(), "빈 DB 를 설정 파일에 적었다")
+        _check(not (repo / "crex.json").exists(), "빈 DB 를 설정 파일에 적었다")
 
 
 def test_compiledb_rejects_unknown_and_multiword_options() -> None:
@@ -850,8 +856,8 @@ TESTS = [
     test_workspace_switch_blocked_on_remote_bind,
     test_compiledb_state_reports_config_project_and_defaults,
     test_compiledb_detection_failure_is_reported_not_raised,
-    test_compiledb_success_applies_to_config_and_writes_toml,
-    test_compiledb_without_save_leaves_toml_alone,
+    test_compiledb_success_applies_to_config_and_writes_the_config_file,
+    test_compiledb_without_save_leaves_the_config_file_alone,
     test_compiledb_empty_result_is_not_applied,
     test_compiledb_rejects_unknown_and_multiword_options,
     test_compiledb_and_review_never_run_together,

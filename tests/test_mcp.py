@@ -9,6 +9,7 @@ Zed 은 여기 없으므로 마지막 연동 확인은 폐쇄망 안에서 해�
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -308,8 +309,9 @@ def test_set_workspace_moves_repo_config_and_reports() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         first = _make_repo(Path(tmp) / "first")
         second = _make_repo(Path(tmp) / "second")
-        (second / "crex.toml").write_text(
-            '[llm.generator]\nmodel = "두번째-모델"\n', encoding="utf-8"
+        (second / "crex.json").write_text(
+            json.dumps({"llm": {"generator": {"model": "두번째-모델"}}}, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         workspace = resolve(first, start=Path(tmp), env={})

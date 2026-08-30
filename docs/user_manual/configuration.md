@@ -1,10 +1,10 @@
 # 설정
 
-`crex.toml` 한 파일로 전부 제어합니다. 찾는 순서는 이렇습니다.
+`crex.json` 한 파일로 전부 제어합니다. 찾는 순서는 이렇습니다.
 
 1. `--config` 또는 `CREX_CONFIG` 로 직접 지정한 파일
-2. 워크스페이스를 `--workspace` 나 환경변수로 지정했다면 `<워크스페이스>/crex.toml`
-3. 현재 디렉터리에서 위로 올라가며 `crex.toml` → `.crex.toml`
+2. 워크스페이스를 `--workspace` 나 환경변수로 지정했다면 `<워크스페이스>/crex.json`
+3. 현재 디렉터리에서 위로 올라가며 `crex.json` → `.crex.json`
 4. 그래도 없으면 기본값
 
 2번이 있는 이유는 저장소마다 `compile_commands_dir` 과 `dotnet_project` 가 다르기
@@ -24,10 +24,82 @@
 
 ---
 
+## 주석과 여러 줄 글
+
+JSON 에는 주석이 없고 여러 줄 문자열도 없습니다. 이 파일은 사람이 읽고 고치는
+물건이라 둘 다 필요해서, 형식은 순수 JSON 그대로 두고 **약속 두 개**로 채웠습니다.
+파서를 손대지 않았으므로 어떤 JSON 도구로 열어도 그대로 열립니다.
+
+**1. 키가 `//` 로 시작하면 설명입니다.** 검증 전에 걷어내므로 값은 무엇이든
+됩니다. 어느 깊이에서나 됩니다.
+
+```json
+{
+  "// max_workers": "동시 LLM 호출 수. vLLM 의 배치 처리량에 맞춰 조정합니다.",
+  "review": { "max_workers": 4 }
+}
+```
+
+`"// max_workers"` 와 `"max_workers"` 는 **다른 키**입니다. 설명이 값을 덮어쓰는
+일은 없습니다.
+
+TOML 주석과 다른 점이 하나 있고, 그게 이득입니다. 설명이 **데이터의 일부**라
+프로그램이 파일을 고쳐 써도 살아남습니다. `python -m crex workspace <경로>` 나
+`python -m crex compiledb` 가 파일을 다시 써도 적어둔 설명은 그대로 남습니다.
+
+**2. 문자열 설정은 문자열 배열로 적을 수 있습니다.** 읽을 때 줄바꿈으로 이어
+붙입니다.
+
+```json
+{
+  "// min_severity": [
+    "이 심각도 미만은 리포트에서 숨깁니다. 기각과는 다릅니다 —",
+    "유효하다고 판정된 지적을 지금은 보고 싶지 않다고 감추는 것입니다."
+  ],
+  "review": { "min_severity": "low" }
+}
+```
+
+긴 글을 역슬래시 n 이스케이프로 한 줄에 우겨넣으면 파일을 열어도 읽을 수가
+없습니다. 설명이든 프롬프트든 줄 단위로 끊어 적으세요.
+
+이어붙이기는 **선언 타입이 문자열인 설정에만** 적용됩니다. `analyzers` 처럼
+원래 목록인 설정은 배열이 그대로 목록입니다. 분석기 이름 세 개가 이름 하나로
+뭉치면 정적분석이 통째로 빠지는데, 그 결과는 "지적 0건" 과 구분되지 않습니다.
+
+```json
+{
+  "grounding": {
+    "// analyzers": ["원래 목록인 설정.", "이어 붙이지 않습니다."],
+    "analyzers": ["cppcheck", "ruff"],
+
+    "// clang_tidy_checks": "문자열 설정. 배열로 적으면 줄바꿈으로 이어 붙습니다.",
+    "clang_tidy_checks": ["-*,", "bugprone-*,", "cert-*"]
+  }
+}
+```
+
+### 예전 `crex.toml` 이 남아 있다면
+
+읽지 않습니다. 다만 **조용히 무시하지도 않습니다** — 설정 파일을 고쳤는데 아무
+일도 안 일어나는 것이 가장 나쁘기 때문에, JSON 설정이 없고 TOML 만 있으면
+그 자리에서 멈추고 알려줍니다.
+
+```
+설정 오류: D:\tools\crex\crex.toml 는 더 이상 읽지 않습니다. 설정 파일은 JSON 으로 바뀌었습니다.
+  crex.json 을 만들어 옮겨 적으십시오. 양식은 crex.example.json 과 docs/configuration.md 에 있습니다.
+```
+
+`crex.json` 을 만든 뒤에는 예전 파일이 남아 있어도 상관없습니다. JSON 쪽이 이깁니다.
+
+---
+
 ## `workspace` — 리뷰 대상 저장소
 
-```toml
-workspace = "D:/work/myrepo"
+```json
+{
+  "workspace": "D:/work/myrepo"
+}
 ```
 
 **CREX 를 리뷰 대상 저장소 안에 둘 필요가 없습니다.** 설치본은 한 자리에 두고
@@ -43,16 +115,17 @@ cd D:\tools\crex
 python -m crex review --workspace D:\work\myrepo --staged
 ```
 
-`crex.toml` 에 적어두는 것은 손으로 열지 않고 명령으로 할 수 있습니다.
+`crex.json` 에 적어두는 것은 손으로 열지 않고 명령으로 할 수 있습니다.
 
 ```bash
 python -m crex workspace                    # 지금 무엇을 보고 있나
-python -m crex workspace D:\work\myrepo     # crex.toml 에 고정
+python -m crex workspace D:\work\myrepo     # crex.json 에 고정
 python -m crex workspace --clear            # 고정 해제
 ```
 
 경로를 검증한 뒤에 적습니다 — 없는 경로가 설정 파일에 박히면 다음 실행이 죽습니다.
-주석은 그대로 두고 그 한 줄만 갈아 끼웁니다.
+파일은 통째로 다시 쓰지만 `"// ..."` 설명과 다른 설정은 그대로 남습니다
+(빈 줄은 정리됩니다).
 
 정해지는 순서는 위에서 아래로, 먼저 정해지면 아래는 보지 않습니다.
 
@@ -60,7 +133,7 @@ python -m crex workspace --clear            # 고정 해제
 |---|---|
 | 1 | `--workspace D:\work\myrepo` (`--repo` 는 예전 이름, 계속 받습니다) |
 | 2 | 환경변수 `CREX_WORKSPACE` (이전 이름 `CREX_REPO` 도 받습니다) |
-| 3 | `crex.toml` 의 `workspace` |
+| 3 | `crex.json` 의 `workspace` |
 | 4 | 현재 디렉터리에서 git 루트 탐색 (예전 동작) |
 
 몇 가지 규칙:
@@ -84,7 +157,7 @@ MCP 서버와 관제 화면도 같은 규칙을 씁니다. 세 진입점이 서�
 
 | 어디서 | 어떻게 | 지속 |
 |---|---|---|
-| 터미널 | `python -m crex workspace <경로>` | `crex.toml` 에 남습니다 |
+| 터미널 | `python -m crex workspace <경로>` | `crex.json` 에 남습니다 |
 | 관제 화면 | 왼쪽 "워크스페이스" 옆 **변경** | 서버가 사는 동안만 |
 | Zed 에이전트 | `set_workspace` 도구 | MCP 서버가 사는 동안만 |
 
@@ -93,24 +166,29 @@ MCP 서버와 관제 화면도 같은 규칙을 씁니다. 세 진입점이 서�
 쓰세요.
 
 셋 다 처음 정할 때와 **똑같은 검증**을 거칩니다. 없는 경로는 거부하고, 하위
-폴더는 저장소 루트로 올리고, 새 워크스페이스 안의 `crex.toml` 을 따라갑니다.
+폴더는 저장소 루트로 올리고, 새 워크스페이스 안의 `crex.json` 을 따라갑니다.
 `--config` 나 `--out` 으로 고정해 둔 것은 대상을 바꿔도 그대로 유지됩니다.
 
 ---
 
-## `[llm.generator]` — 지적을 만드는 모델
+## `llm.generator` — 지적을 만드는 모델
 
-```toml
-[llm.generator]
-base_url = "http://vllm-qwen:8000/v1"
-model = "Qwen3.6-27B"
-api_key = "EMPTY"
-temperature = 0.0
-max_output_tokens = 900
-max_input_tokens = 8192
-timeout = 120.0
-max_retries = 3
-structured_output_mode = "auto"
+```json
+{
+  "llm": {
+    "generator": {
+      "base_url": "http://vllm-qwen:8000/v1",
+      "model": "Qwen3.6-27B",
+      "api_key": "EMPTY",
+      "temperature": 0.0,
+      "max_output_tokens": 900,
+      "max_input_tokens": 8192,
+      "timeout": 120.0,
+      "max_retries": 3,
+      "structured_output_mode": "auto"
+    }
+  }
+}
 ```
 
 `base_url` 은 `/v1` 까지 포함합니다. 뒤에 `/chat/completions` 를 붙이지 마세요.
@@ -183,29 +261,45 @@ vLLM 버전마다 구조화 출력을 받는 필드가 다릅니다.
 최신 vLLM 은 이 필드를 모르는 키로 보고 400 을 돌려줍니다. 구버전에서 백엔드를
 명시해야 하는 경우에만 `"xgrammar"` 처럼 적으세요.
 
-### `[llm.generator.extra_body]`
+### `llm.generator.extra_body`
 
 요청 본문에 그대로 합쳐지는 추가 필드입니다. Qwen3.x 계열의 추론 모드를 끌 때
 씁니다.
 
-```toml
-[llm.generator.extra_body]
-chat_template_kwargs = { enable_thinking = false }
+```json
+{
+  "llm": {
+    "generator": {
+      "extra_body": {
+        "chat_template_kwargs": { "enable_thinking": false }
+      }
+    }
+  }
+}
 ```
+
+이 안의 값은 vLLM 으로 그대로 넘어갑니다. 배열은 배열 그대로 갑니다 — `stop`
+같은 목록 파라미터가 문자열 하나로 뭉치면 안 되기 때문입니다. `"// ..."` 설명은
+여기서도 걷어냅니다.
 
 리뷰는 고정 단계로 돌아가므로 모델이 스스로 사고 과정을 늘어놓을 필요가 없고,
 켜두면 지연시간만 몇 배가 됩니다.
 
 ---
 
-## `[llm.verifier]` — 지적을 재판정하는 모델
+## `llm.verifier` — 지적을 재판정하는 모델
 
-```toml
-[llm.verifier]
-base_url = "http://vllm-gemma:8000/v1"
-model = "gemma-4-26b-it"
-max_input_tokens = 4096
-timeout = 60.0
+```json
+{
+  "llm": {
+    "verifier": {
+      "base_url": "http://vllm-gemma:8000/v1",
+      "model": "gemma-4-26b-it",
+      "max_input_tokens": 4096,
+      "timeout": 60.0
+    }
+  }
+}
 ```
 
 **생성과 다른 모델을 쓰는 게 요점입니다.** 같은 모델에게 자기가 만든 지적을
@@ -216,20 +310,23 @@ timeout = 60.0
 는 200을 넘지 않도록 잘립니다 — 더 크게 적어도 200이 되고, 더 작게 적으면 그
 값이 그대로 쓰입니다.
 
-블록을 통째로 생략하면 생성 쪽 설정을 그대로 씁니다. 인스턴스가 하나뿐인
+`verifier` 를 통째로 생략하면 생성 쪽 설정을 그대로 씁니다. 인스턴스가 하나뿐인
 환경에서도 돌아가야 하니까요. 대신 검증의 효과가 줄어듭니다.
 
 ---
 
-## `[review]`
+## `review`
 
-```toml
-[review]
-mode = "native"
-max_findings_per_chunk = 5
-max_workers = 4
-require_changed_line = true
-min_severity = "low"
+```json
+{
+  "review": {
+    "mode": "native",
+    "max_findings_per_chunk": 5,
+    "max_workers": 4,
+    "require_changed_line": true,
+    "min_severity": "low"
+  }
+}
 ```
 
 **`mode`** — 현재 `"native"` 만 구현되어 있습니다. `"ocr"` 를 넣으면 조용히
@@ -260,17 +357,24 @@ FAR 을 측정해 룰별 정밀도가 확인되면 `"medium"` 으로 낮추세�
 
 ---
 
-## `[grounding]` — 정적분석
+## `grounding` — 정적분석
 
-```toml
-[grounding]
-enabled = true
-timeout = 120.0
-compile_commands_dir = "build"
-dotnet_project = "src/App.sln"
-# semgrep_config = "/opt/semgrep-rules"
-# analyzers = ["cppcheck", "ruff"]
+```json
+{
+  "grounding": {
+    "enabled": true,
+    "timeout": 120.0,
+    "compile_commands_dir": "build",
+    "dotnet_project": "src/App.sln",
+
+    "// semgrep_config": "\"semgrep_config\": \"/opt/semgrep-rules\"",
+    "// analyzers": "\"analyzers\": [\"cppcheck\", \"ruff\"]"
+  }
+}
 ```
+
+JSON 에는 줄을 주석 처리하는 방법이 없습니다. 안 쓰는 설정은 지우거나, 위처럼
+키 이름 앞에 `// ` 를 붙여 설명으로 내려두면 됩니다.
 
 LLM 을 부르기 전에 결정론적 도구를 돌려서 사실을 확보합니다. 그 결과를 프롬프트에
 넣고 모델에게 이렇게 시킵니다 — "결함을 찾아라"가 아니라 "이 도구 결과가 진짜인지
@@ -356,14 +460,17 @@ CMake 든 Visual Studio 든 알아서 처리합니다. 무슨 일이 일어나�
 
 ---
 
-## `[chunking]`
+## `chunking`
 
-```toml
-[chunking]
-expansion_limit = 4.0
-expansion_truncate = 3.0
-absolute_max_lines = 400
-on_mismatch = "raise"
+```json
+{
+  "chunking": {
+    "expansion_limit": 4.0,
+    "expansion_truncate": 3.0,
+    "absolute_max_lines": 400,
+    "on_mismatch": "raise"
+  }
+}
 ```
 
 diff 의 hunk 를 함수 경계까지 넓힌 다음, 너무 커지면 잘라냅니다.
@@ -398,18 +505,23 @@ diff 를 만든 뒤 작업 트리가 바뀌면 라인 번호가 전부 밀립니
 
 ## `taxonomy_path`
 
-```toml
-taxonomy_path = "rules/taxonomy.toml"
+```json
+{
+  "taxonomy_path": "rules/taxonomy.toml"
+}
 ```
 
 생략하면 패키지에 들어 있는 `rules/taxonomy.toml` 을 씁니다. 팀별로 다른 룰셋을
 쓰고 싶을 때만 지정하세요.
 
+룰 파일은 TOML 그대로입니다. 설정이 아니라 룰 **데이터**이고, 릴리스보다 오래
+사는 물건이라 형식을 따로 둡니다.
+
 ---
 
 ## 설정 없이 돌리면
 
-`crex.toml` 이 없어도 실행은 됩니다. 엔드포인트가 `http://localhost:8000/v1`,
+`crex.json` 이 없어도 실행은 됩니다. 엔드포인트가 `http://localhost:8000/v1`,
 모델이 `Qwen3.6-27B` 로 잡히고, 나머지는 위에 적힌 기본값입니다.
 `doctor` 가 `설정 파일: (없음 — 기본값 사용 중)` 이라고 알려줍니다.
 
@@ -422,5 +534,5 @@ INFO    crex.cli: 설정: 모드=native 생성=Qwen3.6-27B@http://vllm-qwen:8000
 ```
 
 워크스페이스 줄의 대괄호가 그 값을 어디서 얻었는지입니다 — `--workspace`,
-`CREX_WORKSPACE`, `crex.toml 의 workspace`, `현재 디렉터리` 중 하나입니다.
+`CREX_WORKSPACE`, `crex.json 의 workspace`, `현재 디렉터리` 중 하나입니다.
 "왜 엉뚱한 저장소를 봤지"를 추적할 때 이 한 줄이면 됩니다.

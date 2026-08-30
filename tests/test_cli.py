@@ -36,10 +36,10 @@ def test_global_flags_accepted_after_subcommand() -> None:
     parser = _build_parser()
 
     after = parser.parse_args(
-        ["review", "--staged", "--workspace", "/tmp/x", "--config", "/tmp/c.toml"]
+        ["review", "--staged", "--workspace", "/tmp/x", "--config", "/tmp/c.json"]
     )
     _check(str(after.workspace) in ("/tmp/x", "\\tmp\\x"), f"workspace: {after.workspace}")
-    _check(after.config is not None and "c.toml" in str(after.config), f"config: {after.config}")
+    _check(after.config is not None and "c.json" in str(after.config), f"config: {after.config}")
     _check(after.staged, "staged 플래그 손실")
 
     before = parser.parse_args(["--workspace", "/tmp/x", "review", "--staged"])
@@ -75,9 +75,9 @@ def test_global_flag_not_clobbered_by_subparser_default() -> None:
 
     SUPPRESS 를 빠뜨리면 서브파서 기본값이 앞의 값을 덮어써서 조용히 무시된다.
     """
-    args = _build_parser().parse_args(["--config", "/tmp/c.toml", "review"])
+    args = _build_parser().parse_args(["--config", "/tmp/c.json", "review"])
     _check(args.config is not None, "전역 --config 가 서브파서 기본값에 덮였다")
-    _check("c.toml" in str(args.config), f"config: {args.config}")
+    _check("c.json" in str(args.config), f"config: {args.config}")
 
 
 def test_verbose_from_either_position() -> None:

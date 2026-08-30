@@ -297,7 +297,8 @@ MCP 사양이 바뀌어도 `mcp.py` 만 고치면 됩니다.
 
 - HTTP: `urllib.request` (httpx/requests 대신)
 - 데이터 모델: `dataclasses` (pydantic 대신)
-- 설정: `tomllib` (3.11+ stdlib)
+- 설정: `json` (stdlib) — 주석은 `//` 키, 여러 줄 글은 문자열 배열
+- 룰 택소노미: `tomllib` (3.11+ stdlib)
 - 병렬: `concurrent.futures.ThreadPoolExecutor`
 - 테스트: 자체 러너 (pytest 대신)
 

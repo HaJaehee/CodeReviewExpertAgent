@@ -197,8 +197,8 @@ def main(argv: list[str] | None = None) -> int:
     # --repo 는 예전 이름이다. 계속 받는다.
     parser.add_argument("--workspace", "--repo", dest="workspace", type=Path, default=None,
                         help="리뷰 대상 저장소 루트 (.git 이 있는 폴더). 생략하면 "
-                             "CREX_WORKSPACE → crex.toml 의 workspace → 현재 디렉터리 순")
-    parser.add_argument("--config", type=Path, default=None, help="crex.toml 경로")
+                             "CREX_WORKSPACE → crex.json 의 workspace → 현재 디렉터리 순")
+    parser.add_argument("--config", type=Path, default=None, help="crex.json 경로")
     parser.add_argument("--out", type=Path, default=None, help="리포트 저장 위치")
     parser.add_argument("--stdlib", action="store_true", help="uvicorn 이 있어도 stdlib 서버를 씁니다")
     parser.add_argument("-v", "--verbose", action="store_true")

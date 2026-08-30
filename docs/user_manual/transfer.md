@@ -46,6 +46,8 @@ crex-20260817/
   pylibs/           fastmcp, GitPython 등을 미리 풀어둔 것 (pip 실행 불필요)
   wheels/           원본 wheel — 사내 다른 Python 에 직접 설치할 때만
   crex/ docs/ wiki/ rules/ eval/ tests/ tools/
+  docs/user_manual/       설명서 원본 (마크다운)
+  docs/user_manual_html/  같은 설명서를 브라우저로 — index.html 부터
   tools/msbuild-compiledb/   MSBuild → compile_commands.json 로거 (C# DLL, MIT)
   crex.cmd           리뷰 실행
   crex-mcp.cmd       MCP 서버 (Zed)
@@ -66,10 +68,10 @@ zip 과 `.sha256` 을 **함께** 제출합니다. 심사에서 물어볼 만한 
 |---|---|
 | 실행 파일이 있나 | Python 임베더블(`runtime\python.exe`)과 MSBuild 로거 DLL(`tools\msbuild-compiledb\CompileCommandsJson.dll`, 7,680바이트). 나머지는 전부 텍스트 소스 |
 | 설치 스크립트를 돌리나 | 아니오. 압축만 풀면 됩니다. `pip` 도 안 돌립니다 |
-| 외부로 나가나 | 아니오. `crex.toml` 에 적은 사내 vLLM 주소로만 HTTP 를 보냅니다 |
+| 외부로 나가나 | 아니오. `crex.json` 에 적은 사내 vLLM 주소로만 HTTP 를 보냅니다 |
 | 네트워크 포트를 여나 | 아니오. MCP 는 stdio 라 리스너가 생기지 않습니다 |
 | 서드파티는 | `requirements.txt` 두 줄과 그 의존성. `wheels\` 에 원본이 그대로 있습니다 |
-| C# DLL 은 뭔가 | `tools\msbuild-compiledb\CompileCommandsJson.dll` — MSBuild 로거입니다 (MIT). C++ 프로젝트의 컴파일 명령을 뽑는 데 씁니다. 상류 저장소·커밋·빌드 설정·SHA-256 이 [`tools/msbuild-compiledb/README.md`](../tools/msbuild-compiledb/README.md) 에 적혀 있어 같은 설정으로 다시 빌드해 대조할 수 있습니다 |
+| C# DLL 은 뭔가 | `tools\msbuild-compiledb\CompileCommandsJson.dll` — MSBuild 로거입니다 (MIT). C++ 프로젝트의 컴파일 명령을 뽑는 데 씁니다. 상류 저장소·커밋·빌드 설정·SHA-256 이 [`tools/msbuild-compiledb/README.md`](../../tools/msbuild-compiledb/README.md) 에 적혀 있어 같은 설정으로 다시 빌드해 대조할 수 있습니다 |
 
 번들은 자체 무결성 확인이 가능합니다 — `MANIFEST.txt` 에 파일별 SHA256 이
 들어 있고 `tools\verify.ps1` 이 대조합니다.
@@ -99,11 +101,9 @@ cd crex-20260817
     번들 런타임 사용
     OK   Python 3.12.10
     OK   crex 0.1 import 성공
-    OK   fastmcp
-    OK   git
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
-    128/128 통과
+    전체 통과 (14개 모듈)
     OK   전체 통과
 ```
 
@@ -115,8 +115,8 @@ cd crex-20260817
 ## 4. 설정과 첫 실행
 
 ```powershell
-copy crex.example.toml crex.toml
-notepad crex.toml       # vLLM 주소와 모델명을 넣는다
+copy crex.example.json crex.json
+notepad crex.json       # vLLM 주소와 모델명을 넣는다
 .\crex.cmd doctor
 ```
 
@@ -153,7 +153,7 @@ D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
       "command": "D:\\tools\\crex-20260817\\crex-mcp.cmd",
       "env": {
         "CREX_WORKSPACE": "D:\\work\\myrepo",
-        "CREX_CONFIG": "D:\\work\\myrepo\\crex.toml",
+        "CREX_CONFIG": "D:\\work\\myrepo\\crex.json",
         "CREX_REPORTS": "D:\\work\\myrepo\\reports"
       }
     }
@@ -260,7 +260,7 @@ $env:PIP_INDEX_URL = "https://사내미러/simple"
 
 ### Python 3.10 이하만 있다
 
-`tomllib` 이 3.11 부터 표준이라 동작하지 않습니다. `-SkipRuntime` 을 빼고
+룰 택소노미를 읽는 `tomllib` 이 3.11 부터 표준이라 동작하지 않습니다. `-SkipRuntime` 을 빼고
 번들에 런타임을 담으면 장비의 Python 과 무관하게 돌아갑니다.
 
 ---

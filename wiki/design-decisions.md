@@ -89,7 +89,7 @@ swallowed the 400s. Three changes came out of it.
   against them, so "accepted but ignored" shows up as a failure.
 
 The invariant is in `wiki/invariants.md`; the user-facing symptoms are in
-`docs/troubleshooting.md`.
+`docs/user_manual/troubleshooting.md`.
 
 ---
 
@@ -194,13 +194,54 @@ To rename: add under the new ID, delete the old one. Don't mutate.
 
 ---
 
+## Config is JSON, with comments and long prose added back by convention
+
+The config file is `crex.json`, read with stdlib `json`. It used to be TOML.
+
+**Why the change.** The file is written by programs as well as by people —
+`crex workspace` pins a repository, `crex compiledb` records where the compile
+database landed, and the dashboard's Rebuild does the same through
+`repo_config_path()`. `tomllib` is read-only and there is no stdlib TOML writer, so
+that path had to splice individual lines with regexes: find the key, replace the
+line, guess where to insert a new one, and never touch anything else, because a
+round-trip through any parser would erase every comment. JSON round-trips through
+the standard library, so the writer reads, edits, and writes the whole file.
+
+**What JSON costs, and how it is paid.** No comments, no multi-line strings — both
+of which this file needs, since it is the one artifact a new user reads end to end.
+Rather than adopt JSON5 or a wheel, two conventions sit on top of plain JSON, which
+means every JSON tool still opens it:
+
+1. A key starting with `//` is documentation, stripped before validation.
+2. A string setting may be written as an array of strings, joined with `\n`.
+
+The first turns out to be *better* than TOML comments, not merely equivalent:
+documentation is data, so it survives the programs that rewrite the file. What was
+previously an argument for line-splicing is now handled by the format itself.
+
+The second is scoped by declared field type rather than by a list of key names, so
+`analyzers: list[str]` stays a list. That is not a stylistic point — fusing three
+analyzer names into one string yields zero findings and no error, which is
+indistinguishable from a clean review.
+
+Blank lines do not survive a programmatic rewrite; comment keys do. Grouping is
+carried by the `//` keys, not by whitespace.
+
+**Not converted.** `rules/taxonomy.toml` stays TOML. It is rule data, not
+configuration, no program writes to it, and its multi-line `criteria` strings read
+better as TOML heredocs than as JSON arrays. It also versions independently — rules
+outlive releases.
+
+---
+
 ## Dependencies confined to the MCP layer
 
 The core uses stdlib only:
 
 - HTTP: `urllib.request`, not httpx/requests
 - Models: `dataclasses`, not pydantic
-- Config: `tomllib` (stdlib since 3.11)
+- Config: `json` (stdlib) — comments are `//` keys, long prose is a string array
+- Rule taxonomy: `tomllib` (stdlib since 3.11)
 - Tests: custom runner, not pytest
 
 **Why.** Importing a wheel into an air-gapped corporate network requires security

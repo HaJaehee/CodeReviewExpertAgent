@@ -20,7 +20,7 @@ wiki/           에이전트용 영문 문서
 README.md
 CLAUDE.md
 AGENTS.md                 Zed 에이전트 지시 (대상 저장소로 복사)
-crex.example.toml
+crex.example.json
 requirements.txt          MCP 서버용 (코어는 불필요)
 requirements-optional.txt tree-sitter (선택)
 ```
@@ -29,8 +29,8 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 128개 전부 통과해야 합니다
-cp crex.example.toml crex.toml  # 엔드포인트 수정
+python tests/run_all.py         # 반입 무결성 — 210개 전부 통과해야 합니다
+cp crex.example.json crex.json  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```
 
@@ -90,9 +90,10 @@ pip install --no-index --find-links wheels/ -r requirements-optional.txt
 git clone --depth 1 https://github.com/semgrep/semgrep-rules /tmp/semgrep-rules
 ```
 
-```toml
-[grounding]
-semgrep_config = "/opt/semgrep-rules"
+```json
+{
+  "grounding": { "semgrep_config": "/opt/semgrep-rules" }
+}
 ```
 
 지정하지 않으면 semgrep 은 아예 실행되지 않습니다. 다른 분석기는 그대로 돕니다.
@@ -111,7 +112,7 @@ vllm serve /models/Qwen3.6-27B \
   --port 8000
 ```
 
-`--served-model-name` 이 `crex.toml` 의 `model` 과 정확히 같아야 합니다.
+`--served-model-name` 이 `crex.json` 의 `model` 과 정확히 같아야 합니다.
 경로를 그대로 쓰면 모델 이름도 경로가 되므로 명시해 주는 게 편합니다.
 
 `--max-model-len` 은 32768 이면 충분합니다. CREX 는 8192 로 잘라서 보내므로
@@ -219,7 +220,7 @@ Zed 에이전트 패널에서 "내 변경사항 리뷰해줘"로 부를 수 있�
       "args": ["-m", "crex.mcp"],
       "env": {
         "CREX_WORKSPACE": "/work/myrepo",
-        "CREX_CONFIG": "/work/myrepo/crex.toml",
+        "CREX_CONFIG": "/work/myrepo/crex.json",
         "CREX_REPORTS": "/work/myrepo/reports"
       }
     }
@@ -235,13 +236,13 @@ FastMCP 를 씁니다. CLI 와 테스트는 그대로 의존성 없이 돕니다
 넣으세요. 가상환경에 설치했다면 그 환경의 `python` 절대 경로를 줘야 합니다 —
 이게 제일 흔한 실패 원인입니다.
 
-환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 git 루트와 `crex.toml` 을
+환경변수 셋 다 선택입니다. 없으면 현재 디렉터리에서 git 루트와 `crex.json` 을
 찾고 `reports/` 에 리포트를 씁니다.
 
 | 변수 | 뜻 |
 |---|---|
 | `CREX_WORKSPACE` | 리뷰 대상 저장소 루트. 이전 이름 `CREX_REPO` 도 그대로 받습니다 |
-| `CREX_CONFIG` | 설정 파일. 생략하면 `<워크스페이스>/crex.toml` 을 먼저 봅니다 |
+| `CREX_CONFIG` | 설정 파일. 생략하면 `<워크스페이스>/crex.json` 을 먼저 봅니다 |
 | `CREX_REPORTS` | 리포트 저장 위치. 기본은 `<워크스페이스>/reports` |
 
 **CREX 설치본은 한 벌이면 됩니다.** 저장소마다 복사하지 말고 프로젝트별
@@ -362,7 +363,7 @@ LLM Providers → Add Provider 에서 API URL 에 vLLM 주소를 넣으면 됩�
 대신 스스로 diff 를 읽고 리뷰해 버립니다. 검증을 안 거친 지적이라 CREX 를 쓰는
 의미가 사라집니다.
 
-CREX 저장소 루트의 [`AGENTS.md`](../AGENTS.md) 를 **리뷰 대상 저장소 루트로
+CREX 저장소 루트의 [`AGENTS.md`](../../AGENTS.md) 를 **리뷰 대상 저장소 루트로
 복사**하세요.
 
 ```bash
@@ -472,10 +473,10 @@ python -m crex --version    # crex 0.1
 
 ### 설정 파일
 
-`crex.toml` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
-상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crex.toml` 에는 공통
-설정만 두고 `.crex.toml` 을 개인용으로 `.gitignore` 에 넣는 방법도 있습니다.
-탐색 순서상 `crex.toml` 이 먼저이므로, 개인 설정을 우선하려면 `--config` 로
+`crex.json` 은 저장소에 커밋하세요. 팀원이 다른 설정으로 돌려서 다른 결과를 보는
+상황을 막아줍니다. 엔드포인트 주소가 장비마다 다르다면 `crex.json` 에는 공통
+설정만 두고 `.crex.json` 을 개인용으로 `.gitignore` 에 넣는 방법도 있습니다.
+탐색 순서상 `crex.json` 이 먼저이므로, 개인 설정을 우선하려면 `--config` 로
 명시하세요.
 
 `rules/taxonomy.toml` 도 당연히 커밋합니다. 룰 변경 이력이 곧 튜닝 이력입니다.

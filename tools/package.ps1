@@ -13,13 +13,14 @@
           pylibs/       fastmcp, GitPython 등을 미리 풀어둔 것
           wheels/       원본 wheel (직접 pip 하고 싶을 때만)
           crex/ docs/ wiki/ rules/ eval/ tests/ ...
+          docs/user_manual_html/   설명서를 렌더한 HTML (포장할 때 새로 만든다)
           tools/msbuild-compiledb/   MSBuild -> compile_commands.json 로거 (DLL)
           crex.cmd crex-mcp.cmd crex-viz.cmd 테스트.cmd   실행 진입점
           MANIFEST.txt   전 파일 SHA256
-          docs/transfer.md   폐쇄망에서 할 일 (반입 후 절차)
+          docs/user_manual/transfer.md   폐쇄망에서 할 일 (반입 후 절차)
 
 .PARAMETER PythonVersion
-    담을 Python 버전. 3.11 이상이어야 한다 (tomllib).
+    담을 Python 버전. 3.11 이상이어야 한다 (룰 택소노미를 읽는 tomllib).
 
 .PARAMETER OutDir
     번들을 놓을 디렉터리. 기본 dist
@@ -116,7 +117,7 @@ Write-Note "crex $CrexVersion"
 
 $minor = [int]($PythonVersion.Split('.')[1])
 if ($minor -lt 11) {
-    throw "Python $PythonVersion 은 쓸 수 없다. tomllib 이 3.11 부터 표준이라 3.11 이상이 필요하다."
+    throw "Python $PythonVersion 은 쓸 수 없다. 룰 택소노미를 읽는 tomllib 이 3.11 부터 표준이라 3.11 이상이 필요하다."
 }
 
 if (Test-Path $Staging) {
@@ -134,7 +135,7 @@ Write-Step "소스 복사"
 
 $Sources = @("crex", "rules", "eval", "tests", "docs", "wiki", "tools")
 $Files = @(
-    "README.md", "CLAUDE.md", "AGENTS.md", "crex.example.toml",
+    "README.md", "CLAUDE.md", "AGENTS.md", "crex.example.json",
     "requirements.txt", "requirements-optional.txt", ".gitignore",
     "run_viz.ps1", "viz.ps1"
 )
@@ -146,8 +147,11 @@ foreach ($dir in $Sources) {
         continue
     }
     # __pycache__ 와 리뷰 산출물은 제외한다. 반입 심사 대상만 늘린다.
+    # user_manual_html 도 제외한다 — 저장소에 남아 있는 것은 언제 만든 것인지
+    # 알 수 없다. 바로 아래에서 지금 복사한 마크다운으로 새로 렌더한다.
     robocopy $src (Join-Path $Staging $dir) /E /NFL /NDL /NJH /NJS /NP `
-        /XD __pycache__ .git reports .opencodereview /XF *.pyc *.pyo | Out-Null
+        /XD __pycache__ .git reports .opencodereview user_manual_html `
+        /XF *.pyc *.pyo | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "$dir 복사 실패 (robocopy $LASTEXITCODE)" }
     Write-Note "$dir"
 }
@@ -178,6 +182,42 @@ foreach ($file in $Files) {
 
 # 골든셋 디렉터리 뼈대는 남긴다 (내용은 팀이 채운다)
 New-Item -ItemType Directory -Path (Join-Path $Staging "eval\golden\diffs") -Force | Out-Null
+
+# --------------------------------------------------------------------------
+# 1-1. 사용 설명서 HTML
+# --------------------------------------------------------------------------
+#  마크다운 뷰어가 없는 장비가 많다. 메모장으로 표와 코드 펜스를 읽게 두느니
+#  브라우저에서 열리는 것을 같이 넣는다. 렌더러는 표준 라이브러리만 쓰고
+#  결과물은 CDN·폰트를 부르지 않으므로 폐쇄망에서 그대로 열린다.
+#
+#  **저장소에 있는 HTML 을 복사하지 않고 여기서 새로 만든다.** 그것은 생성물이라
+#  버전 관리에서 빠져 있고, 남아 있더라도 지금 담는 마크다운과 같은 시점의
+#  것이라는 보장이 없다. 설명서가 본문과 어긋나는 것은 없느니만 못하다.
+#
+#  링크가 깨져 있으면 렌더러가 종료 코드 1 을 내고, 여기서 포장이 멈춘다.
+#  깨진 설명서를 반입 심사에 올리고 나서 알게 되는 것이 가장 나쁘다.
+
+Write-Step "사용 설명서 HTML 렌더"
+
+$ManualSrc = Join-Path $Staging "docs\user_manual"
+if (-not (Test-Path $ManualSrc)) {
+    throw "$ManualSrc 가 없다. 설명서가 빠진 번들은 반입해도 쓸모가 없다."
+}
+
+$Renderer = Join-Path $RepoRoot "tools\render_docs.py"
+if (-not (Test-Path $Renderer)) {
+    throw "$Renderer 가 없다."
+}
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "python 을 PATH 에서 찾을 수 없다. 설명서를 렌더하려면 3.11 이상이 필요하다."
+}
+
+Invoke-Native -FilePath "python" -What "설명서 렌더" -Arguments @(
+    $Renderer,
+    "--src", $ManualSrc,
+    "--out", (Join-Path $Staging "docs\user_manual_html")
+) | Out-Null
+Write-Note "docs\user_manual_html"
 
 # --------------------------------------------------------------------------
 # 2. Python 런타임
@@ -379,7 +419,7 @@ Write-Host ""
 Write-Host "다음:" -ForegroundColor Yellow
 Write-Host "  1. zip 과 .sha256 을 함께 반입 신청한다"
 Write-Host "  2. 폐쇄망에서 압축을 풀고 tools\verify.ps1 을 실행한다"
-Write-Host "  3. 자세한 절차는 번들 안의 docs\transfer.md 를 본다"
+Write-Host "  3. 자세한 절차는 번들 안의 docs\user_manual\transfer.md 를 본다"
 
 # robocopy 는 성공해도 0 이 아닌 코드를 낸다(1 = 복사함). 그 값이 $LASTEXITCODE 에
 # 그대로 남으면, 이 스크립트를 부른 쪽은 번들이 멀쩡히 만들어졌는데도 실패로 읽는다.

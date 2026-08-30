@@ -9,7 +9,7 @@
       2. 실행    — Python 이 뜨고 CREX 가 import 되는가
       3. 테스트  — tests/run_all.py 전부 통과 (LLM·네트워크·pip 불필요)
 
-    여기까지 통과하면 파일은 온전하다. 그다음은 crex.toml 에 vLLM 주소를 넣고
+    여기까지 통과하면 파일은 온전하다. 그다음은 crex.json 에 vLLM 주소를 넣고
     doctor 를 돌릴 차례다.
 
 .PARAMETER SkipManifest
@@ -106,7 +106,7 @@ if ($python) {
     if ([int]$major -eq 3 -and [int]$minor -ge 11) {
         Write-Ok "Python $version"
     } else {
-        Write-Bad "Python $version — 3.11 이상이 필요하다 (tomllib)"
+        Write-Bad "Python $version — 3.11 이상이 필요하다 (룰 택소노미를 읽는 tomllib)"
     }
 
     # CREX 가 import 되는가. 임베더블에서 ._pth 가 잘못되면 여기서 걸린다.
@@ -118,23 +118,6 @@ if ($python) {
         } else {
             Write-Bad "crex import 실패: $probe"
             Write-Note "임베더블이면 runtime\python*._pth 에 '..' 가 있는지 확인하라"
-        }
-    } finally {
-        Pop-Location
-    }
-
-    # 서드파티는 있으면 좋고 없어도 코어는 돈다
-    Push-Location $BundleRoot
-    try {
-        foreach ($mod in @("fastmcp", "git")) {
-            & $python -c "import $mod" 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Ok "$mod"
-            } else {
-                $label = if ($mod -eq "git") { "GitPython — subprocess 폴백으로 동작한다" }
-                         else { "fastmcp — python -m crex.mcp (Zed 연동) 를 쓸 수 없다" }
-                Write-Note "없음 $label"
-            }
         }
     } finally {
         Pop-Location
@@ -179,14 +162,16 @@ if ($failed -eq 0) {
     Write-Host "번들 검증 완료" -ForegroundColor Green
     Write-Host ""
     Write-Host "다음:" -ForegroundColor Yellow
-    Write-Host "  1. copy crex.example.toml crex.toml"
-    Write-Host "  2. crex.toml 에 사내 vLLM 주소와 모델명을 넣는다"
+    Write-Host "  1. copy crex.example.json crex.json"
+    Write-Host "  2. crex.json 에 사내 vLLM 주소와 모델명을 넣는다"
     Write-Host "  3. crex.cmd doctor"
     Write-Host ""
-    Write-Host "  자세한 절차: docs\transfer.md"
+    Write-Host "  사용 설명서: docs\user_manual_html\index.html (브라우저로 열면 된다)"
+    Write-Host ""
+    Write-Host "  자세한 절차: docs\user_manual\transfer.md"
     exit 0
 } else {
     Write-Host "실패 $failed 건" -ForegroundColor Red
-    Write-Host "재반입이 필요할 수 있다. docs\transfer.md 의 문제 해결 절을 보라."
+    Write-Host "재반입이 필요할 수 있다. docs\user_manual\transfer.md 의 문제 해결 절을 보라."
     exit 1
 }

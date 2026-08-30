@@ -83,7 +83,7 @@ DB 를 세우고 그 백업·권한·반입 승인을 떠안을 이유가 없습
 ## 옵션
 
 ```bash
-python -m crex.viz --port 9000 --workspace D:\work\myproject --config crex.toml
+python -m crex.viz --port 9000 --workspace D:\work\myproject --config crex.json
 ```
 
 | 옵션 | 뜻 | 기본값 |
@@ -107,10 +107,10 @@ diff 리뷰(스테이징·두 참조 비교)는 못 하고 파일·폴더 감사
 ### 화면에서 대상 바꾸기
 
 "워크스페이스" 옆의 **변경** 을 누르면 경로를 입력해 리뷰 대상을 바꿀 수 있습니다.
-새 저장소 안에 `crex.toml` 이 있으면 그 설정으로 갈아탑니다 — 저장소마다
+새 저장소 안에 `crex.json` 이 있으면 그 설정으로 갈아탑니다 — 저장소마다
 `compile_commands_dir` 이 다르니 설정도 같이 움직여야 합니다.
 
-**서버가 사는 동안만 유지됩니다.** `crex.toml` 은 바뀌지 않습니다. 영구히 바꾸려면
+**서버가 사는 동안만 유지됩니다.** `crex.json` 은 바뀌지 않습니다. 영구히 바꾸려면
 `python -m crex workspace <경로>` 를 쓰세요.
 
 두 경우에 거부합니다.
@@ -140,7 +140,7 @@ diff 리뷰(스테이징·두 참조 비교)는 못 하고 파일·폴더 감사
    패널에 흐르고, 전문은 `.crex/compiledb/msbuild.log` 에 남습니다.
 
 끝나면 만들어진 자리가 **지금 돌고 있는 설정에 곧바로 꽂힙니다.** 다음 리뷰부터
-clang-tidy 가 그 DB 를 씁니다. `crex.toml 에도 적기` 를 켜 두면(기본값) 워크스페이스의
+clang-tidy 가 그 DB 를 씁니다. `crex.json 에도 적기` 를 켜 두면(기본값) 워크스페이스의
 설정 파일에 `compile_commands_dir` 도 적어 다음에 띄울 때까지 살아남습니다. 끄면
 서버가 사는 동안만 적용되고 남의 저장소 파일은 건드리지 않습니다.
 

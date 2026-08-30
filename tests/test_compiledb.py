@@ -249,7 +249,7 @@ def test_cli_writes_the_path_into_config() -> None:
     code = main(["compiledb", "--workspace", str(root)])
     _check(code == 0, f"종료 코드 {code}")
 
-    config = load_config(root / "crex.toml")
+    config = load_config(root / "crex.json")
     _check(config.grounding.compile_commands_dir == ".crex/compiledb",
            f"적힌 값: {config.grounding.compile_commands_dir!r}")
 

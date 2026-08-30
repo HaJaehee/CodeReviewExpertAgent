@@ -99,7 +99,7 @@ curl http://vllm-qwen:8000/v1/models
 ```
 
 `--served-model-name` 없이 띄웠다면 모델 이름이 파일 경로 전체입니다.
-그 경로를 `crex.toml` 에 그대로 넣거나, vLLM 을 재기동하면서
+그 경로를 `crex.json` 에 그대로 넣거나, vLLM 을 재기동하면서
 `--served-model-name Qwen3.6-27B` 를 주세요.
 
 404, 400, 422 는 재시도해도 결과가 같으므로 CREX 가 즉시 포기합니다.
@@ -133,15 +133,20 @@ guided decoding 을 성립시키지 못했다 — 이 엔드포인트로는 리�
   전부 거부합니다.
 - 구버전 vLLM 이라 백엔드 이름을 요청에 실어야 한다면 다음을 넣으세요.
 
-```toml
-[llm.generator]
-structured_output_mode = "guided_json"
-guided_decoding_backend = "xgrammar"
+```json
+{
+  "llm": {
+    "generator": {
+      "structured_output_mode": "guided_json",
+      "guided_decoding_backend": "xgrammar"
+    }
+  }
+}
 ```
 
 `guided_decoding_backend` 는 기본적으로 **보내지 않습니다**. 최신 vLLM 이 이
 필드를 모르는 키로 보고 400 을 내기 때문입니다. 구버전에서만 적으세요.
-`[llm.verifier]` 에도 같이 넣어야 합니다.
+`llm.verifier` 에도 같이 넣어야 합니다.
 
 **이걸 대충 넘기지 마세요.** 구조화 출력이 안 걸리면 룰 ID 와 라인 번호에 대한
 enum 제약이 사라집니다. 환각 방어 네 겹 중 두 겹이 날아가고, 남은 두 겹이
@@ -158,9 +163,16 @@ LLMError: content 없음 (reasoning 전용 응답?): {'role': 'assistant', 'reas
 추론 모델이 사고 과정만 내놓고 본문을 안 냈습니다. Qwen3.x 계열에서 추론 모드가
 켜져 있을 때 나옵니다.
 
-```toml
-[llm.generator.extra_body]
-chat_template_kwargs = { enable_thinking = false }
+```json
+{
+  "llm": {
+    "generator": {
+      "extra_body": {
+        "chat_template_kwargs": { "enable_thinking": false }
+      }
+    }
+  }
+}
 ```
 
 `max_output_tokens` 이 너무 작아서 사고 과정만 쓰다가 잘렸을 수도 있습니다.
@@ -336,10 +348,10 @@ INFO    crex.cli: 워크스페이스: D:\work\other [CREX_WORKSPACE]
 
 1. `--workspace` (`--repo` 도 같습니다)
 2. 환경변수 `CREX_WORKSPACE`, `CREX_REPO`
-3. `crex.toml` 의 `workspace`
+3. `crex.json` 의 `workspace`
 4. 현재 디렉터리에서 git 루트 탐색
 
-셸에 예전 `CREX_REPO` 가 남아 있어서 `crex.toml` 의 `workspace` 가 안 먹는 경우가
+셸에 예전 `CREX_REPO` 가 남아 있어서 `crex.json` 의 `workspace` 가 안 먹는 경우가
 제일 흔합니다. `echo %CREX_REPO%` / `echo $CREX_REPO` 로 확인하세요.
 
 ---
@@ -351,7 +363,7 @@ INFO    crex.cli: 워크스페이스: D:\work\other [CREX_WORKSPACE]
   .git 이 있는 프로젝트 루트를 지정하십시오. 예: --workspace D:\work\myrepo
 ```
 
-경로 오타이거나, `crex.toml` 의 상대경로를 실행 위치 기준으로 쓴 경우입니다.
+경로 오타이거나, `crex.json` 의 상대경로를 실행 위치 기준으로 쓴 경우입니다.
 **설정 파일 안의 상대경로는 그 설정 파일이 있는 디렉터리 기준**입니다. 확실하게
 하려면 절대경로를 쓰세요.
 
@@ -424,7 +436,7 @@ unified diff 를 돌려줍니다. `doctor` 가 어느 쪽을 쓰는지 알려줍
 python tests/run_all.py
 ```
 
-128개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
+210개가 전부 통과해야 합니다. 반입 직후 실패한다면 파일이 덜 복사된 겁니다.
 특히 `rules/taxonomy.toml` 이 빠지면 여러 모듈이 한꺼번에 터집니다.
 
 ```

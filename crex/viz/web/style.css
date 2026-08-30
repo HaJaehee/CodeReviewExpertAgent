@@ -160,7 +160,7 @@ code, pre, .mono { font-family: var(--mono); }
 .panel-head h2 { margin: 0; }
 
 /* 경로에는 띄어쓰기가 없다. 기본 줄바꿈 규칙은 공백에서만 끊으므로
-   `D:\work\...\crex.toml` 같은 값이 패널 밖으로 그대로 삐져나간다.
+   `D:\work\...\crex.json` 같은 값이 패널 밖으로 그대로 삐져나간다.
    anywhere 를 줘서 어디서든 접히게 한다. */
 .hint {
   margin: 0 0 10px;

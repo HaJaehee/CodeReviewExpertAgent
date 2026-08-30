@@ -28,7 +28,7 @@ which is English for the same reason. Comments meant for maintainers stay Korean
 
 One server per repository is the normal setup: give each editor project its own
 `CREX_WORKSPACE` and a single CREX install serves all of them. Zed `settings.json`
-examples are in `docs/operations.md`.
+examples are in `docs/user_manual/operations.md`.
 
 ## Transports
 
@@ -36,7 +36,7 @@ stdio is the default and the one to prefer — the editor spawns the process, ta
 over stdin/stdout, and nothing listens on a port. Streamable HTTP exists for the
 cases stdio cannot cover: one shared server for several people, or a client on a
 different machine. It has no authentication, so bind it to loopback unless the
-network in front of it is doing that job. See `docs/operations.md`.
+network in front of it is doing that job. See `docs/user_manual/operations.md`.
 """
 
 from __future__ import annotations

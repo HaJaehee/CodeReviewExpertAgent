@@ -133,7 +133,7 @@ class ReviewService:
 
         이 프로세스에서만 바뀐다 — 설정 파일은 건드리지 않는다. 서버를 다시
         띄우면 원래 대상으로 돌아온다. 영구히 바꾸려면 `python -m crex workspace
-        <경로>` 를 쓰거나 `crex.toml` 의 `workspace` 를 고친다.
+        <경로>` 를 쓰거나 `crex.json` 의 `workspace` 를 고친다.
 
         에이전트가 부르는 도구다. 설정 파일을 조용히 고쳐 쓰는 쪽으로 만들면
         대화 한 번이 다음 사람의 실행 대상까지 바꿔 놓는다.
