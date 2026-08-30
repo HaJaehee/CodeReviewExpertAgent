@@ -772,6 +772,32 @@ input::placeholder { color: var(--fg-faint); }
 .modal-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .modal-sub { margin: 2px 0 0; font-size: 11.5px; color: var(--fg-faint); font-family: var(--mono); }
 
+/* ── 정보 모달 ─────────────────────────────────────────────────────
+   탐색기 모달과 골격(.modal / .modal-dialog / .modal-scrim)을 공유한다.
+   내용이 세 줄뿐이라 폭만 좁힌다. */
+.modal-narrow { width: min(360px, 92vw); }
+
+.about-body { padding: 16px 18px 18px; }
+
+.about-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px 18px;
+  align-items: baseline;
+}
+.about-list dt { color: var(--fg-dim); font-size: 12px; }
+/* 값은 고정폭이다. 주소와 버전은 한 글자씩 확인하게 되는 값이라
+   비례폭으로 두면 l 과 1, 0 과 O 가 구분되지 않는다. */
+.about-list dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.about-list a { color: var(--gen); text-decoration: none; }
+.about-list a:hover { text-decoration: underline; }
+
 .picker-nav {
   padding: 8px 16px;
   background: var(--bg-sunken);

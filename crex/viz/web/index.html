@@ -25,6 +25,7 @@
     <span class="chip chip-gen" id="chip-generator" title="생성 모델">생성 —</span>
     <span class="chip chip-ver" id="chip-verifier" title="검증 모델">검증 —</span>
     <button class="btn btn-ghost" id="btn-health" type="button">엔드포인트 점검</button>
+    <button class="btn btn-ghost" id="btn-about" type="button" title="만든 사람과 버전">정보</button>
   </div>
 </header>
 
@@ -346,6 +347,34 @@
     </div>
   </div>
   <div class="modal-scrim" id="picker-scrim"></div>
+</div>
+
+<!-- ── 정보 모달 ──────────────────────────────────────────────────
+  버전은 여기 적지 않는다. /api/config 가 crex/__init__.py 의 __version__ 을
+  그대로 내려주고 view.js 가 채운다 — 화면에 숫자를 또 적으면 릴리스마다
+  둘 중 어느 쪽이 진짜인지 알 수 없게 된다.
+-->
+<div class="modal" id="about-modal" hidden>
+  <div class="modal-dialog modal-narrow">
+    <div class="modal-head">
+      <div>
+        <h3>CREX</h3>
+        <p class="modal-sub">Code Review EXpert</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="about-close" type="button">✕</button>
+    </div>
+    <div class="about-body">
+      <dl class="about-list">
+        <dt>Author</dt>
+        <dd>Ha, Jaehee</dd>
+        <dt>Email</dt>
+        <dd><a href="mailto:lovesm135@naver.com">lovesm135@naver.com</a></dd>
+        <dt>Version</dt>
+        <dd id="about-version">—</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="modal-scrim" id="about-scrim"></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

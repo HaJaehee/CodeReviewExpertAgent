@@ -698,6 +698,10 @@
       escapeHtml(payload.config.min_severity) + '</code> · 동시 실행 ' +
       payload.config.max_workers;
 
+    // 버전은 서버가 알려준 것만 쓴다. 화면에 숫자를 적어 두면 릴리스마다
+    // 손으로 맞춰야 하고, 안 맞춘 순간부터 조용히 거짓말을 한다.
+    $('about-version').textContent = 'v' + payload.version;
+
     $('where-workspace').textContent =
       ws.root + (ws.origin ? '  (' + ws.origin + ')' : '');
     $('where-workspace').dataset.warn = ws.is_git ? 'false' : 'true';
@@ -1298,6 +1302,14 @@
   $('picker-scrim').addEventListener('click', closePicker);
   $('picker-confirm').addEventListener('click', confirmPicker);
 
+  // ── 정보 모달 ──────────────────────────────────────────────────
+  function aboutOpen() { return !$('about-modal').hidden; }
+  function closeAbout() { $('about-modal').hidden = true; }
+
+  $('btn-about').addEventListener('click', () => { $('about-modal').hidden = false; });
+  $('about-close').addEventListener('click', closeAbout);
+  $('about-scrim').addEventListener('click', closeAbout);
+
   $('picker-filter').addEventListener('input', (event) => {
     pickerState.filterText = event.target.value;
     renderPickerList();
@@ -1350,7 +1362,10 @@
   $('drawer-scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      if (pickerState.open) {
+      // 위에 떠 있는 것부터 닫는다. 정보 모달이 가장 나중에 열리므로 가장 위다.
+      if (aboutOpen()) {
+        closeAbout();
+      } else if (pickerState.open) {
         closePicker();
       } else {
         closeDrawer();
