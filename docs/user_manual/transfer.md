@@ -54,6 +54,7 @@ crex-20260817/
   run_viz.ps1        웹 UI 실행 (PowerShell)
   crex-viz.cmd       웹 UI 실행 (cmd)
   테스트.cmd         반입 무결성 확인
+  LICENSE.md        서드파티 라이선스 고지 (certifi 의 MPL-2.0 전문)
   MANIFEST.txt      전 파일 SHA256
 ```
 
@@ -129,6 +130,17 @@ notepad crex.json       # vLLM 주소와 모델명을 넣는다
 ```
 
 번들에는 CREX 소스와 Python 런타임만 들어갑니다. clang-tidy·cppcheck·ruff 같은
+### 라이선스
+
+번들에 함께 담기는 서드파티 중 카피레프트는 `certifi`(**MPL-2.0**) 하나뿐이고,
+나머지는 전부 퍼미시브(MIT·BSD·Apache-2.0 등)입니다. CREX 는 `certifi` 를
+**고치지 않고 그대로** 재배포하므로 지켜야 할 의무는 고지뿐이며, 루트의
+`LICENSE.md` 에 MPL-2.0 전문을 실어 그 의무를 채웁니다. `certifi` 자신은 전문
+대신 mozilla.org 링크만 담고 있는데 폐쇄망에서는 그 링크가 열리지 않습니다.
+
+`-SkipDeps` 로 만든 번들에는 `pylibs/` 가 아예 없어서 카피레프트 구성요소가
+하나도 들어가지 않습니다. 심사 대상을 줄이고 싶으면 이쪽을 쓰십시오.
+
 정적분석 도구는 **별도로 반입 신청**해야 합니다 — 내려받는 곳과 라이선스는
 [정적분석 도구](analyzers.md)에 정리해 두었습니다. 없어도 리뷰는 되므로 나중에
 채워도 됩니다.

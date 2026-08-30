@@ -16,6 +16,7 @@
           docs/user_manual_html/   설명서를 렌더한 HTML (포장할 때 새로 만든다)
           tools/msbuild-compiledb/   MSBuild -> compile_commands.json 로거 (DLL)
           crex.cmd crex-mcp.cmd crex-viz.cmd 테스트.cmd   실행 진입점
+          LICENSE.md     서드파티 라이선스 고지 (certifi MPL-2.0 전문)
           MANIFEST.txt   전 파일 SHA256
           docs/user_manual/transfer.md   폐쇄망에서 할 일 (반입 후 절차)
 
@@ -135,7 +136,7 @@ Write-Step "소스 복사"
 
 $Sources = @("crex", "rules", "eval", "tests", "docs", "wiki", "tools")
 $Files = @(
-    "README.md", "CLAUDE.md", "AGENTS.md", "crex.example.json",
+    "README.md", "LICENSE.md", "CLAUDE.md", "AGENTS.md", "crex.example.json",
     "requirements.txt", "requirements-optional.txt", ".gitignore",
     "run_viz.ps1", "viz.ps1"
 )
@@ -182,6 +183,15 @@ foreach ($file in $Files) {
 
 # 골든셋 디렉터리 뼈대는 남긴다 (내용은 팀이 채운다)
 New-Item -ItemType Directory -Path (Join-Path $Staging "eval\golden\diffs") -Force | Out-Null
+
+# LICENSE.md 는 선택이 아니다. 번들에 담기는 certifi 가 MPL-2.0 이고, MPL 은
+# 사본을 배포할 때 라이선스 고지와 전문을 함께 주도록 요구한다. certifi 자신은
+# 전문 대신 mozilla.org 링크만 담고 있는데, 폐쇄망에서는 그 링크가 열리지 않는다.
+# 그래서 전문을 이 파일에 실어 함께 반입한다.
+if (-not (Test-Path (Join-Path $Staging "LICENSE.md"))) {
+    throw "LICENSE.md 가 번들에 없다. certifi(MPL-2.0) 고지 의무를 못 지킨다."
+}
+Write-Note "LICENSE.md 확인 (certifi MPL-2.0 고지)"
 
 # --------------------------------------------------------------------------
 # 1-1. 사용 설명서 HTML
