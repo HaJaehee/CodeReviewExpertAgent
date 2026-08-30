@@ -13,12 +13,11 @@
 ```
 crex/            파이프라인 본체
 rules/          룰 택소노미
-eval/           평가 하네스
 tests/          테스트
-docs/           이 문서
-wiki/           에이전트용 영문 문서
+docs/           이 문서 (마크다운과 렌더한 HTML)
+tools/          verify.ps1, MSBuild 로거
 README.md
-CLAUDE.md
+LICENSE.md                서드파티 라이선스 고지
 AGENTS.md                 Zed 에이전트 지시 (대상 저장소로 복사)
 crex.example.json
 requirements.txt          MCP 서버용 (코어는 불필요)

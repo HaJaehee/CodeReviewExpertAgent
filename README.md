@@ -225,7 +225,7 @@ CLI, 관제 화면, 테스트가 그대로 돈다. MCP 서버(Zed 연동)만 `re
 필요하다.
 
 - [ ] Python 3.11 이상 확인 (룰 택소노미를 읽는 `tomllib` 이 3.11부터 stdlib)
-- [ ] `crex/`, `rules/`, `eval/`, `tests/`, `wiki/`, `docs/` 디렉터리 복사
+- [ ] `crex/`, `rules/`, `tests/`, `docs/`, `tools/` 디렉터리 복사
 - [ ] `crex.example.json` → `crex.json` 로 복사 후 엔드포인트 수정
 - [ ] `python tests/run_all.py` 로 반입 무결성 확인
 - [ ] `python -m crex doctor` 로 엔드포인트·분석기 상태 확인

@@ -12,7 +12,7 @@
           runtime/      Python 임베더블 (설치 불필요, 레지스트리 안 건드림)
           pylibs/       fastmcp, GitPython 등을 미리 풀어둔 것
           wheels/       원본 wheel (직접 pip 하고 싶을 때만)
-          crex/ docs/ wiki/ rules/ eval/ tests/ ...
+          crex/ docs/ rules/ tests/ tools/
           docs/user_manual_html/   설명서를 렌더한 HTML (포장할 때 새로 만든다)
           tools/msbuild-compiledb/   MSBuild -> compile_commands.json 로거 (DLL)
           crex.cmd crex-mcp.cmd crex-viz.cmd 테스트.cmd   실행 진입점
@@ -134,10 +134,13 @@ Write-Note "작업 위치: $Staging"
 
 Write-Step "소스 복사"
 
-$Sources = @("crex", "rules", "eval", "tests", "docs", "wiki", "tools")
+$Sources = @("crex", "rules", "tests", "docs", "tools")
+#  최종 사용자가 쓰는 것만 담는다. CLAUDE.md / wiki/ / eval/ 과
+#  포장 스크립트 자신은 이 저장소를 고칠 사람의 물건이라 반입 대상이 아니다 —
+#  보안 검토 분량만 늘린다.
 $Files = @(
-    "README.md", "LICENSE.md", "CLAUDE.md", "AGENTS.md", "crex.example.json",
-    "requirements.txt", "requirements-optional.txt", ".gitignore",
+    "README.md", "LICENSE.md", "AGENTS.md", "crex.example.json",
+    "requirements.txt", "requirements-optional.txt",
     "run_viz.ps1", "viz.ps1"
 )
 
@@ -150,9 +153,11 @@ foreach ($dir in $Sources) {
     # __pycache__ 와 리뷰 산출물은 제외한다. 반입 심사 대상만 늘린다.
     # user_manual_html 도 제외한다 — 저장소에 남아 있는 것은 언제 만든 것인지
     # 알 수 없다. 바로 아래에서 지금 복사한 마크다운으로 새로 렌더한다.
+    #  package.ps1 과 render_docs.py 는 번들을 *만드는* 쪽 물건이라 빼낸다.
+    #  렌더는 아래에서 $RepoRoot 의 render_docs.py 로 하므로 지장이 없다.
     robocopy $src (Join-Path $Staging $dir) /E /NFL /NDL /NJH /NJS /NP `
         /XD __pycache__ .git reports .opencodereview user_manual_html `
-        /XF *.pyc *.pyo | Out-Null
+        /XF *.pyc *.pyo package.ps1 render_docs.py | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "$dir 복사 실패 (robocopy $LASTEXITCODE)" }
     Write-Note "$dir"
 }
@@ -181,8 +186,6 @@ foreach ($file in $Files) {
     }
 }
 
-# 골든셋 디렉터리 뼈대는 남긴다 (내용은 팀이 채운다)
-New-Item -ItemType Directory -Path (Join-Path $Staging "eval\golden\diffs") -Force | Out-Null
 
 # LICENSE.md 는 선택이 아니다. 번들에 담기는 certifi 가 MPL-2.0 이고, MPL 은
 # 사본을 배포할 때 라이선스 고지와 전문을 함께 주도록 요구한다. certifi 자신은

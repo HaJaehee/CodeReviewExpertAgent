@@ -13,7 +13,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
 
 from crex.schema import Dimension, Finding, FilterVerdict, RejectReason, ReviewResult, Severity  # noqa: E402
-from run_eval import GoldenCase, GoldenDefect, Report, score_case  # noqa: E402
+
+# 반입 번들에는 `eval/` 이 없다 — 골든셋 튜닝은 이 저장소를 고치는 쪽 일이라
+# `tools/package.ps1` 이 빼낸다. 저장소에서는 전부 돌고, 번들에서는 통째로
+# 건너뛴다. 없는 것을 조용히 통과시키는 게 아니라 건너뛴다고 말한다.
+try:
+    from run_eval import GoldenCase, GoldenDefect, Report, score_case  # noqa: E402
+except ImportError:  # pragma: no cover - 번들에서만 탄다
+    GoldenCase = GoldenDefect = Report = score_case = None
 
 
 def _check(condition: bool, message: str) -> None:
@@ -123,6 +130,10 @@ def main() -> int:
     from crex.cli import force_utf8_output
 
     force_utf8_output()
+    if score_case is None:
+        print("     (eval/ 없음 — 반입 번들에서는 건너뜁니다)")
+        return 0
+
     failures = 0
     for test in TESTS:
         try:

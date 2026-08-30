@@ -45,7 +45,7 @@ crex-20260817/
   runtime/          Python 임베더블 — 설치 불필요, 레지스트리·PATH 안 건드림
   pylibs/           fastmcp, GitPython 등을 미리 풀어둔 것 (pip 실행 불필요)
   wheels/           원본 wheel — 사내 다른 Python 에 직접 설치할 때만
-  crex/ docs/ wiki/ rules/ eval/ tests/ tools/
+  crex/ docs/ rules/ tests/ tools/
   docs/user_manual/       설명서 원본 (마크다운)
   docs/user_manual_html/  같은 설명서를 브라우저로 — index.html 부터
   tools/msbuild-compiledb/   MSBuild → compile_commands.json 로거 (C# DLL, MIT)
@@ -197,7 +197,7 @@ D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
 ```
 
 몇 MB 짜리 zip 이 나옵니다. 폐쇄망에서 기존 번들 위에 `crex\`, `rules\`,
-`docs\`, `wiki\`, `tests\` 만 덮어쓰면 됩니다. `runtime\` 과 `pylibs\` 는
+`docs\`, `tests\` 만 덮어쓰면 됩니다. `runtime\` 과 `pylibs\` 는
 그대로 둡니다.
 
 덮어쓴 뒤 반드시 다시 확인하세요.
