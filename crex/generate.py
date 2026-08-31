@@ -150,16 +150,30 @@ class RuleChecker:
         )
 
         try:
+            # 출력 예산은 설정(llm.generator.max_output_tokens)이 정한다. 여기서
+            # 숫자를 박아 두면 설정을 올려도 그대로라, 잘림을 겪은 사용자가
+            # 설명서대로 값을 키워도 아무 일이 일어나지 않는다.
             response = self.client.complete_json(
-                RULECHECKER_SYSTEM, user, schema,
-                schema_name="findings", max_output_tokens=900,
+                RULECHECKER_SYSTEM, user, schema, schema_name="findings",
             )
         except Exception as exc:  # noqa: BLE001 - 청크 하나가 실패해도 나머지는 진행한다
             log.warning("%s 리뷰 실패: %s", chunk.chunk_id, exc)
             self._record_error(f"{chunk.chunk_id} 생성 실패: {exc}")
             return []
 
-        return self._parse(response, chunk, rules)
+        findings = self._parse(response, chunk, rules)
+
+        if getattr(self.client, "last_call_truncated", False):
+            # 복구한 지적은 유효하지만 전부는 아니다. 여기서 입을 다물면 "지적
+            # 2건"이 "원래 2건"과 구분되지 않는다 — 이 파이프라인이 가장 경계하는
+            # 실패 모양이다.
+            self._record_error(
+                f"{chunk.chunk_id} 응답이 잘려 지적 {len(findings)}건만 복구했습니다 "
+                "— llm.generator.max_output_tokens 를 올리거나 "
+                "review.max_findings_per_chunk 를 줄이십시오"
+            )
+
+        return findings
 
     def _record_error(self, message: str) -> None:
         with self._errors_lock:

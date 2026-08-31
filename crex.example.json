@@ -42,7 +42,13 @@
       "// temperature": "리뷰는 재현 가능해야 한다. 절대 올리지 말 것.",
       "temperature": 0.0,
 
-      "max_output_tokens": 900,
+      "// max_output_tokens": [
+        "출력 상한. 여기 걸리면 JSON 이 문장 한복판에서 끊긴다 — 지적 일부만",
+        "복구되고 나머지는 사라진다. 필요한 양은 review.max_findings_per_chunk 에",
+        "비례한다 (지적 하나가 message+suggestion 최대 800자 ≈ 270토큰).",
+        "지적 5건 기준으로 1600 이면 넉넉하다. 청크가 잘렸다는 경고가 뜨면 올려라."
+      ],
+      "max_output_tokens": 1600,
 
       "// max_input_tokens": [
         "입력 상한. 256K 컨텍스트가 있어도 쓰지 않는다 — 컨텍스트를 늘릴수록",

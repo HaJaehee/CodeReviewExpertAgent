@@ -85,6 +85,10 @@ SUPPORTED_MODES = ("native",)
 
 SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2}
 
+#: 검증 엔드포인트의 출력 예산 상한. 검증 응답은 결론(yes/no) 하나와 짧은
+#: 근거뿐이라 더 줄 이유가 없고, 크게 잡으면 GPU 만 오래 붙든다.
+VERIFIER_MAX_OUTPUT_TOKENS = 400
+
 
 @dataclass
 class ReviewConfig:
@@ -215,8 +219,10 @@ def load_config(path: Path | str | None = None, *, search_from: Path | None = No
         if "verifier" in llm
         else _endpoint(llm.get("generator", {}), default_model="Qwen3.6-27B")
     )
-    # 검증은 짧은 입력에 결론 토큰 하나면 되므로 예산을 따로 조인다.
-    verifier.max_output_tokens = min(verifier.max_output_tokens, 200)
+    # 검증은 짧은 입력에 결론 하나와 짧은 근거면 되므로 예산을 따로 조인다.
+    # 상한이 VERIFIER_MAX_OUTPUT_TOKENS 인 이유: reason 이 500자(≈170토큰)까지
+    # 허용되므로 그보다 낮게 조이면 근거가 문장 중간에서 잘린다.
+    verifier.max_output_tokens = min(verifier.max_output_tokens, VERIFIER_MAX_OUTPUT_TOKENS)
 
     review = ReviewConfig(**_subset(data.get("review", {}), ReviewConfig))
     grounding = GroundingConfig(**_subset(data.get("grounding", {}), GroundingConfig))

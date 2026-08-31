@@ -24,6 +24,22 @@ guided decoding 은 서버 구성에 따라 **있거나 없다**. vLLM 버전마
   성공한 조합을 기억해 이후 호출에 바로 쓴다. 서버 버전 차이는 스스로 흡수한다.
 - **명시적 실패** — 사다리를 다 내려가도 안 되면 `StructuredOutputError` 로
   무엇을 시도했고 서버가 뭐라 했는지 그대로 올린다. 조용히 빈 결과를 만들지 않는다.
+
+## 응답이 잘리는 것은 스키마 문제가 아니다
+
+guided decoding 이 완벽히 켜져 있어도 JSON 은 깨질 수 있다. `max_tokens` 에
+걸리면 서버는 문법과 무관하게 그 자리에서 생성을 끊는다 — 지적을 세 건 쓰고
+네 번째의 `suggestion` 에서 소스코드를 인용하던 중이었다면 응답은 문자열 한복판에서
+끝난다. 청크마다 코드 길이가 다르니 이것은 **어떤 청크는 되고 어떤 청크는 안 되는**
+형태로 나타나고, 예전에는 "guided decoding 설정을 확인하십시오" 라는 엉뚱한
+메시지와 함께 그 청크의 지적이 통째로 사라졌다.
+
+그래서 잘린 응답은 두 가지로 다룬다.
+
+- **복구** — 마지막으로 온전히 끝난 값까지 잘라내고 열린 컨테이너를 닫아 되살린다.
+  완성된 지적 세 건은 네 번째가 잘렸다는 이유로 버릴 것이 아니다.
+- **보고** — 복구했든 못 했든 `TruncatedOutputError`/경고로 **잘렸다는 사실과
+  올릴 설정 이름**을 말한다. 스키마를 의심하게 만들지 않는다.
 """
 
 from __future__ import annotations
@@ -63,6 +79,15 @@ class LLMHTTPError(LLMError):
         super().__init__(f"HTTP {status}: {body}")
         self.status = status
         self.body = body
+
+
+class TruncatedOutputError(LLMError):
+    """`max_tokens` 에 걸려 응답이 잘렸고, 남은 조각에서 건질 것이 없었다.
+
+    스키마 실패와 구분되는 별도 타입인 이유는 처방이 다르기 때문이다. 이쪽의
+    답은 `max_output_tokens` 를 올리거나 청크당 지적 수를 줄이는 것이지,
+    guided decoding 설정을 들여다보는 것이 아니다.
+    """
 
 
 class StructuredOutputError(LLMError):
@@ -151,6 +176,9 @@ class LLMClient:
         #: 400 왕복을 반복하면 리뷰가 몇 분씩 헛돈다.
         self._structured_failed: StructuredOutputError | None = None
         self._lock = threading.Lock()
+        #: 직전 호출의 부수 정보(finish_reason, 잘림 복구 여부). 청크들이 워커
+        #: 스레드에서 같은 클라이언트를 공유하므로 스레드 로컬이어야 한다.
+        self._call_state = threading.local()
 
     # -- public ------------------------------------------------------------
 
@@ -194,9 +222,18 @@ class LLMClient:
     ) -> dict[str, Any]:
         """스키마를 강제해 호출하고 파싱된 dict 를 돌려준다.
 
-        guided decoding 이 켜져 있으면 파싱은 사실상 실패하지 않는다. 그럼에도
-        구버전 vLLM 이나 미지원 백엔드를 대비해 관대한 추출을 한 번 시도한다.
+        guided decoding 이 켜져 있으면 문법 오류로 인한 파싱 실패는 사실상
+        없다. 남는 실패 경로는 둘뿐이라 그 둘만 다룬다.
+
+        1. 스키마가 강제되지 않아 설명·펜스가 섞여 나온 경우 → 관대한 추출
+        2. `max_tokens` 에 걸려 응답이 잘린 경우 → 온전한 부분까지 복구
+
+        2번을 복구하면서 `last_call_truncated` 를 세워 둔다. 호출부가 "이
+        청크는 지적 일부를 잃었다" 를 사용자에게 말할 수 있어야 하기 때문이다.
         """
+        self._call_state.salvaged = False
+        budget = max_output_tokens or self.config.max_output_tokens
+
         raw = self.complete(
             system,
             user,
@@ -207,10 +244,47 @@ class LLMClient:
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            extracted = _extract_first_json_object(raw)
-            if extracted is None:
-                raise LLMError(f"JSON 파싱 실패, guided decoding 설정을 확인하십시오: {raw[:400]!r}")
+            pass
+
+        extracted = _extract_first_json_object(raw)
+        if extracted is not None:
             return extracted
+
+        cut_off = self.last_finish_reason == "length"
+        salvaged = _repair_truncated_json(raw)
+        if salvaged is not None:
+            self._call_state.salvaged = True
+            log.warning(
+                "응답이 %s 잘려 온전한 부분까지만 복구했습니다 (max_tokens=%d, %s). "
+                "일부 항목이 빠졌을 수 있습니다.",
+                "출력 토큰 한도에서" if cut_off else "중간에",
+                budget,
+                self.config.model,
+            )
+            return salvaged
+
+        if cut_off:
+            raise TruncatedOutputError(
+                f"응답이 출력 토큰 한도({budget})에 걸려 잘렸고, 건질 수 있는 항목이 "
+                "없었습니다. 설정의 max_output_tokens 를 올리거나 "
+                "review.max_findings_per_chunk 를 줄이십시오. "
+                f"끝부분: {raw[-200:]!r}"
+            )
+        raise LLMError(f"JSON 파싱 실패, guided decoding 설정을 확인하십시오: {raw[:400]!r}")
+
+    @property
+    def last_finish_reason(self) -> str | None:
+        """직전 호출에서 서버가 알려준 종료 사유. `"length"` 면 잘린 것이다."""
+        return getattr(self._call_state, "finish_reason", None)
+
+    @property
+    def last_call_truncated(self) -> bool:
+        """직전 `complete_json` 이 잘린 응답을 복구해서 돌려줬는가.
+
+        참이면 결과는 유효하지만 **완전하지 않다**. 조용히 넘기면 "지적 3건" 이
+        "원래 3건" 과 구분되지 않는다.
+        """
+        return bool(getattr(self._call_state, "salvaged", False))
 
     def health(self) -> tuple[bool, str]:
         """엔드포인트 연결과 모델 존재를 확인한다.
@@ -255,7 +329,8 @@ class LLMClient:
                 "Produce one example object that satisfies the given schema.",
                 json_schema=schema,
                 schema_name=name,
-                max_output_tokens=300,
+                # 진단 응답이 잘려 판정이 흐려지지 않을 만큼은 준다.
+                max_output_tokens=600,
             )
         except StructuredOutputError as exc:
             return ProbeStep(f"구조화 출력 ({name})", False, str(exc))
@@ -268,6 +343,23 @@ class LLMClient:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
+            parsed = None
+
+        if parsed is None and self.last_finish_reason == "length":
+            # 진단은 출력 예산을 짧게 잡으므로 여기서 잘리는 일이 있다. 이것을
+            # "스키마 미적용"으로 보고하면 멀쩡한 서버를 뜯게 만든다. 앞부분만
+            # 살려서 enum 검사는 그대로 한다 — 그게 이 단계의 목적이다.
+            parsed = _repair_truncated_json(raw)
+            if parsed is None:
+                return ProbeStep(
+                    f"구조화 출력 ({name})", False,
+                    f"{note} — 응답이 진단용 출력 상한에서 잘려 enum 준수를 확인하지 "
+                    "못했습니다. 스키마 요청 자체는 받아들여졌으므로 리뷰 경로의 "
+                    "고장은 아닙니다",
+                )
+            note += " (응답이 잘려 앞부분만 검사)"
+
+        if parsed is None:
             if _extract_first_json_object(raw) is None:
                 return ProbeStep(
                     f"구조화 출력 ({name})", False,
@@ -403,6 +495,9 @@ class LLMClient:
         choices = body.get("choices") or []
         if not choices:
             raise LLMError(f"빈 응답: {body}")
+        # 잘림 진단의 유일한 근거다. 본문 검사보다 먼저 남긴다 — content 가 비어
+        # 예외로 나가는 경로에서도 "왜" 는 남아 있어야 한다.
+        self._call_state.finish_reason = choices[0].get("finish_reason")
         message = choices[0].get("message", {})
         content = message.get("content")
         if content is None:
@@ -411,14 +506,39 @@ class LLMClient:
 
 
 def _extract_first_json_object(text: str) -> dict[str, Any] | None:
-    """텍스트에서 첫 번째 균형 잡힌 JSON 객체를 꺼낸다.
+    """텍스트에서 파싱 가능한 첫 JSON 객체를 꺼낸다.
 
     guided decoding 이 꺼진 환경에서 모델이 ```json 펜스나 설명을 덧붙이는 경우에
     대한 방어막이다.
+
+    **첫 `{` 에서 실패해도 포기하지 않는다.** 코드 리뷰 응답은 앞머리에 소스코드를
+    인용하는 일이 잦고, `struct S { int a; }` 같은 조각이 먼저 걸리면 그것 하나
+    때문에 뒤에 멀쩡히 붙어 있는 JSON 을 통째로 버리게 된다. 그래서 짝이 맞는
+    객체가 JSON 이 아니면 **그 객체 뒤로 건너뛰어** 다음 것을 본다.
+
+    반대로 짝이 맞지 않으면 거기서 멈춘다. 그 경우는 응답이 잘린 것이고, 계속
+    파고들면 `{"findings": [{...` 안쪽의 지적 하나를 응답 전체로 착각해
+    돌려주게 된다 — 나머지 지적이 조용히 사라지는 가장 나쁜 결말이다.
+    잘린 응답은 `_repair_truncated_json()` 이 맡는다.
     """
     start = text.find("{")
-    if start < 0:
-        return None
+    while start >= 0:
+        end = _balanced_end(text, start)
+        if end is None:
+            return None
+        try:
+            parsed = json.loads(text[start:end])
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(parsed, dict):
+                return parsed
+        start = text.find("{", end)
+    return None
+
+
+def _balanced_end(text: str, start: int) -> int | None:
+    """`text[start]` 의 `{` 와 짝이 맞는 `}` 바로 다음 인덱스. 없으면 None."""
     depth = 0
     in_string = False
     escaped = False
@@ -439,10 +559,72 @@ def _extract_first_json_object(text: str) -> dict[str, Any] | None:
         elif char == "}":
             depth -= 1
             if depth == 0:
-                try:
-                    return json.loads(text[start : index + 1])
-                except json.JSONDecodeError:
-                    return None
+                return index + 1
+    return None
+
+
+def _repair_truncated_json(text: str) -> dict[str, Any] | None:
+    """잘린 JSON 에서 **온전히 끝난 부분까지만** 살려낸다.
+
+    `max_tokens` 에 걸린 응답은 문자열 한복판에서 끝난다. 흔한 모양은 이렇다.
+
+        {"findings": [{...}, {...}, {"line": 42, "suggestion": "auto v = f('
+
+    앞의 두 건은 완성돼 있고 세 번째만 미완이다. 이때 남은 두 건을 버리는 것은
+    잘못된 손실이다 — 리뷰어는 지적이 왜 사라졌는지 알 방법이 없다.
+
+    복구 규칙은 하나뿐이다. **값 하나가 확실히 끝난 지점까지만 취하고 열린
+    컨테이너를 닫는다.** 그런 지점은 쉼표 앞과 닫는 괄호 뒤 두 곳이다. 내용을
+    지어내거나 따옴표를 임의로 닫지 않는다 — 잘린 문자열을 닫아 버리면 반쪽짜리
+    문장이 완성된 지적처럼 보이고, 그것이야말로 이 프로젝트가 막으려는 것이다.
+    미완의 마지막 항목은 필수 필드가 빠진 채로 나오므로 호출부가 걸러낸다.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    #: (자를 위치, 그 지점에 열려 있던 컨테이너). 뒤에서부터 되짚는다.
+    boundaries: list[tuple[int, list[str]]] = []
+
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append(char)
+        elif char in "}]":
+            if not stack:
+                break
+            stack.pop()
+            if not stack:
+                # 여기서 객체가 닫혔다. 그런데도 이 함수까지 왔다는 것은 그
+                # 객체가 파싱되지 않았다는 뜻이므로, 더 앞쪽 경계로 물러난다.
+                break
+            boundaries.append((index + 1, list(stack)))
+        elif char == "," and stack:
+            boundaries.append((index, list(stack)))
+
+    for cut, open_containers in reversed(boundaries):
+        candidate = text[start:cut] + "".join(
+            "}" if opener == "{" else "]" for opener in reversed(open_containers)
+        )
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
     return None
 
 

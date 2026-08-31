@@ -492,7 +492,8 @@ def _emit(result, args: argparse.Namespace) -> int:
         print(
             f"\n경고: 오류 {len(result.errors)}건으로 리뷰가 온전히 끝나지 않았습니다 "
             f"(생성 {result.generation_errors}, 검증 {result.verification_errors}).\n"
-            "      `python -m crex doctor` 로 엔드포인트를 점검하십시오.",
+            "      아래 내용을 먼저 보고, 원인이 분명하지 않으면 "
+            "`python -m crex doctor` 로 엔드포인트를 점검하십시오.",
             file=sys.stderr,
         )
         for message in result.errors[:3]:

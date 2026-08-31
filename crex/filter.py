@@ -264,9 +264,10 @@ class ReviewFilter:
         )
 
         try:
+            # 예산은 설정(llm.verifier.max_output_tokens)이 정한다 — 검증용으로
+            # 상한이 이미 조여져 있다. 여기에 숫자를 박으면 그 설정이 죽는다.
             response = self.client.complete_json(
-                VERIFIER_SYSTEM, user, VERDICT_SCHEMA,
-                schema_name="verdict", max_output_tokens=400,
+                VERIFIER_SYSTEM, user, VERDICT_SCHEMA, schema_name="verdict",
             )
         except Exception as exc:  # noqa: BLE001 - 검증 실패는 보수적으로 기각한다
             log.warning("검증 호출 실패 (%s:%d): %s", finding.path, finding.line, exc)

@@ -31,10 +31,34 @@ from crex.llm import (  # noqa: E402
     EndpointConfig,
     LLMClient,
     StructuredOutputError,
+    TruncatedOutputError,
+    _extract_first_json_object,
     _relax_schema,
+    _repair_truncated_json,
 )
 from crex.report import to_markdown  # noqa: E402
 from crex.schema import ReviewResult  # noqa: E402
+
+#: `max_tokens` 에 걸려 끊긴 실제 모양의 응답들. 소스코드를 인용하던 중에
+#: 끊기는 것이 가장 흔하다 — 따옴표도 괄호도 열린 채로 끝난다.
+TRUNCATED = {
+    "truncates_findings": (
+        '{"findings": ['
+        '{"line": 41, "rule_id": "cpp.dangling-after-realloc", "severity": "high", '
+        '"message": "realloc 이후 이전 포인터를 그대로 쓴다", "suggestion": "p = q;"}, '
+        '{"line": 42, "rule_id": "cpp.buffer-bounds", "severity": "high", '
+        '"message": "경계 검사가 없다", "suggestion": "if (i < n)"}, '
+        '{"line": 41, "rule_id": "cpp.buffer-bounds", "severity": "low", '
+        '"message": "auto val = NByte(static_cast<byte>(CMSS_ENUM::Repeatback'
+    ),
+    # 배열이 열리자마자 끊겼다. 온전히 끝난 값이 하나도 없다.
+    "truncates_hopeless": '{"findings": [{"line',
+    # 결론은 나왔고 근거를 쓰다가 끊겼다.
+    "truncates_verdict": (
+        '{"verdict": "yes", "code_present": true, "reason": "포인터가 무효화된 뒤에도'
+    ),
+}
+
 
 FINDINGS_SCHEMA = build_findings_schema(
     rule_ids=["cpp.use-after-move", "cpp.dangling-after-realloc"],
@@ -102,13 +126,15 @@ class _Server:
                 if outer.flavor == "violates_enum":
                     return self._ok(json.dumps({"verdict": "maybe", "code_present": True,
                                                 "reason": "x"}))
+                if outer.flavor.startswith("truncates"):
+                    return self._ok(TRUNCATED[outer.flavor], finish_reason="length")
                 return self._ok(_sample_for(schema))
 
-            def _ok(self, content: str):
+            def _ok(self, content: str, finish_reason: str = "stop"):
                 body = json.dumps(
                     {"choices": [{"index": 0, "message": {"role": "assistant",
                                                           "content": content},
-                                  "finish_reason": "stop"}]},
+                                  "finish_reason": finish_reason}]},
                     ensure_ascii=False,
                 ).encode("utf-8")
                 self._send(200, body)
@@ -269,6 +295,131 @@ def test_probe_detects_enum_violation() -> None:
         _check("enum" in steps[1].detail, f"{steps[1].detail}")
 
 
+# -- 잘린 응답 ---------------------------------------------------------------
+#
+# guided decoding 이 완벽해도 `max_tokens` 는 문법과 무관하게 생성을 끊는다.
+# 청크마다 코드 길이가 다르니 이것은 "청크 0은 되는데 청크 1은 JSON 파싱 실패"
+# 라는 모양으로 나타난다. 스키마를 의심하게 만들지 않는 것이 여기의 목표다.
+
+
+def test_truncated_response_keeps_the_completed_findings() -> None:
+    """완성된 지적 두 건을, 세 번째가 잘렸다는 이유로 버리지 않는다."""
+    with _Server("truncates_findings") as server:
+        client = server.client
+        out = client.complete_json("s", "u", FINDINGS_SCHEMA, schema_name="findings")
+
+        _check(len(out["findings"]) == 3, f"완성된 항목이 남아야 한다: {out}")
+        _check(out["findings"][0]["message"].startswith("realloc"), f"{out['findings'][0]}")
+        _check("suggestion" not in out["findings"][2],
+               f"잘린 문자열을 지어내 채우면 안 된다: {out['findings'][2]}")
+        _check(client.last_call_truncated, "복구했다는 사실이 호출부에 보여야 한다")
+
+
+def test_truncated_response_does_not_leak_a_nested_object() -> None:
+    """잘린 응답에서 안쪽 지적 하나를 응답 전체로 착각하면 안 된다.
+
+    그렇게 되면 나머지 지적이 조용히 사라지고, 결과는 "지적 0건"과 똑같이 보인다.
+    """
+    partial = TRUNCATED["truncates_findings"]
+    _check(_extract_first_json_object(partial) is None,
+           "짝이 맞지 않는 응답에서는 아무것도 꺼내지 않아야 한다")
+
+    repaired = _repair_truncated_json(partial)
+    _check(repaired is not None and "findings" in repaired,
+           f"복구 결과의 뿌리는 응답 객체여야 한다: {repaired}")
+
+
+def test_unsalvageable_truncation_names_the_token_limit() -> None:
+    """처방이 다른 실패다. 스키마를 보라고 하면 사용자는 엉뚱한 곳을 판다."""
+    with _Server("truncates_hopeless") as server:
+        try:
+            server.client.complete_json("s", "u", FINDINGS_SCHEMA, schema_name="findings")
+        except TruncatedOutputError as exc:
+            _check("max_output_tokens" in str(exc), f"올릴 설정 이름이 없다: {exc}")
+            _check("guided decoding" not in str(exc), f"엉뚱한 곳을 가리킨다: {exc}")
+            return
+        raise AssertionError("TruncatedOutputError 가 나야 한다")
+
+
+def test_truncated_verdict_keeps_the_conclusion() -> None:
+    """VERDICT_SCHEMA 의 verdict-우선 순서가 여기서 값을 한다.
+
+    근거를 쓰다가 잘려도 결론은 이미 나와 있다. 근거만 잃고 판정은 살린다.
+    """
+    with _Server("truncates_verdict") as server:
+        out = server.client.complete_json("s", "u", VERDICT_SCHEMA, schema_name="verdict")
+        _check(out.get("verdict") == "yes", f"결론이 살아야 한다: {out}")
+        _check(out.get("code_present") is True, f"{out}")
+        _check("reason" not in out, f"잘린 근거는 버린다: {out}")
+
+
+def test_extraction_skips_quoted_code_before_the_json() -> None:
+    """모델이 소스코드를 인용한 뒤 JSON 을 붙이는 경우.
+
+    앞의 `{ ... }` 하나 때문에 뒤의 멀쩡한 JSON 을 버리면 그 청크는 통째로 0건이 된다.
+    """
+    text = '''설명: `struct S { int a; }` 가 문제입니다.
+```json
+{"findings": []}
+```'''
+    _check(_extract_first_json_object(text) == {"findings": []},
+           f"{_extract_first_json_object(text)}")
+
+
+def test_rulechecker_reports_that_a_chunk_was_cut_short() -> None:
+    """복구는 조용히 하면 안 된다 — 지적 3건이 '원래 3건'처럼 보이기 때문이다."""
+    from crex.generate import RuleChecker
+    from crex.rules import load_taxonomy
+    from crex.schema import DiffLine, Language, LineStatus, ReviewChunk
+
+    chunk = ReviewChunk(
+        chunk_id="src/buffer.cpp#0",
+        path="src/buffer.cpp",
+        language=Language.CPP,
+        start_line=41,
+        end_line=42,
+        lines=[DiffLine(LineStatus.ADDED, 41, "buf = (char*)realloc(buf, n);"),
+               DiffLine(LineStatus.ADDED, 42, "buf[i] = 0;")],
+        changed_linenos={41, 42},
+    )
+
+    with _Server("truncates_findings") as server:
+        checker = RuleChecker(server.client, load_taxonomy(), max_workers=1)
+        findings = checker.review([chunk])
+
+        _check(len(findings) == 2,
+               f"완성된 지적은 살고, 필수 필드가 빠진 마지막 항목은 걸러진다: {findings}")
+        _check(len(checker.errors) == 1, f"잘림이 보고돼야 한다: {checker.errors}")
+        _check("잘려" in checker.errors[0] and "max_output_tokens" in checker.errors[0],
+               f"무엇을 하라는 것인지 말해야 한다: {checker.errors[0]}")
+
+
+def test_generation_budget_comes_from_config() -> None:
+    """설명서대로 max_output_tokens 를 올렸는데 아무 일도 안 일어나면 안 된다."""
+    from crex.generate import RuleChecker
+    from crex.rules import load_taxonomy
+    from crex.schema import DiffLine, Language, LineStatus, ReviewChunk
+
+    chunk = ReviewChunk(
+        chunk_id="src/buffer.cpp#0",
+        path="src/buffer.cpp",
+        language=Language.CPP,
+        start_line=41,
+        end_line=41,
+        lines=[DiffLine(LineStatus.ADDED, 41, "buf = (char*)realloc(buf, n);")],
+        changed_linenos={41},
+    )
+
+    with _Server("modern") as server:
+        client = server.client
+        client.config.max_output_tokens = 2048
+        RuleChecker(client, load_taxonomy(), max_workers=1).review([chunk])
+
+        sent = [p for p in server.seen if "response_format" in p]
+        _check(sent and sent[-1]["max_tokens"] == 2048,
+               f"설정값이 요청에 실려야 한다: {[p.get('max_tokens') for p in sent]}")
+
+
 # -- 보고 -------------------------------------------------------------------
 
 
@@ -303,6 +454,13 @@ TESTS = [
     test_ladder_is_resolved_once_not_per_call,
     test_total_failure_raises_instead_of_returning_empty,
     test_relax_keeps_enum_and_type,
+    test_truncated_response_keeps_the_completed_findings,
+    test_truncated_response_does_not_leak_a_nested_object,
+    test_unsalvageable_truncation_names_the_token_limit,
+    test_truncated_verdict_keeps_the_conclusion,
+    test_extraction_skips_quoted_code_before_the_json,
+    test_rulechecker_reports_that_a_chunk_was_cut_short,
+    test_generation_budget_comes_from_config,
     test_probe_passes_on_healthy_server,
     test_probe_catches_what_health_alone_misses,
     test_probe_detects_unenforced_schema,

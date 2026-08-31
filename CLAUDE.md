@@ -70,7 +70,7 @@ plainly.
 ## Commands
 
 ```bash
-python tests/run_all.py                     # 210 tests, no LLM or network needed
+python tests/run_all.py                     # 217 tests, no LLM or network needed
 ```
 
 ```bash
@@ -202,6 +202,11 @@ Full list in [`wiki/invariants.md`](wiki/invariants.md). The ones most easily br
 - **Rule IDs never change** — they join evaluation reports and flywheel statistics
   across months. Add new, delete old; never rename.
 - **Verification failure rejects** — never fail-open.
+- **A truncated response loses items, not the chunk** — `max_tokens` cuts JSON
+  mid-string no matter how well guided decoding works. Salvage back to the last
+  completed value, never close an open string, never treat a nested object as the
+  whole response, and always report that it happened. Output budgets come from
+  config; a hard-coded `max_output_tokens` at a call site is a dead setting.
 - **`on_mismatch` default stays `"raise"`** — a line-shifted review is entirely wrong.
 - **Config rejects unknown keys** — a silently ignored typo means a setting that
   appears not to work. This now covers top-level keys too: `workspase` must fail
@@ -252,7 +257,7 @@ rejects unimplemented modes). A dead setting is worse than a missing one.
 ## Current state
 
 Working and tested: chunking, grounding, generation, filtering, reporting, CLI,
-evaluation harness, MCP server, visualizer. 41 rules. 210 tests passing.
+evaluation harness, MCP server, visualizer. 41 rules. 217 tests passing.
 ~8,600 lines of Python in `crex/`, plus ~2,900 lines of front end in `crex/viz/web/`.
 
 **Not yet true, and load-bearing:**

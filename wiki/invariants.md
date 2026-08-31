@@ -130,6 +130,55 @@ Don't add a diagnostic that only pings the endpoint. Pinned by
 
 ---
 
+## A truncated response loses items, never the whole chunk
+
+`max_tokens` cuts generation mid-token; guided decoding does not protect against
+it. The observed shape: chunk 0 reviews fine, chunk 1 dies with `JSON 파싱 실패`,
+and the raw response ends inside a string — usually while quoting source into
+`suggestion`. Chunk length varies, so this looks like a per-chunk mystery rather
+than a budget problem, and the old message pointed at guided decoding, which was
+never the cause.
+
+Three rules hold here:
+
+- `_repair_truncated_json()` cuts back to the last point where a value certainly
+  ended (a comma, or a closing bracket) and closes the open containers. It never
+  closes an open string. Half a sentence completed into a finding would read as a
+  real defect, and that is precisely what this pipeline exists to prevent — the
+  partial trailing item comes out missing required fields and `RuleChecker._parse()`
+  drops it.
+- `_extract_first_json_object()` stops at an unbalanced `{` instead of walking
+  into it. Otherwise a truncated `{"findings": [{...` yields the first *finding*
+  as if it were the whole response, and the rest disappear silently. It does skip
+  past a balanced-but-unparseable object — models quote `struct S { int a; }`
+  before the JSON.
+- Salvage is never silent. `LLMClient.last_call_truncated` tells the caller, and
+  `RuleChecker` records it in `errors`, which makes the run unhealthy. "3 findings"
+  and "3 findings out of an unknown number" must not read alike.
+
+When nothing survives, `TruncatedOutputError` names `max_output_tokens` — a
+different prescription from `StructuredOutputError`, which is why it is a different
+type.
+
+Pinned by `test_truncated_response_keeps_the_completed_findings`,
+`test_truncated_response_does_not_leak_a_nested_object`, and
+`test_rulechecker_reports_that_a_chunk_was_cut_short`.
+
+---
+
+## Output budgets live in config, not in call sites
+
+`RuleChecker` used to pass `max_output_tokens=900` and `ReviewFilter` `400`,
+overriding `llm.*.max_output_tokens` on the exact calls the setting exists for.
+A user hitting truncation would follow the manual, raise the number, and see no
+change. Both now pass nothing and let `EndpointConfig` decide; the verifier's cap
+(`VERIFIER_MAX_OUTPUT_TOKENS`) is applied once, in `config.py`.
+
+A hard-coded budget at a call site is a dead setting, and per this repo's rules a
+dead setting is worse than a missing one.
+
+---
+
 ## Relaxing a schema may drop limits, never `enum`
 
 When a backend refuses a schema, `_relax_schema()` retries without the keywords in
