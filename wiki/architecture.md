@@ -138,7 +138,7 @@ streams it to a browser. It adds no required wheel; see
 | Engine | `viz/build.py` | 266 | `compile_commands.json` builds driven from the page — calls `compiledb.generate()`, keeps a bounded log tail |
 | Application | `viz/api.py` | 541 | Transport-agnostic router. `Request → Response`, nothing else |
 | Application | `viz/server.py` | 264 | Hand-written ASGI app for uvicorn + stdlib `http.server` fallback |
-| Presentation | `viz/web/*` | 2932 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `view.js` |
+| Presentation | `viz/web/*` | 3172 | `index.html`, `style.css`, `store.js` (localStorage), `client.js`, `csv.js` (verdict export, RFC 4180 + BOM + formula guard), `view.js` |
 
 Dependencies point down and never back: `server → api → engine → trace → crex.*`.
 `api.py` never imports `Pipeline`; `engine.py` never imports HTTP.

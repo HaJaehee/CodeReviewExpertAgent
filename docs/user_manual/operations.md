@@ -28,7 +28,7 @@ requirements-optional.txt tree-sitter (선택)
 
 ```bash
 python --version                # 3.11 이상인지
-python tests/run_all.py         # 반입 무결성 — 217개 전부 통과해야 합니다
+python tests/run_all.py         # 반입 무결성 — 218개 전부 통과해야 합니다
 cp crex.example.json crex.json  # 엔드포인트 수정
 python -m crex doctor           # 연결 확인
 ```

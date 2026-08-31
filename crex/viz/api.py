@@ -38,7 +38,7 @@ from .engine import KINDS, RunRegistry, describe_config
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 
 #: 내보낼 화면 파일. 목록에 없는 이름은 404 다.
-STATIC_FILES = ("index.html", "style.css", "store.js", "client.js", "view.js")
+STATIC_FILES = ("index.html", "style.css", "store.js", "client.js", "csv.js", "view.js")
 
 
 @dataclass

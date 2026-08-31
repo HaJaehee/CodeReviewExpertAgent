@@ -359,10 +359,17 @@
     renderVerdicts();
   }
 
+  // 표와 CSV 가 같은 목록을 본다. 화면에 보이는 것과 파일에 담기는 것이 달라지면
+  // 사람은 그 차이를 알아차리지 못한 채로 잘못된 표를 근거로 삼는다.
+  function visibleVerdicts() {
+    return state.verdicts.filter((v) =>
+      verdictFilter === 'all' || (verdictFilter === 'kept') === v.kept);
+  }
+
   function renderVerdicts() {
     const body = $('verdicts');
-    const rows = state.verdicts.filter((v) =>
-      verdictFilter === 'all' || (verdictFilter === 'kept') === v.kept);
+    const rows = visibleVerdicts();
+    $('btn-verdicts-csv').disabled = !rows.length;
 
     if (!rows.length) {
       body.innerHTML = '<tr class="empty"><td colspan="6">' +
@@ -1349,6 +1356,21 @@
       node.classList.toggle('is-on', node === tab);
     });
     renderVerdicts();
+  });
+
+  $('btn-verdicts-csv').addEventListener('click', () => {
+    const rows = visibleVerdicts();
+    if (!rows.length) {
+      toast('내보낼 판정이 없습니다.', 'warn');
+      return;
+    }
+    try {
+      const suffix = verdictFilter === 'all' ? '' : verdictFilter;
+      CREX.csv.download(CREX.csv.filename('crex-verdicts', suffix), CREX.csv.build(rows));
+      toast('판정 ' + rows.length + '건을 CSV 로 저장했습니다.', 'ok');
+    } catch (err) {
+      toast('CSV 를 만들지 못했습니다: ' + err.message, 'error');
+    }
   });
 
   $('drawer-tabs').addEventListener('click', (event) => {

@@ -320,6 +320,28 @@ def test_request_error_becomes_a_failed_run_not_a_crash() -> None:
 # --------------------------------------------------------------------------
 
 
+def test_csv_export_keeps_its_escaping_rules() -> None:
+    """판정 CSV 의 이스케이프 규칙이 파일에 남아 있는지 본다.
+
+    **이 테스트는 규칙이 동작한다는 증거가 아니다.** 폐쇄망 반입 대상에 JS 실행기를
+    넣을 수 없어서(`wiki/invariants.md` 의 의존성 규칙) 여기서는 규칙이 지워지지
+    않았는지만 확인한다. 동작 자체는 실제 브라우저에서 확인했고 무엇을 확인했는지는
+    `crex/viz/web/csv.js` 첫머리에 적혀 있다.
+
+    네 가지가 다 있어야 한다. 하나만 빠져도 조용히 깨진다 — BOM 이 없으면 Excel 에서
+    한글이 깨지고, 따옴표 겹치기가 없으면 인용이 든 지적에서 열이 밀리고, 수식 방지가
+    없으면 `= nullptr` 로 시작하는 수정안이 `#NAME?` 이 된다.
+    """
+    source = (Path(__file__).resolve().parents[1] / "crex/viz/web/csv.js").read_text(encoding="utf-8")
+    for needle, why in (
+        ("uFEFF", "BOM — 없으면 Excel 이 cp949 로 읽어 한글이 깨진다"),
+        (r"EOL = '\r\n'", "행 구분자 CRLF (RFC 4180)"),
+        ('replace(/"/g,', "칸 안의 큰따옴표는 두 번 써야 한다"),
+        ("FORMULA_LEAD = /^[=+", "수식으로 시작하는 값 방지"),
+    ):
+        _check(needle in source, f"csv.js 에서 사라졌다 ({why}): {needle}")
+
+
 def test_routes_and_static_files() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _context(Path(tmp), "http://127.0.0.1:1/v1", Path(tmp) / "reports")
@@ -329,7 +351,7 @@ def test_routes_and_static_files() -> None:
         _check(b"<title>" in index.body, "index.html 이 아니다")
         _check("text/html" in index.content_type, f"콘텐츠 타입: {index.content_type}")
 
-        for name in ("style.css", "store.js", "client.js", "view.js"):
+        for name in ("style.css", "store.js", "client.js", "csv.js", "view.js"):
             asset = handle(Request("GET", f"/static/{name}"), ctx)
             _check(asset.status == 200, f"{name} 상태: {asset.status}")
             _check(asset.body, f"{name} 가 비었다")
@@ -849,6 +871,7 @@ TESTS = [
     test_run_finished_carries_verdicts_with_reject_reasons,
     test_agent_summary_is_the_real_mcp_return_value,
     test_request_error_becomes_a_failed_run_not_a_crash,
+    test_csv_export_keeps_its_escaping_rules,
     test_routes_and_static_files,
     test_workspace_switch_updates_everything_at_once,
     test_workspace_switch_is_refused_while_running,
