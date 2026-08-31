@@ -377,19 +377,41 @@
       return;
     }
 
-    body.innerHTML = rows.map((v) =>
-      '<tr data-kept="' + v.kept + '">' +
+    body.innerHTML = rows.map((v) => {
+      let suggestionHtml = '';
+      if (v.suggestion) {
+        suggestionHtml =
+          '<div class="v-sugg">' +
+            '<span class="v-sugg-tag">수정 제안</span>' +
+            '<pre class="v-sugg-code"><code>' + escapeHtml(v.suggestion) + '</code></pre>' +
+          '</div>';
+      }
+      let verifierCommentHtml = '';
+      if (v.verifier_comment && v.verifier_comment !== v.reason) {
+        verifierCommentHtml =
+          '<div class="v-comment">' +
+            '<span class="v-comment-tag">검증 코멘트:</span> ' +
+            escapeHtml(v.verifier_comment) +
+          '</div>';
+      }
+
+      return '<tr data-kept="' + v.kept + '">' +
         '<td class="c-where">' + escapeHtml(v.path) + ':' + v.line + '</td>' +
         '<td><span class="sev" data-sev="' + v.severity + '">' +
           (SEVERITY_LABEL[v.severity] || v.severity) + '</span></td>' +
         '<td class="c-rule">' + escapeHtml(v.rule_id) + '</td>' +
-        '<td class="c-msg">' + escapeHtml(v.message) + '</td>' +
+        '<td class="c-msg">' +
+          '<div class="c-msg-text">' + escapeHtml(v.message) + '</div>' +
+          suggestionHtml +
+          verifierCommentHtml +
+        '</td>' +
         '<td class="c-verdict">' + (v.kept
           ? '<span class="tag tag-yes">유지</span>'
           : '<span class="tag tag-no">' +
             escapeHtml(REJECT_LABEL[v.reject_reason] || '기각') + '</span>') + '</td>' +
         '<td class="c-reason">' + escapeHtml(v.reason || '') + '</td>' +
-      '</tr>').join('');
+      '</tr>';
+    }).join('');
   }
 
   // ── 상세 서랍 ─────────────────────────────────────────────────────
