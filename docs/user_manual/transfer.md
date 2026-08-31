@@ -101,7 +101,7 @@ cd crex-20260817
 ==> Python 확인
     번들 런타임 사용
     OK   Python 3.12.10
-    OK   crex 0.1 import 성공
+    OK   crex import 성공
 
 ==> 테스트 (LLM·네트워크·pip 불필요)
     전체 통과 (14개 모듈)
