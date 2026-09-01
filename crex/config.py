@@ -74,7 +74,7 @@ class GroundingConfig:
 class ChunkingConfig:
     expansion_limit: float = 4.0
     expansion_truncate: float = 3.0
-    absolute_max_lines: int = 400
+    absolute_max_lines: int = 150
     #: diff 와 파일 내용이 어긋날 때: "raise" | "warn" | "ignore"
     on_mismatch: str = "raise"
 

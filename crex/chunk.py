@@ -32,7 +32,15 @@ EXPANSION_TRUNCATE = 3.0
 #: 심볼 경계를 못 찾았을 때 hunk 위아래로 붙일 최소 문맥 라인 수.
 FALLBACK_CONTEXT_LINES = 6
 #: 청크 하나가 가질 수 있는 절대 최대 라인 수. 거대 함수에 대한 안전판.
-ABSOLUTE_MAX_LINES = 400
+ABSOLUTE_MAX_LINES = 150
+
+
+def calculate_safe_max_lines(max_input_tokens: int) -> int:
+    """max_input_tokens 에 맞춰 프롬프트 오버헤드를 제외한 안전한 최대 청크 라인 수를 자동 계산한다."""
+    overhead = min(3200, int(max_input_tokens * 0.45))
+    code_token_budget = max(max_input_tokens - overhead, 500)
+    safe_lines = int(code_token_budget / 30)
+    return max(20, min(safe_lines, 250))
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
@@ -436,10 +444,18 @@ class Chunker:
                 changed = {hunk_start}
             ranges.append((start, end, name, changed or {hunk_start}))
 
-        merged = _merge_ranges(ranges)
+        merged = _merge_ranges(ranges, self.absolute_max_lines)
+
+        final_ranges: list[tuple[int, int, str | None, set[int]]] = []
+        for start, end, name, changed in merged:
+            final_ranges.extend(
+                _partition_oversized_range(
+                    start, end, name, changed, self.absolute_max_lines
+                )
+            )
 
         chunks: list[ReviewChunk] = []
-        for index, (start, end, name, changed) in enumerate(merged):
+        for index, (start, end, name, changed) in enumerate(final_ranges):
             lines = _render_range(source_lines, start, end, deleted_before, added, unchanged)
             ast_ctx = self.treesitter_analyzer.analyze(source_lines, language, start, end, changed)
             ast_summary = ast_ctx.render_for_prompt()
@@ -576,8 +592,9 @@ def _index_hunks(
 
 def _merge_ranges(
     ranges: list[tuple[int, int, str | None, set[int]]],
+    max_lines: int = ABSOLUTE_MAX_LINES,
 ) -> list[tuple[int, int, str | None, set[int]]]:
-    """겹치거나 맞닿은 범위를 합친다. 같은 함수 내 여러 hunk 가 중복 리뷰되는 걸 막는다."""
+    """겹치거나 맞닿은 범위를 합치되, 합쳤을 때 max_lines 를 초과하면 분리 상태를 유지한다."""
     if not ranges:
         return []
 
@@ -586,14 +603,60 @@ def _merge_ranges(
 
     for start, end, name, changed in ordered[1:]:
         last = merged[-1]
-        if start <= last[1] + 1:
-            last[1] = max(last[1], end)
+        combined_end = max(last[1], end)
+        # 합친 크기가 max_lines 이내일 때만 병합
+        if start <= last[1] + 1 and (combined_end - last[0] + 1) <= max_lines:
+            last[1] = combined_end
             last[2] = last[2] or name
             last[3] = last[3] | changed
         else:
             merged.append([start, end, name, changed])
 
     return [(m[0], m[1], m[2], m[3]) for m in merged]
+
+
+def _partition_oversized_range(
+    start: int,
+    end: int,
+    name: str | None,
+    changed: set[int],
+    max_lines: int = ABSOLUTE_MAX_LINES,
+) -> list[tuple[int, int, str | None, set[int]]]:
+    """단일 범위가 max_lines 를 초과할 경우 변경 라인 군집을 기준으로 균등하게 분할한다."""
+    if end - start + 1 <= max_lines:
+        return [(start, end, name, changed)]
+
+    sorted_changed = sorted(changed)
+    if not sorted_changed:
+        partitions: list[tuple[int, int, str | None, set[int]]] = []
+        cur = start
+        while cur <= end:
+            cur_end = min(cur + max_lines - 1, end)
+            partitions.append((cur, cur_end, name, set()))
+            cur = cur_end + 1
+        return partitions
+
+    partitions = []
+    cluster_changed: set[int] = set()
+    cluster_start = max(start, sorted_changed[0] - FALLBACK_CONTEXT_LINES)
+
+    for ln in sorted_changed:
+        if not cluster_changed:
+            cluster_changed.add(ln)
+            cluster_start = max(start, ln - FALLBACK_CONTEXT_LINES)
+        elif (ln + FALLBACK_CONTEXT_LINES) - cluster_start + 1 <= max_lines:
+            cluster_changed.add(ln)
+        else:
+            cluster_end = min(end, max(cluster_changed) + FALLBACK_CONTEXT_LINES)
+            partitions.append((cluster_start, cluster_end, name, set(cluster_changed)))
+            cluster_changed = {ln}
+            cluster_start = max(start, ln - FALLBACK_CONTEXT_LINES)
+
+    if cluster_changed:
+        cluster_end = min(end, max(cluster_changed) + FALLBACK_CONTEXT_LINES)
+        partitions.append((cluster_start, cluster_end, name, set(cluster_changed)))
+
+    return partitions
 
 
 def _render_range(

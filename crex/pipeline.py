@@ -14,7 +14,13 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from .chunk import Chunker, DiffSourceMismatch, SymbolLocator, parse_unified_diff
+from .chunk import (
+    Chunker,
+    DiffSourceMismatch,
+    SymbolLocator,
+    calculate_safe_max_lines,
+    parse_unified_diff,
+)
 from .treesitter import TreeSitterAnalyzer
 from .config import SEVERITY_ORDER, Config
 from .filter import ReviewFilter
@@ -172,10 +178,21 @@ class Pipeline:
     def _chunk_diff(
         self, file_diffs: list[FileDiff], repo_root: Path, result: ReviewResult
     ) -> list[ReviewChunk]:
+        # generator 의 max_input_tokens 기반으로 안전한 청크 라인 수를 계산하여 동기화
+        safe_lines = calculate_safe_max_lines(self.generator.config.max_input_tokens)
+        effective_max_lines = min(self.config.chunking.absolute_max_lines, safe_lines)
+        if effective_max_lines < self.config.chunking.absolute_max_lines:
+            log.info(
+                "입력 토큰 예산(%d)에 맞춰 청크 상한선을 %d줄에서 %d줄로 자동 조절했습니다.",
+                self.generator.config.max_input_tokens,
+                self.config.chunking.absolute_max_lines,
+                effective_max_lines,
+            )
+
         chunker = Chunker(
             expansion_limit=self.config.chunking.expansion_limit,
             expansion_truncate=self.config.chunking.expansion_truncate,
-            absolute_max_lines=self.config.chunking.absolute_max_lines,
+            absolute_max_lines=effective_max_lines,
             on_mismatch=self.config.chunking.on_mismatch,
         )
 
@@ -205,7 +222,8 @@ class Pipeline:
         if not lines:
             return []
 
-        window = self.config.chunking.absolute_max_lines
+        safe_lines = calculate_safe_max_lines(self.generator.config.max_input_tokens)
+        window = min(self.config.chunking.absolute_max_lines, safe_lines)
         locator = SymbolLocator()
         treesitter_analyzer = TreeSitterAnalyzer()
         chunks: list[ReviewChunk] = []

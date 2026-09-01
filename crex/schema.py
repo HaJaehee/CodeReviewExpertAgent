@@ -191,10 +191,28 @@ class ReviewChunk:
     def render_code(self) -> str:
         return "\n".join(line.annotate() for line in self.lines)
 
-    def render_static_findings(self) -> str:
+    def render_window(self, target_line: int, window: int = 25) -> str:
+        """target_line 주변 ±window 범위의 라인만 발췌하여 렌더한다 (검증기 컨텍스트 최적화)."""
+        min_ln = target_line - window
+        max_ln = target_line + window
+        selected = [ln for ln in self.lines if min_ln <= ln.lineno <= max_ln]
+        if not selected:
+            return self.render_code()
+        return "\n".join(ln.annotate() for ln in selected)
+
+    def render_static_findings(self, max_items: int = 6) -> str:
         if not self.static_findings:
             return NO_STATIC_FINDINGS_PROMPT
-        return "\n".join(f.render() for f in self.static_findings)
+
+        # 변경 라인과 직접 연관된 지적 우선 정렬
+        relevant = [f for f in self.static_findings if f.line in self.changed_linenos]
+        others = [f for f in self.static_findings if f.line not in self.changed_linenos]
+        findings = (relevant + others)[:max_items]
+
+        rendered = [f.render() for f in findings]
+        if len(self.static_findings) > max_items:
+            rendered.append(f"... (외 {len(self.static_findings) - max_items}건 정적분석 지적 생략)")
+        return "\n".join(rendered)
 
     def render_ast_context(self) -> str:
         if self.ast_context:

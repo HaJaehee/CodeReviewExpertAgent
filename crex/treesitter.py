@@ -83,8 +83,8 @@ class TreeSitterContext:
     control_flow: list[str] = field(default_factory=list)
     has_error: bool = False
 
-    def render_for_prompt(self) -> str:
-        """프롬프트에 주입할 마크다운 형태의 한국어 요약을 만든다."""
+    def render_for_prompt(self, max_lines: int = 8) -> str:
+        """프롬프트에 주입할 마크다운 형태의 한국어 요약을 컴팩트하게 만든다."""
         lines: list[str] = []
 
         if self.enclosing_symbol:
@@ -93,17 +93,20 @@ class TreeSitterContext:
 
         if self.changed_line_nodes:
             lines.append("- 변경 라인 AST 구문 요소:")
-            for lineno in sorted(self.changed_line_nodes.keys()):
+            sorted_linenos = sorted(self.changed_line_nodes.keys())
+            for lineno in sorted_linenos[:max_lines]:
                 items = self.changed_line_nodes[lineno]
-                summary = ", ".join(items[:4])
+                summary = ", ".join(items[:3])
                 lines.append(f"  - L{lineno}: {summary}")
+            if len(sorted_linenos) > max_lines:
+                lines.append(f"  - ... (외 {len(sorted_linenos) - max_lines}개 변경 라인 생략)")
 
         if self.calls:
-            unique_calls = list(dict.fromkeys(self.calls))[:10]
+            unique_calls = list(dict.fromkeys(self.calls))[:8]
             lines.append(f"- 호출된 주요 함수/메서드: {', '.join(f'`{c}`' for c in unique_calls)}")
 
         if self.control_flow:
-            unique_cf = list(dict.fromkeys(self.control_flow))[:6]
+            unique_cf = list(dict.fromkeys(self.control_flow))[:4]
             lines.append(f"- 제어 흐름/조건: {', '.join(unique_cf)}")
 
         lines.append(f"- 구문 오류(has_error): {'감지됨 (불완전하거나 오류가 있는 구문)' if self.has_error else '없음'}")

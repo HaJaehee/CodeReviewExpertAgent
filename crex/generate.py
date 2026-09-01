@@ -24,7 +24,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from .llm import LLMClient
+from .llm import LLMClient, estimate_tokens
 from .rules import Rule, Taxonomy, render_rules_for_prompt
 from .schema import Finding, ReviewChunk, Severity
 
@@ -139,15 +139,42 @@ class RuleChecker:
             allowed_lines=allowed_lines if self.restrict_lines else None,
             max_findings=self.max_findings,
         )
+        max_in = getattr(self.client.config, "max_input_tokens", 8192)
+        sys_tokens = estimate_tokens(RULECHECKER_SYSTEM)
+        user_budget = max(max_in - sys_tokens - 300, 512)
+
+        code_text = chunk.render_code()
+        ast_text = chunk.render_ast_context()
+        static_text = chunk.render_static_findings(max_items=6)
+        rules_text = render_rules_for_prompt(rules)
+
         user = RULECHECKER_USER.format(
             path=chunk.path,
             lang=chunk.language.value,
             symbol_line=f"둘러싼 심볼: {chunk.enclosing_symbol}" if chunk.enclosing_symbol else "",
-            code=chunk.render_code(),
-            ast_context=chunk.render_ast_context(),
-            static_findings=chunk.render_static_findings(),
-            rules=render_rules_for_prompt(rules),
+            code=code_text,
+            ast_context=ast_text,
+            static_findings=static_text,
+            rules=rules_text,
         )
+
+        # 토큰 예산 초과 시 단계적 압축 적용 (비정상적으로 긴 라인 등에 대한 안전망)
+        if estimate_tokens(user) > user_budget:
+            log.warning(
+                "%s 프롬프트 크기가 입력 예산(%d토큰)에 근접하여 점진적 압축을 적용합니다",
+                chunk.chunk_id, user_budget,
+            )
+            static_text = chunk.render_static_findings(max_items=3)
+            rules_text = render_rules_for_prompt(rules[:10])
+            user = RULECHECKER_USER.format(
+                path=chunk.path,
+                lang=chunk.language.value,
+                symbol_line=f"둘러싼 심볼: {chunk.enclosing_symbol}" if chunk.enclosing_symbol else "",
+                code=code_text,
+                ast_context=ast_text,
+                static_findings=static_text,
+                rules=rules_text,
+            )
 
         try:
             # 출력 예산은 설정(llm.generator.max_output_tokens)이 정한다. 여기서

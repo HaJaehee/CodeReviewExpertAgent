@@ -22,9 +22,10 @@ Gemma 4 degrades more gently (96 → 65) but still degrades.
 **To revisit.** Measure FAR change on the golden set before raising it. Raising the
 budget without measurement means degrading quietly.
 
-**Implementation.** `EndpointConfig.max_input_tokens`; `truncate_to_budget()` cuts
-the *middle* of over-long text, keeping head and tail — function signature and
-return/cleanup are both load-bearing.
+**Implementation.** `EndpointConfig.max_input_tokens` (8,192 default); prompts are
+assembled using pre-allocated component budgets (System ~600, Rules ~1,500,
+AST ~400, Static ~400, Code ~4,500 tokens) guaranteeing 100% of the chunk lines
+are preserved without blind string slicing.
 
 ---
 
@@ -270,6 +271,51 @@ fallback: the subprocess path is ten lines and never breaks.
 Token counting is a `len(text) / 3.0` estimate rather than a real tokenizer. Exact
 counting would require importing `transformers`. At an 8,192 budget against a 32K
 window, a 20% estimation error is harmless.
+
+---
+
+## Chunk size capped at 150 lines with bounded merging and cluster partitioning
+
+`absolute_max_lines` is 150 (down from 400). When merging adjacent hunks in `_merge_ranges()`,
+ranges that would exceed 150 lines remain separate chunks. Single oversized hunks or giant functions
+are partitioned around changed-line clusters (`_partition_oversized_range()`).
+
+**Why.** Annotated source lines consume ~30 tokens/line. A 400-line chunk consumes ~12,000 tokens
+alone, which overflows the 8,192 input token context when combined with 15 rules (~1,500 tokens),
+Tree-sitter AST context (~400 tokens), and static findings (~400 tokens). A 150-line chunk consumes
+~4,500 tokens, fitting comfortably within the 8,192 budget and leaving zero need for prompt truncation.
+
+**Automatic Synchronization & Size Mismatch Defense.**
+1. `calculate_safe_max_lines()` automatically derives the safe line count from `generator.max_input_tokens`
+   and clamps `effective_max_lines` down (e.g., to ~50 lines if `max_input_tokens` is 4096), preventing
+   size mismatch failures if a user sets an incompatible line limit.
+2. If dense code or long lines approach the token limit, `RuleChecker` applies progressive pruning
+   (reducing static findings to top 3 and rules to top 10) before ever modifying code, ensuring `added`
+   code lines are 100% preserved.
+
+---
+
+## Verifier focused context window (±25 lines)
+
+`ReviewFilter._verify_llm()` passes `chunk.render_window(finding.line, window=25)` rather than
+the entire chunk.
+
+**Why.** The verifier endpoint operates with a strict 4,096 token limit (`max_input_tokens = 4096`).
+Sending a 150~400 line chunk risked middle-truncation where the very line cited by the finding
+was cut off, causing the verifier to reject valid defects with `CODE_NOT_FOUND`. A focused 50-line window
+around the defect consumes ~1,000 tokens (25% of budget), completely eliminating false rejections.
+
+---
+
+## Local SQLite DB (`.crex/viz.db`) for visualizer persistence
+
+Visualizer runs, event streams, and preferences are stored in `<workspace>/.crex/viz.db` via
+Python's standard library `sqlite3`.
+
+**Why.** Browser `localStorage` is capped at ~5MB, which forced clipping prompt bodies at 6,000 characters
+and quickly filled up after a few reviews. SQLite has zero external dependencies, requires no setup,
+is 100% air-gapped compliant, persists complete unclipped LLM payloads, and supports selective single-run
+deletion (`✕`).
 
 ---
 

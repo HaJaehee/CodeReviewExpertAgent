@@ -10,26 +10,28 @@ FileDiff[]              hunks with per-line status + line numbers
    │
    ▼  crex/chunk.py :: Chunker.chunk_file()
    │    1. verify diff matches on-disk source  → DiffSourceMismatch
-   │    2. expand each hunk to enclosing symbol → capped at 4×, truncated to 3×
-   │    3. merge overlapping ranges
-   │    4. render with [added @142] line annotations
+   │    2. expand each hunk to enclosing symbol → capped at 4×, truncated to 3×, max 150 lines
+   │    3. merge overlapping ranges (bounded by max 150 lines) & partition oversized ranges
+   │    4. extract Tree-sitter AST context (enclosing symbol, calls, control flow)
+   │    5. render with [added @142] line annotations
 ReviewChunk[]
    │
    ▼  crex/ground.py :: GroundingGate.collect() + attach()
    │    analyzers run in parallel (6 default, 8 available); missing tools skip silently
-StaticFinding[] attached to chunks by line range
+StaticFinding[] attached to chunks by line range (top findings prioritized)
    │
    ▼  crex/generate.py :: RuleChecker.review()
-   │    one LLM call per chunk, JSON Schema with enum constraints
-Finding[]
+   │    one LLM call per chunk with pre-allocated component token budgets
+   │    JSON Schema with enum constraints (line, rule_id)
+Finding[] (with structured suggestions and AST context)
    │
    ▼  crex/filter.py :: ReviewFilter.filter()
    │    1. deterministic checks (no LLM call)
-   │    2. surviving items → cross-model verdict, Conclusion-First
-Finding[] kept  +  FilterVerdict[] rejected
+   │    2. surviving items → cross-model verdict with focused context window (±25 lines)
+Finding[] kept (with verifier_comment)  +  FilterVerdict[] rejected
    │
    ▼  crex/report.py :: write_all()
-Markdown / SARIF / JSON
+Markdown / SARIF / JSON  (+ SQLite persistence in .crex/viz.db)
 ```
 
 Two LLM calls per chunk at most: one to generate, one to verify (only if the chunk
@@ -44,7 +46,7 @@ This is the core idea. Each layer catches what the previous one missed.
 | 1. Input | `[added @142]` annotation on every line | Removes any need for the model to *infer* line numbers | `chunk.py :: DiffLine.annotate()` |
 | 2. Generation | JSON Schema `enum` on `line` and `rule_id` | Makes fabricated line numbers and rule IDs **impossible to emit** | `generate.py :: build_findings_schema()` |
 | 3. Verification (deterministic) | Line-range and changed-line checks | Anything layer 2 let through; costs nothing, 100% reliable | `filter.py :: _check_deterministic()` |
-| 4. Verification (LLM) | Different model returns yes/no | Claims with no basis in the code | `filter.py :: _verify_llm()` |
+| 4. Verification (LLM) | Different model evaluates focused window (±25 lines) | Claims with no basis in the code; prevents truncation false rejections | `filter.py :: _verify_llm()` |
 
 Layer 2 is the distinctive one. vLLM's guided decoding masks tokens that would
 violate the schema, so putting the chunk's actual changed line numbers into
@@ -68,23 +70,25 @@ catches servers that accept the schema and ignore it.
 
 | Module | Lines | Responsibility |
 |---|---|---|
-| `crex/schema.py` | 333 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
-| `crex/llm.py` | 512 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
-| `crex/chunk.py` | 618 | Diff parsing, symbol location (tree-sitter + fallback), chunking, consistency check |
-| `crex/ground.py` | 670 | 8 static-analyzer adapters + output normalization + attachment. Resolves which C# project to build from the changed files, and reports a failed build as skipped rather than zero findings |
-| `crex/generate.py` | 254 | RuleChecker: enum-constrained schema, prompt, parsing |
-| `crex/filter.py` | 291 | ReviewFilter: deterministic checks + cross-model verdict |
-| `crex/rules.py` | 245 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
-| `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()`. `_timed()` is the only stage boundary — subclasses observe stages by wrapping it |
+| `crex/schema.py` | 364 | Dataclasses. `Finding`, `ReviewChunk`, `StaticFinding`, `FilterVerdict`, `ReviewResult`, enums |
+| `crex/llm.py` | 695 | OpenAI-compatible client over `urllib`. Guided decoding, token budget, retry |
+| `crex/chunk.py` | 671 | Diff parsing, symbol location, 150-line chunk partitioning, consistency check |
+| `crex/treesitter.py` | 335 | Tree-sitter AST syntax analyzer: symbol extraction, calls, control flow |
+| `crex/ground.py` | 670 | 8 static-analyzer adapters + output normalization + attachment |
+| `crex/generate.py` | 278 | RuleChecker: token budget assembly, enum-constrained schema, parsing |
+| `crex/filter.py` | 297 | ReviewFilter: deterministic checks + focused context window cross-model verdict |
+| `crex/rules.py` | 244 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
+| `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()` |
+| `crex/viz/db.py` | 170 | Zero-dependency SQLite persistence for visualizer runs, events, and prefs |
 | `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
-| `crex/config.py` | 234 | TOML config loading with unknown-key rejection (sections *and* top level) |
+| `crex/config.py` | 387 | JSON/TOML config loading with comment-stripping and type validation |
 | `crex/cli.py` | 507 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
-| `crex/compiledb.py` | 645 | `compile_commands.json` for the target repo: CMake configure, or MSBuild with a vendored logger. Writes the path into `crex.json`. Optional `on_line`/`cancel` callbacks let the dashboard stream and stop a build without re-implementing it |
-| `crex/workspace.py` | 404 | Which repository is under review — resolve, switch at runtime, pin to `crex.json`. One rule shared by CLI, MCP, and dashboard |
+| `crex/compiledb.py` | 645 | `compile_commands.json` builder (CMake / MSBuild logger) |
+| `crex/workspace.py` | 404 | Workspace resolution, runtime switching, pinning to `crex.json` |
 | `crex/paths.py` | 138 | Directory expansion, exclude globs, diff path filtering |
 | `crex/gitio.py` | 147 | git diff / merge-base. GitPython with subprocess fallback |
-| `crex/service.py` | 268 | `ReviewService` — the 7 MCP operations. **No FastMCP import** |
-| `crex/mcp.py` | 355 | FastMCP binding only. Tool schemas from type hints + docstrings; stdio and Streamable HTTP transports |
+| `crex/service.py` | 268 | `ReviewService` — the 7 MCP operations |
+| `crex/mcp.py` | 355 | FastMCP binding: stdio and Streamable HTTP transports |
 
 Dependency direction is strictly downward: `mcp → service → pipeline → {chunk,
 ground, generate, filter, report, paths, gitio} → {schema, llm, rules, config}`.

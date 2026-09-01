@@ -254,7 +254,7 @@ class ReviewFilter:
             path=finding.path,
             symbol_line=symbol_line,
             lang=chunk.language.value,
-            code=chunk.render_code(),
+            code=chunk.render_window(finding.line, window=25),
             line=finding.line,
             dimension=finding.dimension.value,
             severity=finding.severity.value,

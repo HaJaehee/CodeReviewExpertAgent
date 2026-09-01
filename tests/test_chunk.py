@@ -213,6 +213,38 @@ def test_chunk_ast_context_generated() -> None:
     _check("L16" in ast_rendered or "L15" in ast_rendered, f"변경 라인 정보 누락: {ast_rendered}")
 
 
+def test_oversized_chunk_partitioning() -> None:
+    """150줄을 초과하는 대규모 diff 가 150줄 이하의 독립 청크들로 안전하게 분할되는지 검증."""
+    lines = ["int foo() {\n"] + [f"    int v{i} = {i};\n" for i in range(1, 300)] + ["}\n"]
+    source = "".join(lines)
+    diff_text = """\
+diff --git a/big.cpp b/big.cpp
+index 1111111..2222222 100644
+--- a/big.cpp
++++ b/big.cpp
+@@ -10,3 +10,4 @@
++    int v9 = 9;
+@@ -200,3 +200,4 @@
++    int v199 = 199;
+"""
+    fd = parse_unified_diff(diff_text)[0]
+    chunks = Chunker(absolute_max_lines=150).chunk_file(fd, source)
+    _check(len(chunks) >= 2, f"청크가 최소 2개로 분할되어야 하나 {len(chunks)}개")
+    for c in chunks:
+        _check(c.end_line - c.start_line + 1 <= 150, f"청크 크기 초과: {c.start_line}..{c.end_line}")
+
+
+def test_render_window_for_verifier() -> None:
+    """검증기용 render_window 가 대상 라인 주변 ±window 범위만 발췌하는지 확인."""
+    fd = parse_unified_diff(CPP_DIFF)[0]
+    chunk = Chunker().chunk_file(fd, CPP_SOURCE)[0]
+    window_rendered = chunk.render_window(target_line=15, window=3)
+    _check(window_rendered != "", "window_rendered 가 비어있음")
+    lines = window_rendered.splitlines()
+    _check(len(lines) <= 7, f"윈도우 범위 초과 (최대 7줄 기대): {len(lines)}줄")
+    _check(any("@15" in l for l in lines), "대상 라인 15가 윈도우에 포함되어야 함")
+
+
 TESTS = [
     test_parse_cpp_diff,
     test_chunk_cpp_expands_to_function,
@@ -221,6 +253,8 @@ TESTS = [
     test_replacement_hunk_at_module_level,
     test_line_annotation_is_unambiguous,
     test_chunk_ast_context_generated,
+    test_oversized_chunk_partitioning,
+    test_render_window_for_verifier,
 ]
 
 
