@@ -51,7 +51,7 @@ crex-20260817/
   tools/msbuild-compiledb/   MSBuild → compile_commands.json 로거 (C# DLL, MIT)
   crex.cmd           리뷰 실행
   crex-mcp.cmd       MCP 서버 (Zed)
-  run_viz.ps1        웹 UI 실행 (PowerShell)
+  run_crex_viz.ps1   웹 UI 실행 (PowerShell)
   crex-viz.cmd       웹 UI 실행 (cmd)
   테스트.cmd         반입 무결성 확인
   LICENSE.md        서드파티 라이선스 고지 (certifi 의 MPL-2.0 전문)

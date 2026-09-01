@@ -6,9 +6,9 @@
     python -m crex.viz 모듈을 실행하고 브라우저를 엽니다.
 
 .EXAMPLE
-    .\run_viz.ps1
-    .\run_viz.ps1 --workspace D:\work\myrepo
-    .\run_viz.ps1 --port 18765 -NoBrowser
+    .\run_crex_viz.ps1
+    .\run_crex_viz.ps1 --workspace D:\work\myrepo
+    .\run_crex_viz.ps1 --port 18765 -NoBrowser
 #>
 
 [CmdletBinding()]

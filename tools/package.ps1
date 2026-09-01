@@ -141,7 +141,7 @@ $Sources = @("crex", "rules", "tests", "docs", "tools")
 $Files = @(
     "README.md", "LICENSE.md", "AGENTS.md", "crex.example.json",
     "requirements.txt", "requirements-optional.txt",
-    "run_viz.ps1", "viz.ps1"
+    "run_crex_viz.ps1", "viz.ps1"
 )
 
 foreach ($dir in $Sources) {
@@ -375,7 +375,7 @@ rem CREX 웹 UI (viz) 실행 진입점. 번들 안의 Python 을 쓴다.
 "%~dp0runtime\python.exe" -m crex.viz %*
 '@ | Set-Content -Path (Join-Path $Staging "crex-viz.cmd") -Encoding ascii
 
-    Write-Note "crex.cmd / crex-mcp.cmd / crex-viz.cmd / 테스트.cmd / run_viz.ps1 / viz.ps1"
+    Write-Note "crex.cmd / crex-mcp.cmd / crex-viz.cmd / 테스트.cmd / run_crex_viz.ps1 / viz.ps1"
 }
 
 # --------------------------------------------------------------------------
