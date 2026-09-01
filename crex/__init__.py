@@ -19,4 +19,4 @@ CLI(`--version`, `doctor`), SARIF 리포트의 `tool.driver.version`, 관제 화
 둘을 하나로 합치지 마라.
 """
 
-__version__ = "0.2"
+__version__ = "0.3"

@@ -1,6 +1,6 @@
 # CREX — 폐쇄망 sLLM 코드리뷰 파이프라인
 
-**버전 0.2** · **C**ode **R**eview **EX**pert Agent. 명령과 패키지는 소문자
+**버전 0.3** · **C**ode **R**eview **EX**pert Agent. 명령과 패키지는 소문자
 `crex` 를 쓴다.
 
 25~40B급 로컬 모델(Qwen3.6, Gemma4)로 C++/C#/Python 코드를 리뷰한다.
@@ -110,7 +110,7 @@ python tools/render_docs.py   # → docs/user_manual_html/index.html
 ## 빠른 시작
 
 ```bash
-python -m crex --version        # crex 0.2
+python -m crex --version        # crex 0.3
 cp crex.example.json crex.json  # 엔드포인트·모델명 수정
 python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
 python -m crex review --from HEAD~1 --to HEAD
