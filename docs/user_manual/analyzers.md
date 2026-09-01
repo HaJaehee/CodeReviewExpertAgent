@@ -327,7 +327,10 @@ dotnet tool install -g roslynator.dotnet.cli
 
 ## Python — ruff / mypy / bandit
 
-셋 다 pip 로 들어갑니다.
+mypy 는 CREX 기본 패키징(`requirements.txt`, `tools/package.ps1`)에 포함되어 있어,
+번들 배포 시 `pylibs/` 에 자동으로 담겨 별도 설치 없이 `python -m mypy` 로 즉시 동작합니다.
+
+ruff 와 bandit 도 pip 로 설치하거나 wheel 로 반입할 수 있습니다:
 
 ```bash
 pip install ruff mypy bandit

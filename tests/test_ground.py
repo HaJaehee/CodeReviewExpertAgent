@@ -517,11 +517,21 @@ def test_roslyn_reports_a_failed_build_instead_of_zero_findings() -> None:
     _check(analyzer.diagnose(ok, []) is None, "성공했는데 건너뛰었다")
 
 
+def test_mypy_module_fallback_builds_python_command() -> None:
+    """mypy.exe 가 PATH 에 없어도 python -m mypy 로 실행 명령을 구성할 수 있어야 한다."""
+    analyzer = Mypy()
+    analyzer._resolved = sys.executable
+    cmd = analyzer.build_command(["app.py"])
+    _check(cmd[:3] == [sys.executable, "-m", "mypy"], f"예상치 못한 mypy 명령: {cmd}")
+    _check("app.py" in cmd, f"대상 경로 누락: {cmd}")
+
+
 TESTS = [
     test_clang_tidy_parse,
     test_cppcheck_parse,
     test_msbuild_parse,
     test_mypy_parse,
+    test_mypy_module_fallback_builds_python_command,
     test_ruff_parse,
     test_bandit_parse,
     test_semgrep_parse,

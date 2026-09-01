@@ -42,4 +42,7 @@ tree-sitter-cpp>=0.22
 tree-sitter-c-sharp>=0.21
 tree-sitter-python>=0.21
 
+# Python 타입 정적분석 (그라운딩)
+mypy>=1.10.0
+
 uvicorn>=0.30

@@ -545,8 +545,25 @@ class Mypy(Analyzer):
         re.MULTILINE,
     )
 
+    def _locate(self) -> str | None:
+        which = shutil.which(self.executable)
+        if which:
+            return which
+        try:
+            import importlib.util
+
+            if importlib.util.find_spec("mypy") is not None:
+                return sys.executable
+        except Exception:
+            pass
+        return None
+
     def build_command(self, paths: list[str]) -> list[str]:
-        command = [self.executable, "--no-error-summary", "--show-column-numbers", "--no-color-output"]
+        exe = self.resolve_executable()
+        if exe and ("python" in Path(exe).name.lower()):
+            command = [exe, "-m", "mypy", "--no-error-summary", "--show-column-numbers", "--no-color-output"]
+        else:
+            command = [self.executable, "--no-error-summary", "--show-column-numbers", "--no-color-output"]
         command.extend(self.extra_args)
         command.extend(paths)
         return command

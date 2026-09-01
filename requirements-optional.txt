@@ -31,5 +31,8 @@ tree-sitter-cpp>=0.22
 tree-sitter-c-sharp>=0.21
 tree-sitter-python>=0.21
 
+# Python 타입 정적분석 도구 (그라운딩)
+mypy>=1.10.0
+
 # 관제 화면 전송 계층 — 없으면 stdlib http.server 로 폴백한다 (crex/viz/server.py)
 uvicorn>=0.30
