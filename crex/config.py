@@ -280,7 +280,7 @@ def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:
         model=raw.get("model", default_model),
         api_key=raw.get("api_key", "EMPTY"),
         temperature=float(raw.get("temperature", 0.0)),
-        max_output_tokens=int(raw.get("max_output_tokens", 1024)),
+        max_output_tokens=int(raw.get("max_output_tokens", 1600)),
         max_input_tokens=int(raw.get("max_input_tokens", 8192)),
         timeout=float(raw.get("timeout", 120.0)),
         max_retries=int(raw.get("max_retries", 3)),

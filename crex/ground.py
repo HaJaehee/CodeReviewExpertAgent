@@ -715,7 +715,7 @@ class GroundingGate:
 
     @staticmethod
     def attach(chunks: list[ReviewChunk], findings: list[StaticFinding]) -> None:
-        """각 지적을 해당 라인을 포함하는 청크에 붙인다.
+        """각 지적을 해당 라인을 포함하는 모든 청크에 붙인다.
 
         경로는 접미사 매칭한다 — 분석기마다 절대/상대 경로를 섞어 내보내기 때문이다.
         """
@@ -725,8 +725,8 @@ class GroundingGate:
                 if not _paths_match(normalized, chunk.path):
                     continue
                 if chunk.covers(finding.line):
-                    chunk.static_findings.append(finding)
-                    break
+                    if finding not in chunk.static_findings:
+                        chunk.static_findings.append(finding)
 
     def report(self) -> str:
         """어떤 도구가 돌았고 무엇이 빠졌는지 요약한다. 폐쇄망 진단에 필요하다."""
