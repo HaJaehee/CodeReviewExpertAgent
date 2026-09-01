@@ -184,7 +184,7 @@
 
     <section class="panel panel-grow">
       <h2>실행 기록 <span class="badge" id="history-count">0</span></h2>
-      <p class="hint">브라우저 localStorage 에 남습니다. 서버에는 DB 가 없습니다.</p>
+      <p class="hint">로컬 SQLite DB (<code>.crex/viz.db</code>) 에 안전하게 저장됩니다.</p>
       <ul class="history" id="history"></ul>
       <button class="btn btn-ghost btn-sm" id="btn-clear" type="button">기록 비우기</button>
     </section>
@@ -377,6 +377,32 @@
     </div>
   </div>
   <div class="modal-scrim" id="about-scrim"></div>
+</div>
+
+<!-- ── 확인 / 입력 모달 (Confirm / Prompt Modal) ────────────────── -->
+<div class="modal" id="confirm-modal" hidden>
+  <div class="modal-dialog modal-narrow" id="confirm-dialog">
+    <div class="modal-head">
+      <div>
+        <h3 id="confirm-title">확인</h3>
+        <p class="modal-sub" id="confirm-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="confirm-close" type="button">✕</button>
+    </div>
+    <div class="confirm-body" id="confirm-body" style="padding: 16px 18px;">
+      <p id="confirm-message" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg);"></p>
+      <div id="confirm-input-wrap" hidden style="margin-top: 12px;">
+        <input id="confirm-input" type="text" spellcheck="false" style="width: 100%;">
+      </div>
+    </div>
+    <div class="modal-foot" style="padding: 10px 16px;">
+      <div class="row" style="display: flex; gap: 8px; justify-content: flex-end; margin: 0;">
+        <button class="btn btn-sm" id="confirm-btn-cancel" type="button">취소</button>
+        <button class="btn btn-sm btn-primary" id="confirm-btn-ok" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-scrim" id="confirm-scrim"></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

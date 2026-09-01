@@ -576,8 +576,7 @@
     const list = $('history');
 
     if (!runs.length) {
-      list.innerHTML = '<li class="empty-lane" style="cursor:default;border:none;background:none">' +
-        (store.available() ? '아직 없습니다.' : 'localStorage 를 쓸 수 없어 기록이 남지 않습니다.') + '</li>';
+      list.innerHTML = '<li class="empty-lane" style="cursor:default;border:none;background:none">아직 없습니다.</li>';
       return;
     }
 
@@ -590,16 +589,50 @@
         ? (run.status === 'running' ? '진행 중' : (run.error ? '실패' : '기록 없음'))
         : '청크 ' + metrics.chunks + ' · 생성 ' + metrics.generated + ' · 유지 ' + metrics.kept;
       return '<li data-run="' + run.id + '" class="' + (run.id === state.runId ? 'is-on' : '') + '">' +
-        '<div class="h-top">' +
-          '<span class="h-label">' + escapeHtml(run.label || run.kind) + '</span>' +
-          '<span class="h-when">' + escapeHtml(when) + '</span>' +
+        '<div class="h-main">' +
+          '<div class="h-top">' +
+            '<span class="h-label">' + escapeHtml(run.label || run.kind) + '</span>' +
+            '<span class="h-when">' + escapeHtml(when) + '</span>' +
+          '</div>' +
+          '<div class="h-sub">' + escapeHtml(sub) + '</div>' +
         '</div>' +
-        '<div class="h-sub">' + escapeHtml(sub) + '</div>' +
+        '<button class="btn-history-del" type="button" data-del="' + run.id + '" title="이 실행 기록 삭제">✕</button>' +
       '</li>';
     }).join('');
 
     list.querySelectorAll('li[data-run]').forEach((node) => {
-      node.addEventListener('click', () => replay(node.dataset.run));
+      node.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-history-del')) return;
+        replay(node.dataset.run);
+      });
+    });
+
+    list.querySelectorAll('.btn-history-del').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const runId = btn.dataset.del;
+        const targetRun = store.listRuns().find((r) => r.id === runId);
+        const label = targetRun ? (targetRun.label || targetRun.kind) : runId;
+        const ok = await showConfirm({
+          title: '실행 기록 삭제',
+          sub: runId,
+          message: '선택한 실행 기록(<strong>' + escapeHtml(label) + '</strong>)을 삭제하시겠습니까?',
+          okText: '삭제',
+          okDanger: true,
+        });
+        if (!ok) return;
+
+        try {
+          await store.dropRun(runId);
+          if (state.runId === runId) {
+            resetView();
+          }
+          renderHistory();
+          toast('실행 기록을 삭제했습니다.', 'ok');
+        } catch (err) {
+          toast('기록 삭제 실패: ' + err.message, 'error');
+        }
+      });
     });
   }
 
@@ -610,8 +643,8 @@
    * 재생 전용 코드를 따로 두지 않아도 되고, 따라서 재생 화면이 실시간 화면과
    * 어긋날 일이 없다. 아직 진행 중인 실행이면 서버를 이어서 따라간다.
    */
-  function replay(runId) {
-    const events = store.loadEvents(runId);
+  async function replay(runId) {
+    const events = await store.loadEvents(runId);
     const head = store.listRuns().find((r) => r.id === runId);
 
     resetView();
@@ -770,6 +803,11 @@
       toggleWorkspaceEdit(false);
       // 이전 저장소의 결과가 화면에 남아 있으면 다음 실행과 섞여 보인다.
       resetView();
+      try {
+        await store.syncFromDB();
+      } catch (e) {}
+      loadPrefs();
+      renderHistory();
       // 빌드 패널도 같다 — 옛 저장소의 compile_commands.json 을 보고 판단하게 된다.
       resetBuildPanel();
       loadBuildState(false);
@@ -1213,10 +1251,65 @@
     closePicker();
   }
 
+  // ── 확인 / 입력 모달 (Confirm / Prompt Modal) ───────────────────────
+
+  let confirmResolve = null;
+
+  function showConfirm(options) {
+    return new Promise((resolve) => {
+      confirmResolve = resolve;
+      $('confirm-title').textContent = options.title || '확인';
+      $('confirm-sub').textContent = options.sub || '';
+      $('confirm-message').innerHTML = options.message || '';
+      $('confirm-input-wrap').hidden = true;
+      $('confirm-input').value = '';
+
+      const btnOk = $('confirm-btn-ok');
+      btnOk.textContent = options.okText || '확인';
+      btnOk.className = 'btn btn-sm ' + (options.okDanger ? 'btn-danger-solid' : 'btn-primary');
+
+      $('confirm-modal').hidden = false;
+      btnOk.focus();
+    });
+  }
+
+  function showPrompt(options) {
+    return new Promise((resolve) => {
+      confirmResolve = resolve;
+      $('confirm-title').textContent = options.title || '입력';
+      $('confirm-sub').textContent = options.sub || '';
+      $('confirm-message').innerHTML = options.message || '';
+      $('confirm-input-wrap').hidden = false;
+      $('confirm-input').value = options.defaultValue || '';
+
+      const btnOk = $('confirm-btn-ok');
+      btnOk.textContent = options.okText || '저장';
+      btnOk.className = 'btn btn-sm btn-primary';
+
+      $('confirm-modal').hidden = false;
+      setTimeout(() => {
+        $('confirm-input').focus();
+        $('confirm-input').select();
+      }, 50);
+    });
+  }
+
+  function closeConfirm(result) {
+    $('confirm-modal').hidden = true;
+    if (confirmResolve) {
+      const fn = confirmResolve;
+      confirmResolve = null;
+      fn(result);
+    }
+  }
+
   // ── 기동 ──────────────────────────────────────────────────────────
 
   async function boot() {
     resetView();
+    try {
+      await store.syncFromDB();
+    } catch (e) {}
     loadPrefs();
     renderHistory();
 
@@ -1252,8 +1345,22 @@
   $('kind').addEventListener('change', () => { syncForm(); savePrefs(); });
   $('btn-run').addEventListener('click', startRun);
   $('btn-cancel').addEventListener('click', cancelRun);
-  $('btn-clear').addEventListener('click', () => {
-    store.clearAll();
+  $('btn-clear').addEventListener('click', async () => {
+    if (!store.listRuns().length) {
+      toast('비울 실행 기록이 없습니다.', 'warn');
+      return;
+    }
+    const ok = await showConfirm({
+      title: '전체 기록 비우기',
+      sub: '모든 저장 기록 삭제',
+      message: '저장된 모든 리뷰 실행 기록을 삭제하시겠습니까?<br><span style="color:var(--drop);font-size:12px;">이 작업은 되돌릴 수 없습니다.</span>',
+      okText: '전체 삭제',
+      okDanger: true,
+    });
+    if (!ok) return;
+
+    await store.clearAll();
+    resetView();
     renderHistory();
     toast('기록을 비웠습니다.', 'ok');
   });
@@ -1380,7 +1487,7 @@
     renderVerdicts();
   });
 
-  $('btn-verdicts-csv').addEventListener('click', () => {
+  $('btn-verdicts-csv').addEventListener('click', async () => {
     const rows = visibleVerdicts();
     if (!rows.length) {
       toast('내보낼 판정이 없습니다.', 'warn');
@@ -1388,8 +1495,19 @@
     }
     try {
       const suffix = verdictFilter === 'all' ? '' : verdictFilter;
-      CREX.csv.download(CREX.csv.filename('crex-verdicts', suffix), CREX.csv.build(rows));
-      toast('판정 ' + rows.length + '건을 CSV 로 저장했습니다.', 'ok');
+      const defaultFilename = CREX.csv.filename('crex-verdicts', suffix);
+      const chosenFilename = await showPrompt({
+        title: '판정 CSV 저장',
+        sub: '총 ' + rows.length + '건',
+        message: '저장할 CSV 파일 이름을 입력하세요:',
+        defaultValue: defaultFilename,
+        okText: '저장',
+      });
+      if (!chosenFilename) return;
+
+      const finalName = chosenFilename.endsWith('.csv') ? chosenFilename : chosenFilename + '.csv';
+      CREX.csv.download(finalName, CREX.csv.build(rows));
+      toast('판정 ' + rows.length + '건을 ' + finalName + ' 파일로 저장했습니다.', 'ok');
     } catch (err) {
       toast('CSV 를 만들지 못했습니다: ' + err.message, 'error');
     }
@@ -1404,11 +1522,34 @@
 
   $('drawer-close').addEventListener('click', closeDrawer);
   $('drawer-scrim').addEventListener('click', closeDrawer);
+
+  $('confirm-close').addEventListener('click', () => closeConfirm(null));
+  $('confirm-scrim').addEventListener('click', () => closeConfirm(null));
+  $('confirm-btn-cancel').addEventListener('click', () => closeConfirm(null));
+  $('confirm-btn-ok').addEventListener('click', () => {
+    if (!$('confirm-input-wrap').hidden) {
+      const val = $('confirm-input').value.trim();
+      if (!val) {
+        toast('파일 이름을 입력하세요.', 'warn');
+        return;
+      }
+      closeConfirm(val);
+    } else {
+      closeConfirm(true);
+    }
+  });
+  $('confirm-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') $('confirm-btn-ok').click();
+    if (event.key === 'Escape') closeConfirm(null);
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      // 위에 떠 있는 것부터 닫는다. 정보 모달이 가장 나중에 열리므로 가장 위다.
+      // 위에 떠 있는 것부터 닫는다.
       if (aboutOpen()) {
         closeAbout();
+      } else if (!$('confirm-modal').hidden) {
+        closeConfirm(null);
       } else if (pickerState.open) {
         closePicker();
       } else {

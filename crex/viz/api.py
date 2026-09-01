@@ -271,6 +271,58 @@ def _run_detail(request: Request, ctx: Context, rest: str) -> Response:
     return json_response(run.head())
 
 
+def _history(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/history` — DB 실행 목록. `DELETE` — DB 전체 삭제."""
+    if request.method == "GET":
+        limit = _int(request.query.get("limit"), 50)
+        return json_response({"runs": ctx.registry.list_history(limit=limit)})
+    if request.method == "DELETE":
+        ctx.registry.clear_history()
+        return json_response({"cleared": True})
+    return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+
+def _history_detail(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/history/<id>` — 상세, `GET .../events` — 이벤트, `DELETE ...` — 단일 삭제."""
+    run_id, _, action = rest.partition("/")
+    if not run_id:
+        return _history(request, ctx, "")
+
+    if action == "events":
+        if request.method != "GET":
+            return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+        events = ctx.registry.get_history_events(run_id)
+        run_meta = ctx.registry.db.get_run(run_id)
+        if not events and not run_meta:
+            return error_response(f"없는 실행 기록입니다: {run_id}", 404)
+        return json_response({"run_id": run_id, "events": events, "run": run_meta})
+
+    if request.method == "DELETE":
+        deleted = ctx.registry.delete_history(run_id)
+        if not deleted:
+            return error_response(f"없는 실행 기록입니다: {run_id}", 404)
+        return json_response({"deleted": run_id})
+
+    if request.method == "GET":
+        run = ctx.registry.db.get_run(run_id)
+        if not run:
+            return error_response(f"없는 실행 기록입니다: {run_id}", 404)
+        return json_response(run)
+
+    return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+
+def _prefs(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/prefs` — UI 설정 조회. `POST` — UI 설정 저장."""
+    if request.method == "GET":
+        return json_response(ctx.registry.get_prefs())
+    if request.method == "POST":
+        payload = request.json()
+        ctx.registry.set_prefs(payload)
+        return json_response(ctx.registry.get_prefs())
+    return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+
 def _compiledb(request: Request, ctx: Context, rest: str) -> Response:
     """`GET /api/compiledb` — 지금 상태. `POST` — 빌드 시작.
 
@@ -511,6 +563,8 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
     "/api/health": _health,
     "/api/workspace": _workspace,
     "/api/runs": _runs,
+    "/api/history": _history,
+    "/api/prefs": _prefs,
     "/api/browse": _browse,
     "/api/compiledb": _compiledb,
     "/api/compiledb/cancel": _compiledb_cancel,
@@ -518,6 +572,7 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
 
 #: 뒤에 붙는 부분을 핸들러에 넘기는 접두 경로.
 _PREFIX: tuple[tuple[str, Callable[[Request, "Context", str], Response]], ...] = (
+    ("/api/history/", _history_detail),
     ("/api/runs/", _run_detail),
     ("/static/", _static),
 )

@@ -29,6 +29,7 @@ from crex.pipeline import Pipeline  # noqa: E402
 from crex.rules import load_taxonomy  # noqa: E402
 from crex.workspace import resolve  # noqa: E402
 from crex.viz.api import Context, Request, handle  # noqa: E402
+from crex.viz.db import VizDB  # noqa: E402
 from crex.viz.engine import Run, RunRegistry, TracedPipeline  # noqa: E402
 from crex.viz.trace import MAX_TEXT, Tracer, clip  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
@@ -859,6 +860,108 @@ def test_browse_api_directories_and_files() -> None:
         _check(remote_res.status == 403, f"원격 탐색 403 차단 실패: {remote_res.status}")
 
 
+def test_viz_db_crud_and_persistence() -> None:
+    """VizDB SQLite 데이터베이스 CRUD 및 영속화 테스트."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / ".crex" / "viz.db"
+        db = VizDB(db_path)
+
+        # 1. 초기 상태 확인
+        _check(db.list_runs() == [], "초기 실행 목록이 비어있지 않다")
+
+        # 2. 실행 및 이벤트 저장
+        run1 = {"id": "run-1", "kind": "staged", "label": "staged 1", "created_at": 100.0, "status": "done"}
+        events1 = [
+            {"seq": 0, "type": "run.started", "data": {"kind": "staged"}},
+            {"seq": 1, "type": "run.finished", "data": {"status": "done"}},
+        ]
+        db.save_run(run1, metrics={"chunks": 1, "generated": 2, "kept": 1})
+        db.save_events("run-1", events1)
+
+        run2 = {"id": "run-2", "kind": "diff", "label": "diff main", "created_at": 200.0, "status": "failed"}
+        db.save_run(run2)
+
+        runs = db.list_runs()
+        _check(len(runs) == 2, f"저장된 실행 개수 불일치: {len(runs)}")
+        _check(runs[0]["id"] == "run-2", "최신 순서 정렬 실패")
+        _check(runs[1]["metrics"]["kept"] == 1, "메트릭 조회 실패")
+
+        evs = db.get_events("run-1")
+        _check(len(evs) == 2, f"이벤트 로드 실패: {len(evs)}")
+        _check(evs[0]["type"] == "run.started", "이벤트 내용 불일치")
+
+        # 3. 설정 (prefs) 저장 및 조회
+        db.set_prefs({"kind": "working_tree", "from_ref": "develop"})
+        prefs = db.get_prefs()
+        _check(prefs.get("kind") == "working_tree", f"설정 저장 실패: {prefs}")
+        _check(prefs.get("from_ref") == "develop", f"설정 저장 실패: {prefs}")
+
+        # 4. 단일 실행 삭제 (run-2 삭제)
+        deleted = db.delete_run("run-2")
+        _check(deleted is True, "단일 실행 삭제 실패")
+        runs_after_del = db.list_runs()
+        _check(len(runs_after_del) == 1 and runs_after_del[0]["id"] == "run-1", "단일 삭제 후 목록 불일치")
+
+        # 5. 전체 실행 삭제
+        db.clear_runs()
+        _check(db.list_runs() == [], "전체 삭제 후 목록이 비어있지 않다")
+        _check(db.get_events("run-1") == [], "전체 삭제 후 이벤트가 남아있다")
+
+
+def test_history_api_endpoints_and_single_deletion() -> None:
+    """히스토리 및 단일 삭제 REST API 엔드포인트 테스트."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        out = Path(tmp) / "out"
+        out.mkdir()
+        ctx = _context(repo, "http://127.0.0.1:9", out)
+
+        # 1. 실행 등록 및 완료 시뮬레이션
+        run1 = {"id": "test-run-1", "kind": "staged", "label": "staged test", "created_at": 100.0, "status": "done"}
+        ctx.registry.db.save_run(run1, metrics={"chunks": 2, "generated": 3, "kept": 2})
+        ctx.registry.db.save_events("test-run-1", [{"seq": 0, "type": "run.started", "data": {}}])
+
+        run2 = {"id": "test-run-2", "kind": "working_tree", "label": "wt test", "created_at": 200.0, "status": "done"}
+        ctx.registry.db.save_run(run2)
+
+        # 2. GET /api/history
+        res = handle(Request("GET", "/api/history"), ctx)
+        _check(res.status == 200, f"GET /api/history 실패: {res.status}")
+        data = json.loads(res.body)
+        _check(len(data["runs"]) == 2, f"기록 목록 개수 불일치: {len(data['runs'])}")
+
+        # 3. GET /api/history/{id}/events
+        ev_res = handle(Request("GET", "/api/history/test-run-1/events"), ctx)
+        _check(ev_res.status == 200, f"GET events 실패: {ev_res.status}")
+        ev_data = json.loads(ev_res.body)
+        _check(len(ev_data["events"]) == 1, "이벤트 개수 불일치")
+
+        # 4. DELETE /api/history/{id} (단일 삭제)
+        del_res = handle(Request("DELETE", "/api/history/test-run-1"), ctx)
+        _check(del_res.status == 200, f"DELETE single run 실패: {del_res.status}")
+        del_data = json.loads(del_res.body)
+        _check(del_data.get("deleted") == "test-run-1", "삭제 응답 불일치")
+
+        # 삭제 후 목록 확인
+        res_after = handle(Request("GET", "/api/history"), ctx)
+        data_after = json.loads(res_after.body)
+        _check(len(data_after["runs"]) == 1 and data_after["runs"][0]["id"] == "test-run-2", "단일 삭제 후 잔여 목록 불일치")
+
+        # 5. POST /api/prefs & GET /api/prefs
+        pref_post = handle(Request("POST", "/api/prefs", body=json.dumps({"kind": "file", "path": "test.cpp"}).encode()), ctx)
+        _check(pref_post.status == 200, f"POST prefs 실패: {pref_post.status}")
+        pref_get = handle(Request("GET", "/api/prefs"), ctx)
+        pref_data = json.loads(pref_get.body)
+        _check(pref_data.get("kind") == "file", "선호도 설정 불일치")
+
+        # 6. DELETE /api/history (전체 삭제)
+        clear_res = handle(Request("DELETE", "/api/history"), ctx)
+        _check(clear_res.status == 200, f"DELETE all history 실패: {clear_res.status}")
+        res_empty = handle(Request("GET", "/api/history"), ctx)
+        _check(json.loads(res_empty.body)["runs"] == [], "전체 삭제 후 목록이 비어있지 않음")
+
+
 TESTS = [
     test_traced_pipeline_matches_plain_pipeline,
     test_stage_events_cover_every_stage,
@@ -890,6 +993,8 @@ TESTS = [
     test_stdlib_server_serves_over_real_http,
     test_asgi_app_answers_without_uvicorn,
     test_browse_api_directories_and_files,
+    test_viz_db_crud_and_persistence,
+    test_history_api_endpoints_and_single_deletion,
 ]
 
 

@@ -38,6 +38,7 @@ from ..schema import ReviewChunk, ReviewResult
 from ..service import ReviewRequestError, ReviewService
 from ..workspace import Workspace, WorkspaceError, switch
 from .build import BuildJob, BuildParams, execute as execute_build, new_job
+from .db import VizDB
 from .trace import Event, Tracer, clip
 
 log = logging.getLogger(__name__)
@@ -250,11 +251,7 @@ class Run:
 
 
 class RunRegistry:
-    """실행을 띄우고, 이벤트를 커서로 나눠준다.
-
-    서버는 진행 중인 실행만 알면 된다. 오래된 실행은 밀려 나가고, 사용자의
-    기록은 브라우저 localStorage 에 남는다.
-    """
+    """실행을 띄우고, 이벤트를 커서로 나눠주며, SQLite DB에 영속화한다."""
 
     def __init__(
         self,
@@ -264,6 +261,7 @@ class RunRegistry:
         *,
         max_runs: int = MAX_RUNS,
         workspace: Workspace | None = None,
+        db_path: Path | str | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.config = config
@@ -271,6 +269,7 @@ class RunRegistry:
         self.max_runs = max_runs
         #: 대상을 바꾸려면 어디서 왔는지 알아야 한다 (`retarget`).
         self.workspace = workspace
+        self.db = VizDB(db_path or (self.repo_root / ".crex" / "viz.db"))
         self._lock = threading.Lock()
         self._runs: dict[str, Run] = {}
         self._order: list[str] = []
@@ -311,6 +310,7 @@ class RunRegistry:
             self.repo_root = changed.root
             self.config = changed.config
             self.out_dir = changed.reports
+            self.db = VizDB(self.repo_root / ".crex" / "viz.db")
         log.info("워크스페이스 변경: %s", changed.describe())
         return changed
 
@@ -345,6 +345,44 @@ class RunRegistry:
         run.tracer.emit("run.cancelling")
         return True
 
+    def list_history(self, limit: int = 50) -> list[dict[str, Any]]:
+        """과거 실행 기록 목록을 DB에서 조회한다."""
+        return self.db.list_runs(limit=limit)
+
+    def get_history_events(self, run_id: str) -> list[dict[str, Any]]:
+        """특정 실행의 전체 이벤트 목록을 DB에서 조회한다."""
+        return self.db.get_events(run_id)
+
+    def delete_history(self, run_id: str) -> bool:
+        """실행 기록 1건을 DB 및 메모리에서 삭제한다."""
+        with self._lock:
+            if run_id in self._runs:
+                run = self._runs[run_id]
+                if run.status == "running":
+                    run.cancel.set()
+                self._runs.pop(run_id, None)
+            if run_id in self._order:
+                self._order.remove(run_id)
+        return self.db.delete_run(run_id)
+
+    def clear_history(self) -> None:
+        """모든 실행 기록을 DB 및 메모리에서 삭제한다."""
+        with self._lock:
+            for run in list(self._runs.values()):
+                if run.status == "running":
+                    run.cancel.set()
+            self._runs.clear()
+            self._order.clear()
+        self.db.clear_runs()
+
+    def get_prefs(self) -> dict[str, Any]:
+        """저장된 UI 폼 설정들을 반환한다."""
+        return self.db.get_prefs()
+
+    def set_prefs(self, patch: dict[str, Any]) -> None:
+        """UI 폼 설정들을 저장하거나 갱신한다."""
+        self.db.set_prefs(patch)
+
     # -- 실행 ---------------------------------------------------------------
 
     def start(self, kind: str, params: dict[str, Any]) -> Run:
@@ -374,6 +412,11 @@ class RunRegistry:
             while len(self._order) > self.max_runs:
                 self._runs.pop(self._order.pop(0), None)
 
+        try:
+            self.db.save_run(run.head())
+        except Exception as dberr:
+            log.warning("DB 저장 실패: %s", dberr)
+
         threading.Thread(target=self._execute, args=(run,), name=f"crex-run-{run.id}", daemon=True).start()
         return run
 
@@ -400,18 +443,36 @@ class RunRegistry:
             run.status = "failed"
             run.error = str(exc)
             run.tracer.emit("run.failed", error=run.error, kind="request")
+            try:
+                self.db.save_run(run.head())
+                self.db.save_events(run.id, [e.to_dict() for e in run.tracer.events])
+            except Exception as dberr:
+                log.warning("DB 저장 실패: %s", dberr)
             return
         except Exception as exc:  # noqa: BLE001 - 실행 스레드에서 새어 나가면 안 된다
             log.exception("실행 %s 실패", run.id)
             run.status = "failed"
             run.error = f"{type(exc).__name__}: {exc}"
             run.tracer.emit("run.failed", error=run.error, kind="internal")
+            try:
+                self.db.save_run(run.head())
+                self.db.save_events(run.id, [e.to_dict() for e in run.tracer.events])
+            except Exception as dberr:
+                log.warning("DB 저장 실패: %s", dberr)
             return
 
         run.agent_summary = summary
         run.status = "cancelled" if run.cancel.is_set() else "done"
 
         result = run.tracer.result
+        metrics = {
+            "chunks": len(run.tracer._chunks),
+            "generated": sum(len(items) for _, items in run.tracer._findings),
+            "kept": len(result.kept) if result else 0,
+            "rejected": len(result.rejected) if result else 0,
+            "reject_rate": result.reject_rate if result else 0.0,
+        } if result else None
+
         run.tracer.emit(
             "run.finished",
             status=run.status,
@@ -419,6 +480,12 @@ class RunRegistry:
             result=result.to_dict() if result else None,
             verdicts=_verdicts(result),
         )
+
+        try:
+            self.db.save_run(run.head(), metrics=metrics)
+            self.db.save_events(run.id, [e.to_dict() for e in run.tracer.events])
+        except Exception as dberr:
+            log.warning("DB 저장 실패: %s", dberr)
 
     # -- compile_commands.json ---------------------------------------------
 

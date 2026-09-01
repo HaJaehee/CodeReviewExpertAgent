@@ -86,6 +86,13 @@ CREX.client = (function () {
       const qs = new URLSearchParams(params || {}).toString();
       return request('GET', '/api/browse' + (qs ? '?' + qs : ''));
     },
+    // 과거 실행 기록 및 UI 설정 (로컬 SQLite DB 기반)
+    history: (limit) => request('GET', '/api/history' + (limit ? '?limit=' + limit : '')),
+    historyEvents: (runId) => request('GET', '/api/history/' + runId + '/events'),
+    deleteHistory: (runId) => request('DELETE', '/api/history/' + runId),
+    clearHistory: () => request('DELETE', '/api/history'),
+    getPrefs: () => request('GET', '/api/prefs'),
+    savePrefs: (prefs) => request('POST', '/api/prefs', prefs),
     follow: follow,
     POLL_MS: POLL_MS,
   };

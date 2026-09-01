@@ -11,10 +11,12 @@ reports/
 # 택소노미에서 생성되는 파일. `python -m crex.rules --out` 으로 언제든 다시 만든다.
 .opencodereview/
 
-# 개인 설정 덮어쓰기.
+# 개인 설정 덮어쓰기 및 로컬 DB
 #   crex.json   — 팀 공통 설정. 커밋한다 (docs/operations.md 참고)
 #   .crex.json  — 장비별 엔드포인트 등 개인 설정. 커밋하지 않는다
+#   .crex/      — 관제 화면 로컬 SQLite DB (viz.db 등)
 .crex.json
+.crex/
 
 # 설명서를 렌더한 HTML. `python tools/render_docs.py` 로 언제든 다시 만든다.
 docs/user_manual_html/
