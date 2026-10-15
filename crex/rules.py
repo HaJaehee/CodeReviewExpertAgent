@@ -92,13 +92,87 @@ class Rule:
         return text
 
 
-def is_rule_excluded(rule_id: str, patterns: list[str] | set[str]) -> bool:
-    """룰 ID가 제외 패턴 목록에 매칭되는지 확인한다."""
+def _is_path_matching(path: str, pattern: str) -> bool:
+    """경로가 glob 패턴과 매칭되는지 확인한다."""
+    norm_path = path.replace("\\", "/").strip("/")
+    norm_pat = pattern.replace("\\", "/").strip("/")
+    if fnmatch.fnmatch(norm_path, norm_pat) or fnmatch.fnmatch("/" + norm_path, norm_pat):
+        return True
+    if norm_pat.startswith("**/") and fnmatch.fnmatch(norm_path, norm_pat[3:]):
+        return True
+    if "/" not in norm_pat and fnmatch.fnmatch(Path(norm_path).name, norm_pat):
+        return True
+    if fnmatch.fnmatch(norm_path, norm_pat + "/*") or fnmatch.fnmatch(norm_path, norm_pat + "/**"):
+        return True
+    return False
+
+
+def is_rule_excluded(
+    rule_id: str,
+    patterns: list[str] | set[str] | tuple[str, ...],
+    path: str | None = None,
+) -> bool:
+    """룰 ID가 제외 패턴 목록에 매칭되는지 확인한다.
+
+    지원하는 패턴 형식:
+    1. 전역 룰 제외: 'rule:cpp.*', 'cpp.*', 'cpp.dangling-*'
+    2. 특정 파일/폴더 한정 룰 제외:
+       - 'src/legacy/**:rule:cpp.*'
+       - 'src/legacy/** rule:cpp.*'
+       - 'src/legacy/**:cpp.*'
+       - 'tests/*:any.*'
+    경로별 룰 패턴은 `path` 가 주어졌을 때 해당 경로가 매칭되는 경우에만 제외된다.
+    """
     if not patterns or not rule_id:
         return False
-    for pat in patterns:
+
+    for raw_pat in patterns:
+        pat = raw_pat.strip()
+        if not pat:
+            continue
+
+        # 1. 'rule:cpp.*' (전역 룰 제외)
+        if pat.lower().startswith("rule:"):
+            target = pat[5:].strip()
+            if target == rule_id or fnmatch.fnmatch(rule_id, target):
+                return True
+            continue
+
+        # 2. 'path_pattern rule:rule_pattern' (경로 한정 룰 제외)
+        if " rule:" in pat.lower():
+            idx = pat.lower().find(" rule:")
+            path_pat = pat[:idx].strip()
+            rule_pat = pat[idx + 6:].strip()
+            if path is not None and _is_path_matching(path, path_pat):
+                if rule_pat == rule_id or fnmatch.fnmatch(rule_id, rule_pat):
+                    return True
+            continue
+
+        # 3. 'path_pattern:rule:rule_pattern' (경로 한정 룰 제외)
+        if ":rule:" in pat.lower():
+            idx = pat.lower().find(":rule:")
+            path_pat = pat[:idx].strip()
+            rule_pat = pat[idx + 6:].strip()
+            if path is not None and _is_path_matching(path, path_pat):
+                if rule_pat == rule_id or fnmatch.fnmatch(rule_id, rule_pat):
+                    return True
+            continue
+
+        # 4. 'path_pattern:rule_pattern' (경로 한정 룰 제외, e.g. 'src/legacy/*:cpp.*')
+        if ":" in pat:
+            parts = pat.rsplit(":", 1)
+            path_pat, rule_pat = parts[0].strip(), parts[1].strip()
+            # Windows 드라이브 문자(C:)는 구분자로 오인하지 않음
+            if not (len(path_pat) == 1 and path_pat.isalpha()):
+                if path is not None and _is_path_matching(path, path_pat):
+                    if rule_pat == rule_id or fnmatch.fnmatch(rule_id, rule_pat):
+                        return True
+                continue
+
+        # 5. 일반 룰 패턴 (전역)
         if pat == rule_id or fnmatch.fnmatch(rule_id, pat):
             return True
+
     return False
 
 
@@ -118,6 +192,7 @@ class Taxonomy:
         max_rules: int = MAX_RULES_PER_CHUNK,
         dimensions: set[Dimension] | None = None,
         exclude_rules: list[str] | set[str] | None = None,
+        path: str | None = None,
     ) -> list[Rule]:
         """해당 언어에 적용할 룰을 우선순위 순으로 골라 상한까지만 돌려준다."""
         selected = [r for r in self.rules if r.applies_to(language)]
@@ -126,7 +201,10 @@ class Taxonomy:
         if dimensions:
             selected = [r for r in selected if r.dimension in dimensions]
         if exclude_rules:
-            selected = [r for r in selected if not is_rule_excluded(r.id, exclude_rules)]
+            selected = [
+                r for r in selected
+                if not is_rule_excluded(r.id, exclude_rules, path=path)
+            ]
 
         selected.sort(key=lambda r: (_SEVERITY_ORDER[r.severity], r.id))
         return selected[:max_rules]

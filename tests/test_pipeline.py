@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crex.config import ChunkingConfig, Config, GroundingConfig, ReviewConfig  # noqa: E402
 from crex.llm import EndpointConfig  # noqa: E402
 from crex.pipeline import Pipeline  # noqa: E402
-from crex.report import to_markdown, to_sarif  # noqa: E402
+from crex.report import to_html, to_markdown, to_sarif, write_all  # noqa: E402
 from tests.fake_vllm import FakeVLLM  # noqa: E402
 
 BEFORE = """\
@@ -421,6 +421,81 @@ def test_markdown_report_renders_details_fold() -> None:
         _check("</details>" in md, f"/details 태그 누락:\n{md}")
 
 
+def test_path_scoped_rule_exclusion_via_crexignore() -> None:
+    """특정 파일 경로에 한정된 룰 제외 패턴이 파이프라인 종단에서 해당 파일에만 적용된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+
+        legacy = repo / "src" / "legacy" / "legacy.cpp"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text("int legacy_fn() {\n  return 1;\n}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "add legacy")
+
+        (repo / "src" / "buffer.cpp").write_text(AFTER + "\n// mod", encoding="utf-8")
+        legacy.write_text("int legacy_fn() {\n  int* p = 0;\n  return 2;\n}\n", encoding="utf-8")
+        full_diff = _git(repo, "diff", "--no-color", "-U3")
+
+        (repo / ".crexignore").write_text("src/legacy/**:cpp.dangling-after-realloc\n", encoding="utf-8")
+
+        all_enums: list[list[str]] = []
+
+        def capture(schema: dict) -> dict:
+            enums = schema["properties"]["findings"]["items"]["properties"]["rule_id"]["enum"]
+            all_enums.append(enums)
+            return {"findings": []}
+
+        cfg = _config("http://dummy:1234")
+        with FakeVLLM(on_findings=capture) as server:
+            cfg.generator.base_url = server.base_url
+            cfg.verifier.base_url = server.base_url
+            result = Pipeline(cfg).run_diff(full_diff, repo)
+
+        _check(result.chunks_reviewed == 2, f"두 파일 모두 청킹되어야 함: {result.chunks_reviewed}")
+        _check(len(all_enums) == 2, f"생성 호출이 2회 발생해야 함: {len(all_enums)}")
+        has_rule = [("cpp.dangling-after-realloc" in e) for e in all_enums]
+        _check(True in has_rule and False in has_rule, f"한 파일만 룰이 제외되어야 함: {has_rule}")
+
+
+def test_html_report_generation() -> None:
+    """to_html 및 write_all 이 crex.viz 디자인의 HTML 리포트를 올바르게 생성한다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+
+        def emit_finding(schema: dict) -> dict:
+            items = schema["properties"]["findings"]["items"]["properties"]
+            return {
+                "findings": [
+                    {
+                        "line": items["line"]["enum"][0],
+                        "rule_id": "cpp.dangling-after-realloc",
+                        "severity": "high",
+                        "message": "메모리 안전성 문제",
+                        "suggestion": "raw 포인터 갱신",
+                    }
+                ]
+            }
+
+        with FakeVLLM(on_findings=emit_finding) as server:
+            result = Pipeline(_config(server.base_url)).run_diff(diff, repo)
+
+        html_text = to_html(result, title="테스트 리뷰")
+        _check("<!DOCTYPE html>" in html_text, "HTML 선언 누락")
+        _check("CREX" in html_text, "CREX 브랜드 누락")
+        _check("테스트 리뷰" in html_text, "제목 누락")
+        _check("판정 내역" in html_text, "판정 테이블 누락")
+        _check("cpp.dangling-after-realloc" in html_text, "룰 ID 누락")
+        _check("메모리 안전성 문제" in html_text, "메시지 누락")
+        _check("btn-fold" in html_text, "접기 버튼 누락")
+
+        # write_all 검증
+        out_dir = Path(tmp) / "reports"
+        paths = write_all(result, out_dir, stem="review-test")
+        _check("html" in paths, "write_all 에 html 키가 없음")
+        _check(paths["html"].is_file(), "html 리포트 파일이 생성되지 않음")
+        _check(len(paths["html"].read_text(encoding="utf-8")) > 500, "html 리포트 내용이 비어있음")
+
+
 TESTS = [
     test_end_to_end_finding_survives,
     test_total_generation_failure_is_not_silent,
@@ -433,6 +508,8 @@ TESTS = [
     test_path_exclusion_via_config_and_crexignore,
     test_rule_exclusion_via_config_and_crexignore,
     test_markdown_report_renders_details_fold,
+    test_path_scoped_rule_exclusion_via_crexignore,
+    test_html_report_generation,
 ]
 
 

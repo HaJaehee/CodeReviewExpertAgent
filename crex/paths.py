@@ -142,8 +142,10 @@ def load_crexignore(repo_root: Path) -> tuple[list[str], list[str]]:
     """저장소 루트의 .crexignore 파일에서 제외할 경로 패턴과 룰 패턴을 읽는다.
 
     반환: (path_patterns, rule_patterns)
-    - 'rule:cpp.*' 또는 'rule:cpp.c-style-cast' 처럼 rule: 로 시작하면 룰 제외 패턴.
-    - 그 외는 파일/디렉터리 경로 glob 패턴.
+    - 'rule:cpp.*' 처럼 rule: 로 시작하면 전역 룰 제외 패턴.
+    - 'src/legacy/**:rule:cpp.*', 'src/legacy/** rule:cpp.*', 'src/legacy/**:cpp.*' 처럼
+      특정 경로에 룰 패턴이 결합된 형태는 경로별 룰 제외 패턴 (rule_patterns 로 전달).
+    - 그 외는 파일/디렉터리 전체 경로 glob 패턴.
     - '#' 으로 시작하는 주석 라인이나 빈 라인은 건너뛴다.
     """
     path = repo_root / ".crexignore"
@@ -166,6 +168,10 @@ def load_crexignore(repo_root: Path) -> tuple[list[str], list[str]]:
             rule_id = line[5:].strip()
             if rule_id:
                 rule_patterns.append(rule_id)
+        elif " rule:" in line.lower() or ":rule:" in line.lower():
+            rule_patterns.append(line)
+        elif ":" in line and not (len(line.split(":", 1)[0]) == 1 and line.split(":", 1)[0].isalpha()):
+            rule_patterns.append(line)
         else:
             path_patterns.append(line)
 

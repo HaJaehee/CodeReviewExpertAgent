@@ -141,7 +141,9 @@ class RuleChecker:
         return [finding for batch in batches for finding in batch]
 
     def review_chunk(self, chunk: ReviewChunk) -> list[Finding]:
-        rules = self.taxonomy.for_language(chunk.language, exclude_rules=self.exclude_rules)
+        rules = self.taxonomy.for_language(
+            chunk.language, exclude_rules=self.exclude_rules, path=chunk.path
+        )
         if not rules:
             log.debug("%s: 적용할 룰이 없습니다 (%s)", chunk.chunk_id, chunk.language.value)
             return []

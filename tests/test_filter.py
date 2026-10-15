@@ -53,9 +53,9 @@ def _build_chunks() -> dict:
     return {c.chunk_id: c for c in chunks}
 
 
-def _finding(line: int, rule_id: str = "cpp.dangling-pointer", **kwargs) -> Finding:
+def _finding(line: int, rule_id: str = "cpp.dangling-pointer", path: str = "src/buffer.cpp", **kwargs) -> Finding:
     return Finding(
-        path="src/buffer.cpp",
+        path=path,
         line=line,
         dimension=Dimension.DEFECT,
         severity=Severity.HIGH,
@@ -258,6 +258,26 @@ def test_excluded_rule_rejected_deterministically_without_llm() -> None:
     _check(client.calls == [], f"LLM 이 호출됨: {len(client.calls)}회")
 
 
+def test_path_scoped_rule_exclusion() -> None:
+    """특정 파일 경로에 한정된 룰 제외 패턴이 해당 파일에만 적용된다."""
+    chunks = _build_chunks()
+    client = StubClient([{"verdict": "yes", "code_present": True, "reason": "유효함"}])
+    rf = ReviewFilter(client, chunks, exclude_rules=["src/buffer.cpp:cpp.dangling-*"])
+
+    # 1) src/buffer.cpp 지적 -> 룰 제외로 즉시 기각 (LLM 안 부름)
+    kept, rejected = rf.filter([_finding(15, rule_id="cpp.dangling-pointer", path="src/buffer.cpp")])
+    _check(kept == [], "제외 경로의 룰 지적이 유지됨")
+    _check(len(rejected) == 1, "기각되어야 함")
+    _check(rejected[0].reject_reason is RejectReason.RULE_EXCLUDED, f"기각 사유: {rejected[0].reject_reason}")
+    _check(client.calls == [], "LLM 이 호출됨")
+
+    # 2) 다른 룰(any.hardcoded-secret) -> 제외되지 않고 LLM 호출되어 유지됨
+    kept2, rejected2 = rf.filter([_finding(15, rule_id="any.hardcoded-secret", path="src/buffer.cpp")])
+    _check(len(kept2) == 1, f"다른 룰은 통과되어야 함: {kept2}")
+    _check(len(rejected2) == 0, "기각되지 않아야 함")
+    _check(len(client.calls) == 1, "LLM 이 1회 호출되어야 함")
+
+
 TESTS = [
     test_out_of_range_line_rejected_without_llm,
     test_unchanged_line_rejected_in_diff_mode,
@@ -271,6 +291,7 @@ TESTS = [
     test_strip_thinking_tags_and_reasoning_recovery,
     test_review_filter_accepts_reasoning_only_response,
     test_excluded_rule_rejected_deterministically_without_llm,
+    test_path_scoped_rule_exclusion,
 ]
 
 

@@ -142,9 +142,15 @@
 
     "// exclude_rules": [
       "리뷰하지 않을 룰 ID 또는 패턴 목록. 특정 룰 지적을 더 이상 보고 싶지 않을 때 끈다.",
-      "`.crexignore` 에 `rule:cpp.c-style-cast` 형식으로 적어도 동일하게 적용된다.",
+      "전역 룰 제외뿐만 아니라 특정 파일/디렉터리에만 특정 룰을 제외하는 것도 지원된다.",
+      "저장소 루트의 `.crexignore` 에서도 동일한 문법으로 지원된다:",
       "",
-      "    \"exclude_rules\": [\"cpp.c-style-cast\", \"any.magic-number\"]"
+      "    # .crexignore 예시",
+      "    rule:cpp.c-style-cast           # 전역 룰 제외",
+      "    src/legacy/**:cpp.*              # src/legacy 경로에 대해서만 cpp.* 룰 제외",
+      "    tests/** rule:any.magic-number   # tests 경로에 대해서만 매직넘버 룰 제외",
+      "",
+      "    \"exclude_rules\": [\"cpp.c-style-cast\", \"src/legacy/**:cpp.*\"]"
     ],
     "exclude_rules": []
   },

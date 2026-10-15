@@ -217,7 +217,9 @@ class ReviewFilter:
                 RejectReason.DUPLICATE, short_circuited=True,
             )
 
-        if self.exclude_rules and is_rule_excluded(finding.rule_id, self.exclude_rules):
+        if self.exclude_rules and is_rule_excluded(
+            finding.rule_id, self.exclude_rules, path=finding.path
+        ):
             return FilterVerdict(
                 finding, False,
                 f"제외 규칙에 지정된 룰입니다 ({finding.rule_id})",

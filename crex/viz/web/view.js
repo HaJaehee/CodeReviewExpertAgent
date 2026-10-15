@@ -399,6 +399,7 @@
     const body = $('verdicts');
     const rows = visibleVerdicts();
     $('btn-verdicts-csv').disabled = !rows.length;
+    if ($('btn-verdicts-html')) $('btn-verdicts-html').disabled = !rows.length;
 
     if (!rows.length) {
       body.innerHTML = '<tr class="empty"><td colspan="7">' +
@@ -714,6 +715,7 @@
     $('run-label').textContent = '';
     $('verdicts').innerHTML = '<tr class="empty"><td colspan="7">아직 없습니다.</td></tr>';
     if ($('hide-folded')) $('hide-folded').checked = false;
+    if ($('btn-verdicts-html')) $('btn-verdicts-html').disabled = true;
     updateFoldedBadge();
     closeDrawer();
     setStatus('idle');
@@ -1757,6 +1759,259 @@
       toast('판정 ' + rows.length + '건을 ' + finalName + ' 파일로 저장했습니다.', 'ok');
     } catch (err) {
       toast('CSV 를 만들지 못했습니다: ' + err.message, 'error');
+    }
+  });
+
+  function downloadHtmlFile(filename, htmlContent) {
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  function exportHtmlReport(rows, title) {
+    const keptCount = rows.filter((r) => r.kept).length;
+    const rejCount = rows.filter((r) => !r.kept).length;
+    const detRejects = rows.filter((r) => !r.kept && r.short_circuited).length;
+    const llmRejects = rows.filter((r) => !r.kept && !r.short_circuited).length;
+    const chunks = state.chunkCount || 0;
+    const statics = (state.result && state.result.static_findings_count) || 0;
+    const totalRaw = state.generated || rows.length;
+    const rejectRate = (state.result && state.result.reject_rate)
+      ? Math.round(state.result.reject_rate * 100) + '%'
+      : (totalRaw ? Math.round((rejCount / totalRaw) * 100) + '%' : '—');
+
+    const tableRows = rows.map((v, idx) => {
+      const loc = v.path + ':' + v.line + (v.end_line && v.end_line !== v.line ? '-' + v.end_line : '');
+      const sevLabel = SEVERITY_LABEL[v.severity] || v.severity;
+      let suggHtml = '';
+      if (v.suggestion) {
+        suggHtml = '<div class="v-sugg"><span class="v-sugg-tag">수정 제안</span>' +
+          '<pre class="v-sugg-code"><code>' + escapeHtml(v.suggestion) + '</code></pre></div>';
+      }
+      let commHtml = '';
+      if (v.verifier_comment && v.verifier_comment !== v.reason) {
+        commHtml = '<div class="v-comment"><span class="v-comment-tag">검증 코멘트:</span> ' +
+          escapeHtml(v.verifier_comment) + '</div>';
+      }
+      const msgHtml = '<div class="c-msg-text">' + escapeHtml(v.message) + '</div>' + suggHtml + commHtml;
+      const verdictHtml = v.kept
+        ? '<span class="tag tag-yes">유지</span>'
+        : '<span class="tag tag-no">' + escapeHtml(REJECT_LABEL[v.reject_reason] || '기각') + '</span>';
+
+      return '<tr data-id="r-' + idx + '" data-kept="' + (!!v.kept) + '" data-kind="verdict">' +
+        '<td class="c-fold"><button class="btn-fold" type="button" title="접기/펼치기">접기</button></td>' +
+        '<td class="c-where">' + escapeHtml(loc) + '</td>' +
+        '<td><span class="sev" data-sev="' + escapeHtml(v.severity) + '">' + escapeHtml(sevLabel) + '</span></td>' +
+        '<td class="c-rule">' + escapeHtml(v.rule_id) + '</td>' +
+        '<td class="c-msg">' + msgHtml + '</td>' +
+        '<td class="c-verdict">' + verdictHtml + '</td>' +
+        '<td class="c-reason">' + escapeHtml(v.reason || '') + '</td>' +
+        '</tr>';
+    }).join('\n');
+
+    const bannerHtml = (state.result && state.result.healthy === false)
+      ? '<div class="banner">⚠️ <b>리뷰가 온전히 끝나지 않았습니다.</b> 일부 단계에서 오류가 발생했을 수 있습니다.</div>'
+      : '';
+
+    return '<!DOCTYPE html>\n<html lang="ko">\n<head>\n' +
+      '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+      '<title>' + escapeHtml(title) + ' — CREX</title>\n<style>\n' +
+      ':root { --bg: #0b0e14; --bg-panel: #12161f; --bg-sunken: #0d1119; --line: #222a36; --line-soft: #1a212b; --fg: #dfe5ef; --fg-dim: #8b97a8; --fg-faint: #5c6779; --gen: #38bdf8; --gen-soft: rgba(56, 189, 248, 0.13); --ver: #a78bfa; --ver-soft: rgba(167, 139, 250, 0.13); --keep: #4ade80; --keep-soft: rgba(74, 222, 128, 0.12); --drop: #f87171; --drop-soft: rgba(248, 113, 113, 0.11); --warn: #fbbf24; --high: #f87171; --medium: #fbbf24; --low: #64748b; --radius: 8px; --mono: ui-monospace, "Cascadia Mono", "D2Coding", Consolas, "Courier New", monospace; --sans: -apple-system, "Segoe UI", "Malgun Gothic", "맑은 고딕", system-ui, sans-serif; }\n' +
+      '* { box-sizing: border-box; margin: 0; padding: 0; }\n' +
+      'body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 13.5px; line-height: 1.5; padding: 24px; }\n' +
+      '.container { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }\n' +
+      '.header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: linear-gradient(180deg, #141926, var(--bg-panel)); border: 1px solid var(--line); border-radius: var(--radius); }\n' +
+      '.brand { display: flex; align-items: baseline; gap: 10px; }\n' +
+      '.mark { font-family: var(--mono); font-weight: 700; font-size: 20px; color: var(--gen); }\n' +
+      '.brand-sub { color: var(--fg-dim); font-size: 13px; }\n' +
+      '.top-meta { display: flex; align-items: center; gap: 8px; }\n' +
+      '.chip { font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 20px; padding: 3px 11px; }\n' +
+      '.banner { background: rgba(248, 113, 113, 0.12); border: 1px solid var(--drop); border-radius: var(--radius); padding: 12px 16px; color: #fca5a5; font-size: 13px; }\n' +
+      '.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }\n' +
+      '.metric { background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }\n' +
+      '.metric b { display: block; font-family: var(--mono); font-size: 20px; font-weight: 600; line-height: 1.2; }\n' +
+      '.metric span { font-size: 11px; color: var(--fg-faint); }\n' +
+      '.metric-gen b { color: var(--gen); }\n' +
+      '.metric-ver b { color: var(--ver); }\n' +
+      '.metric-keep b { color: var(--keep); }\n' +
+      '.panel { background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }\n' +
+      '.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\n' +
+      '.panel-head h2 { font-size: 14.5px; font-weight: 600; margin: 0; }\n' +
+      '.tabs { display: flex; gap: 6px; }\n' +
+      '.tab { font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line); background: transparent; color: var(--fg-dim); cursor: pointer; }\n' +
+      '.tab.is-on { border-color: var(--gen); color: var(--gen); background: var(--gen-soft); }\n' +
+      '.badge { background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 10px; padding: 1px 6px; font-size: 10.5px; margin-left: 4px; }\n' +
+      '.verdict-actions { display: inline-flex; align-items: center; gap: 10px; }\n' +
+      '.check-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); cursor: pointer; user-select: none; }\n' +
+      '.check-inline input { accent-color: var(--gen); cursor: pointer; margin: 0; }\n' +
+      '.btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg-sunken); color: var(--fg-dim); cursor: pointer; transition: all 0.15s ease; }\n' +
+      '.btn:hover { background: var(--line-soft); color: var(--fg); border-color: var(--fg-faint); }\n' +
+      '.table-wrap { overflow-x: auto; }\n' +
+      '.verdicts { width: 100%; border-collapse: collapse; font-size: 12.5px; }\n' +
+      '.verdicts th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-faint); padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }\n' +
+      '.verdicts th.th-fold { width: 38px; text-align: center; }\n' +
+      '.verdicts td.c-fold { width: 38px; text-align: center; padding-right: 4px; }\n' +
+      '.btn-fold { display: inline-flex; align-items: center; justify-content: center; padding: 2px 5px; font-size: 10px; font-weight: 600; border-radius: 3px; border: 1px solid var(--line-soft); background: var(--bg-sunken); color: var(--fg-dim); cursor: pointer; line-height: 1; }\n' +
+      '.btn-fold:hover { border-color: var(--fg-faint); color: var(--fg); background: var(--line-soft); }\n' +
+      '.verdicts td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }\n' +
+      '.verdicts tr:last-child td { border-bottom: none; }\n' +
+      '.c-where { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); white-space: nowrap; }\n' +
+      '.c-rule { font-family: var(--mono); font-size: 11.5px; color: var(--fg-faint); white-space: nowrap; }\n' +
+      '.c-msg-text { line-height: 1.45; word-break: break-word; }\n' +
+      '.sev { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }\n' +
+      '.sev[data-sev="high"] { color: var(--high); background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); }\n' +
+      '.sev[data-sev="medium"] { color: var(--medium); background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.35); }\n' +
+      '.sev[data-sev="low"] { color: var(--low); background: rgba(100, 116, 139, 0.12); border: 1px solid rgba(100, 116, 139, 0.35); }\n' +
+      '.tag { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--fg-faint); display: inline-block; }\n' +
+      '.tag-yes { border-color: rgba(74, 222, 128, 0.5); color: var(--keep); background: var(--keep-soft); }\n' +
+      '.tag-no { border-color: rgba(248, 113, 113, 0.5); color: var(--drop); background: var(--drop-soft); }\n' +
+      '.tag-folded { display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--fg-faint); background: var(--bg-sunken); border: 1px solid var(--line-soft); border-radius: 3px; padding: 1px 4px; margin-right: 4px; }\n' +
+      '.verdicts tr.is-folded { opacity: 0.55; background: rgba(255, 255, 255, 0.02); }\n' +
+      '.verdicts tr.is-folded .v-sugg, .verdicts tr.is-folded .v-comment { display: none !important; }\n' +
+      '.verdicts tr.is-folded .c-msg-text { font-size: 11.5px; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }\n' +
+      '.v-sugg, .v-comment { margin-top: 6px; padding: 6px 10px; border-radius: 4px; background: var(--bg-sunken); border: 1px solid var(--line-soft); font-size: 12px; }\n' +
+      '.v-sugg-tag, .v-comment-tag { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--gen); margin-bottom: 3px; display: inline-block; }\n' +
+      '.v-comment-tag { color: var(--ver); }\n' +
+      '.v-sugg-code { margin: 0; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; word-break: break-all; color: var(--fg); }\n' +
+      '.c-reason { font-size: 11.5px; color: var(--fg-dim); line-height: 1.4; word-break: break-word; }\n' +
+      '</style>\n</head>\n<body>\n' +
+      '<div class="container">\n' +
+      '  <header class="header">\n' +
+      '    <div class="brand"><span class="mark">CREX</span><span class="brand-sub">' + escapeHtml(title) + '</span></div>\n' +
+      '    <div class="top-meta"><span class="chip">리뷰 보고서</span></div>\n' +
+      '  </header>\n' +
+      bannerHtml + '\n' +
+      '  <section class="metrics">\n' +
+      '    <div class="metric"><b>' + chunks + '</b><span>청크</span></div>\n' +
+      '    <div class="metric"><b>' + statics + '</b><span>정적분석</span></div>\n' +
+      '    <div class="metric metric-gen"><b>' + totalRaw + '</b><span>생성된 지적</span></div>\n' +
+      '    <div class="metric"><b>' + detRejects + '</b><span>결정론적 기각</span></div>\n' +
+      '    <div class="metric metric-ver"><b>' + llmRejects + '</b><span>검증 기각</span></div>\n' +
+      '    <div class="metric metric-keep"><b>' + keptCount + '</b><span>최종 유지</span></div>\n' +
+      '    <div class="metric"><b>' + rejectRate + '</b><span>기각률</span></div>\n' +
+      '  </section>\n' +
+      '  <section class="panel">\n' +
+      '    <div class="panel-head">\n' +
+      '      <h2>판정 내역</h2>\n' +
+      '      <div class="tabs" id="verdict-tabs">\n' +
+      '        <button class="tab is-on" data-filter="all" type="button">전체 (' + rows.length + ')</button>\n' +
+      '        <button class="tab" data-filter="kept" type="button">유지 (' + keptCount + ')</button>\n' +
+      '        <button class="tab" data-filter="rejected" type="button">기각 (' + rejCount + ')</button>\n' +
+      '        <button class="tab" data-filter="folded" type="button">접힘 <span class="badge" id="folded-badge" hidden>0</span></button>\n' +
+      '      </div>\n' +
+      '      <div class="verdict-actions">\n' +
+      '        <label class="check-inline" title="접은 지적을 테이블에서 숨깁니다"><input id="hide-folded" type="checkbox"><span>접힌 항목 숨기기</span></label>\n' +
+      '        <button class="btn" id="btn-fold-all" type="button">모두 접기</button>\n' +
+      '      </div>\n' +
+      '    </div>\n' +
+      '    <div class="table-wrap">\n' +
+      '      <table class="verdicts"><thead><tr><th class="th-fold">접기</th><th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th></tr></thead>\n' +
+      '      <tbody>' + (tableRows || '<tr id="empty-row" class="empty"><td colspan="7">지적 사항이 없습니다.</td></tr>') + '</tbody></table>\n' +
+      '    </div>\n' +
+      '  </section>\n' +
+      '</div>\n' +
+      '<script>\n' +
+      '(function() {\n' +
+      '  const folded = new Set();\n' +
+      '  let filter = "all";\n' +
+      '  let hideFolded = false;\n' +
+      '  function update() {\n' +
+      '    const rows = document.querySelectorAll(".verdicts tbody tr[data-kind]");\n' +
+      '    const badge = document.getElementById("folded-badge");\n' +
+      '    if (badge) { badge.textContent = folded.size; badge.hidden = !folded.size; }\n' +
+      '    const btnFoldAll = document.getElementById("btn-fold-all");\n' +
+      '    if (btnFoldAll) {\n' +
+      '      const allFolded = rows.length > 0 && Array.from(rows).every(r => folded.has(r.dataset.id));\n' +
+      '      btnFoldAll.textContent = allFolded ? "모두 펼치기" : "모두 접기";\n' +
+      '    }\n' +
+      '    let visibleCount = 0;\n' +
+      '    rows.forEach(r => {\n' +
+      '      const id = r.dataset.id;\n' +
+      '      const isFolded = folded.has(id);\n' +
+      '      const isKept = r.dataset.kept === "true";\n' +
+      '      r.classList.toggle("is-folded", isFolded);\n' +
+      '      const foldBtn = r.querySelector(".btn-fold");\n' +
+      '      if (foldBtn) foldBtn.textContent = isFolded ? "펼치기" : "접기";\n' +
+      '      let visible = true;\n' +
+      '      if (filter === "kept" && !isKept) visible = false;\n' +
+      '      if (filter === "rejected" && isKept) visible = false;\n' +
+      '      if (filter === "folded" && !isFolded) visible = false;\n' +
+      '      if (filter !== "folded" && hideFolded && isFolded) visible = false;\n' +
+      '      r.hidden = !visible;\n' +
+      '      if (visible) visibleCount++;\n' +
+      '    });\n' +
+      '    const empty = document.getElementById("empty-row");\n' +
+      '    if (empty) empty.hidden = (visibleCount > 0);\n' +
+      '  }\n' +
+      '  document.querySelectorAll("#verdict-tabs .tab").forEach(tab => {\n' +
+      '    tab.addEventListener("click", () => {\n' +
+      '      document.querySelectorAll("#verdict-tabs .tab").forEach(t => t.classList.remove("is-on"));\n' +
+      '      tab.classList.add("is-on");\n' +
+      '      filter = tab.dataset.filter;\n' +
+      '      update();\n' +
+      '    });\n' +
+      '  });\n' +
+      '  document.getElementById("hide-folded")?.addEventListener("change", (e) => {\n' +
+      '    hideFolded = e.target.checked;\n' +
+      '    update();\n' +
+      '  });\n' +
+      '  document.getElementById("btn-fold-all")?.addEventListener("click", () => {\n' +
+      '    const rows = document.querySelectorAll(".verdicts tbody tr[data-kind]");\n' +
+      '    const allFolded = rows.length > 0 && Array.from(rows).every(r => folded.has(r.dataset.id));\n' +
+      '    if (allFolded) folded.clear();\n' +
+      '    else rows.forEach(r => folded.add(r.dataset.id));\n' +
+      '    update();\n' +
+      '  });\n' +
+      '  document.querySelector(".verdicts")?.addEventListener("click", (e) => {\n' +
+      '    const btn = e.target.closest(".btn-fold");\n' +
+      '    if (!btn) return;\n' +
+      '    const row = btn.closest("tr");\n' +
+      '    if (!row) return;\n' +
+      '    const id = row.dataset.id;\n' +
+      '    if (folded.has(id)) folded.delete(id);\n' +
+      '    else folded.add(id);\n' +
+      '    update();\n' +
+      '  });\n' +
+      '  update();\n' +
+      '})();\n' +
+      '</script>\n</body>\n</html>';
+  }
+
+  $('btn-verdicts-html').addEventListener('click', async () => {
+    const rows = state.verdicts.length ? state.verdicts : visibleVerdicts();
+    if (!rows.length) {
+      toast('내보낼 판정이 없습니다.', 'warn');
+      return;
+    }
+    try {
+      const suffix = verdictFilter === 'all' ? '' : verdictFilter;
+      const now = new Date();
+      const pad = (v) => (v < 10 ? '0' : '') + v;
+      const stamp = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+        '-' + pad(now.getHours()) + pad(now.getMinutes());
+      const defaultFilename = 'crex-verdicts-' + stamp + (suffix ? '-' + suffix : '') + '.html';
+      const chosenFilename = await showPrompt({
+        title: '판정 HTML 리포트 저장',
+        sub: '총 ' + rows.length + '건',
+        message: '저장할 HTML 파일 이름을 입력하세요:',
+        defaultValue: defaultFilename,
+        okText: '저장',
+      });
+      if (!chosenFilename) return;
+
+      const finalName = chosenFilename.endsWith('.html') ? chosenFilename : chosenFilename + '.html';
+      const title = state.label || '코드리뷰 결과';
+      downloadHtmlFile(finalName, exportHtmlReport(rows, title));
+      toast('판정 ' + rows.length + '건을 ' + finalName + ' 파일로 저장했습니다.', 'ok');
+    } catch (err) {
+      toast('HTML 리포트를 만들지 못했습니다: ' + err.message, 'error');
     }
   });
 
