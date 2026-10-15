@@ -130,7 +130,23 @@
       "보여주며 신뢰를 쌓고, \"이 도구 말이 맞네\"라는 인식이 생기면 \"medium\" 으로",
       "낮춘다. 처음부터 전부 보여주면 노이즈에 묻혀 진짜 지적까지 무시당한다."
     ],
-    "min_severity": "low"
+    "min_severity": "low",
+
+    "// exclude": [
+      "리뷰 대상에서 제외할 파일이나 디렉터리 glob 패턴 목록.",
+      "저장소 루트에 `.crexignore` 파일을 만들어 적어도 동일하게 적용된다.",
+      "",
+      "    \"exclude\": [\"legacy/**\", \"tests/**\", \"third_party/**\"]"
+    ],
+    "exclude": [],
+
+    "// exclude_rules": [
+      "리뷰하지 않을 룰 ID 또는 패턴 목록. 특정 룰 지적을 더 이상 보고 싶지 않을 때 끈다.",
+      "`.crexignore` 에 `rule:cpp.c-style-cast` 형식으로 적어도 동일하게 적용된다.",
+      "",
+      "    \"exclude_rules\": [\"cpp.c-style-cast\", \"any.magic-number\"]"
+    ],
+    "exclude_rules": []
   },
 
   "// 정적분석 그라운딩": [

@@ -118,6 +118,7 @@ class RuleChecker:
         max_findings: int = MAX_FINDINGS_PER_CHUNK,
         max_workers: int = 4,
         restrict_lines: bool = True,
+        exclude_rules: list[str] | set[str] | None = None,
     ) -> None:
         self.client = client
         self.taxonomy = taxonomy
@@ -125,6 +126,7 @@ class RuleChecker:
         self.max_workers = max_workers
         #: line 을 변경된 라인 집합으로 제한할지. 전체 파일 감사 모드에서는 끈다.
         self.restrict_lines = restrict_lines
+        self.exclude_rules = set(exclude_rules) if exclude_rules else set()
         #: 청크별 호출 실패. 파이프라인이 결과에 실어 사용자에게 보여준다.
         #: 이걸 로그에만 남기면 "지적 0건"과 "전부 실패"가 구분되지 않는다.
         self.errors: list[str] = []
@@ -139,7 +141,7 @@ class RuleChecker:
         return [finding for batch in batches for finding in batch]
 
     def review_chunk(self, chunk: ReviewChunk) -> list[Finding]:
-        rules = self.taxonomy.for_language(chunk.language)
+        rules = self.taxonomy.for_language(chunk.language, exclude_rules=self.exclude_rules)
         if not rules:
             log.debug("%s: 적용할 룰이 없습니다 (%s)", chunk.chunk_id, chunk.language.value)
             return []

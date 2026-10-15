@@ -239,6 +239,25 @@ def test_review_filter_accepts_reasoning_only_response() -> None:
     _check(rf.stats.errors == 0, f"FILTER_ERROR 가 발생하지 않아야 한다: {rf.stats.errors}")
 
 
+def test_excluded_rule_rejected_deterministically_without_llm() -> None:
+    """exclude_rules 에 매칭되는 룰 지적은 LLM 을 부르지 않고 즉시 기각되어야 한다."""
+    chunks = _build_chunks()
+    client = StubClient([])
+    rf = ReviewFilter(client, chunks, exclude_rules=["cpp.dangling-*"])
+
+    # 라인 15 는 changed_lines 에 포함됨
+    kept, rejected = rf.filter([_finding(15, rule_id="cpp.dangling-pointer")])
+
+    _check(kept == [], f"제외된 룰 지적이 유지됨: {kept}")
+    _check(len(rejected) == 1, f"기각 1건을 기대했으나 {len(rejected)}건")
+    _check(
+        rejected[0].reject_reason is RejectReason.RULE_EXCLUDED,
+        f"기각 사유 불일치: {rejected[0].reject_reason}",
+    )
+    _check(rejected[0].short_circuited, "결정론적 기각인데 short_circuited 가 False")
+    _check(client.calls == [], f"LLM 이 호출됨: {len(client.calls)}회")
+
+
 TESTS = [
     test_out_of_range_line_rejected_without_llm,
     test_unchanged_line_rejected_in_diff_mode,
@@ -251,6 +270,7 @@ TESTS = [
     test_stats_reject_rate,
     test_strip_thinking_tags_and_reasoning_recovery,
     test_review_filter_accepts_reasoning_only_response,
+    test_excluded_rule_rejected_deterministically_without_llm,
 ]
 
 

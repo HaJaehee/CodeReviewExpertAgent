@@ -14,7 +14,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .rules import DEFAULT_EXCLUDE
+from .rules import DEFAULT_EXCLUDE, is_rule_excluded
 from .schema import FileDiff, Language
 
 #: 폴더 감사 한 번에 볼 수 있는 파일 개수 상한.
@@ -136,3 +136,37 @@ def filter_file_diffs(file_diffs: list[FileDiff], targets: list[str]) -> list[Fi
                 break
 
     return kept
+
+
+def load_crexignore(repo_root: Path) -> tuple[list[str], list[str]]:
+    """저장소 루트의 .crexignore 파일에서 제외할 경로 패턴과 룰 패턴을 읽는다.
+
+    반환: (path_patterns, rule_patterns)
+    - 'rule:cpp.*' 또는 'rule:cpp.c-style-cast' 처럼 rule: 로 시작하면 룰 제외 패턴.
+    - 그 외는 파일/디렉터리 경로 glob 패턴.
+    - '#' 으로 시작하는 주석 라인이나 빈 라인은 건너뛴다.
+    """
+    path = repo_root / ".crexignore"
+    if not path.is_file():
+        return [], []
+
+    path_patterns: list[str] = []
+    rule_patterns: list[str] = []
+
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except Exception:
+        return [], []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("rule:"):
+            rule_id = line[5:].strip()
+            if rule_id:
+                rule_patterns.append(rule_id)
+        else:
+            path_patterns.append(line)
+
+    return path_patterns, rule_patterns

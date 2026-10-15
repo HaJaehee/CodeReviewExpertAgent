@@ -100,8 +100,21 @@ class ReviewConfig:
     require_changed_line: bool = True
     #: 리포트에 포함할 최소 심각도: "high" | "medium" | "low"
     min_severity: str = "low"
+    #: 리뷰 대상에서 제외할 파일·디렉터리 glob 패턴 목록
+    exclude: list[str] = field(default_factory=list)
+    #: 리뷰 대상에서 제외할 룰 ID 또는 패턴 목록 (예: ["cpp.c-style-cast", "any.magic-number"])
+    exclude_rules: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        if isinstance(self.exclude, str):
+            self.exclude = [self.exclude]
+        elif not isinstance(self.exclude, list):
+            self.exclude = list(self.exclude)
+        if isinstance(self.exclude_rules, str):
+            self.exclude_rules = [self.exclude_rules]
+        elif not isinstance(self.exclude_rules, list):
+            self.exclude_rules = list(self.exclude_rules)
+
         if self.mode not in SUPPORTED_MODES:
             raise ValueError(
                 f"review.mode = {self.mode!r} 는 아직 구현되지 않았습니다. "

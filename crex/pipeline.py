@@ -36,8 +36,8 @@ from .ground import (
     Semgrep,
 )
 from .llm import LLMClient
-from .paths import filter_file_diffs
-from .rules import Taxonomy, load_taxonomy
+from .paths import filter_file_diffs, is_excluded, load_crexignore
+from .rules import DEFAULT_EXCLUDE, Taxonomy, load_taxonomy
 from .schema import DiffLine, FileDiff, Language, LineStatus, ReviewChunk, ReviewResult
 
 log = logging.getLogger(__name__)
@@ -55,6 +55,12 @@ class Pipeline:
         self.generator = LLMClient(config.generator)
         self.verifier = LLMClient(config.verifier)
 
+    def _get_effective_exclusions(self, repo_root: Path) -> tuple[list[str], list[str]]:
+        crexignore_paths, crexignore_rules = load_crexignore(repo_root)
+        path_exclude = list(DEFAULT_EXCLUDE) + list(self.config.review.exclude) + crexignore_paths
+        rule_exclude = list(self.config.review.exclude_rules) + crexignore_rules
+        return path_exclude, rule_exclude
+
     # -- 진입점 -------------------------------------------------------------
 
     def run_diff(
@@ -68,29 +74,42 @@ class Pipeline:
         result = ReviewResult()
 
         with self._timed(result, "chunk"):
+            path_exclude, rule_exclude = self._get_effective_exclusions(repo_root)
             file_diffs = parse_unified_diff(diff_text)
             if only_paths:
                 before = len(file_diffs)
                 file_diffs = filter_file_diffs(file_diffs, only_paths)
                 log.info("경로 필터: 파일 %d개 → %d개", before, len(file_diffs))
-            chunks = self._chunk_diff(file_diffs, repo_root, result)
+            chunks = self._chunk_diff(file_diffs, repo_root, result, path_exclude=path_exclude)
 
-        return self._review(chunks, repo_root, result, require_changed_line=self.config.review.require_changed_line)
+        return self._review(
+            chunks, repo_root, result,
+            require_changed_line=self.config.review.require_changed_line,
+            exclude_rules=rule_exclude,
+        )
 
     def run_scan(self, paths: list[str], repo_root: Path) -> ReviewResult:
         """전체 파일 감사. diff 없이 기존 코드를 통째로 본다."""
         result = ReviewResult()
 
         with self._timed(result, "chunk"):
+            path_exclude, rule_exclude = self._get_effective_exclusions(repo_root)
             chunks: list[ReviewChunk] = []
             for path in paths:
+                if is_excluded(path, path_exclude):
+                    log.info("%s: 제외 규칙(exclude)에 매칭되어 건너뜀", path)
+                    continue
                 source = _read(repo_root / path, result)
                 if source is None:
                     continue
                 chunks.extend(self._chunk_whole_file(path, source))
 
         # 전체 감사에서는 '변경된 라인' 개념이 없으므로 제약을 푼다.
-        return self._review(chunks, repo_root, result, require_changed_line=False)
+        return self._review(
+            chunks, repo_root, result,
+            require_changed_line=False,
+            exclude_rules=rule_exclude,
+        )
 
     # -- 단계 ---------------------------------------------------------------
 
@@ -101,6 +120,7 @@ class Pipeline:
         result: ReviewResult,
         *,
         require_changed_line: bool,
+        exclude_rules: list[str] | None = None,
     ) -> ReviewResult:
         result.chunks_reviewed = len(chunks)
         if not chunks:
@@ -125,6 +145,7 @@ class Pipeline:
                 max_findings=self.config.review.max_findings_per_chunk,
                 max_workers=self.config.review.max_workers,
                 restrict_lines=require_changed_line,
+                exclude_rules=exclude_rules,
             )
             raw = checker.review(chunks)
             result.generation_errors = len(checker.errors)
@@ -144,6 +165,7 @@ class Pipeline:
                 {c.chunk_id: c for c in chunks},
                 require_changed_line=require_changed_line,
                 max_workers=self.config.review.max_workers,
+                exclude_rules=exclude_rules,
             )
             kept, rejected = review_filter.filter(raw)
             result.verification_errors = len(review_filter.errors)
@@ -176,7 +198,12 @@ class Pipeline:
         return keep
 
     def _chunk_diff(
-        self, file_diffs: list[FileDiff], repo_root: Path, result: ReviewResult
+        self,
+        file_diffs: list[FileDiff],
+        repo_root: Path,
+        result: ReviewResult,
+        *,
+        path_exclude: list[str] | None = None,
     ) -> list[ReviewChunk]:
         # generator 의 max_input_tokens 기반으로 안전한 청크 라인 수를 계산하여 동기화
         safe_lines = calculate_safe_max_lines(self.generator.config.max_input_tokens)
@@ -198,6 +225,9 @@ class Pipeline:
 
         chunks: list[ReviewChunk] = []
         for file_diff in file_diffs:
+            if path_exclude and is_excluded(file_diff.path, path_exclude):
+                log.info("%s: 제외 규칙(exclude)에 매칭되어 건너뜀", file_diff.path)
+                continue
             if file_diff.language is Language.OTHER:
                 log.debug("%s: 지원하지 않는 언어, 건너뜀", file_diff.path)
                 continue

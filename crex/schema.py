@@ -287,6 +287,8 @@ class RejectReason(str, enum.Enum):
     DUPLICATE = "duplicate"
     #: 검증 호출이 실패해 보수적으로 기각.
     FILTER_ERROR = "filter_error"
+    #: 제외 규칙(exclude_rules 또는 .crexignore)에 지정된 룰.
+    RULE_EXCLUDED = "rule_excluded"
 
 
 @dataclass

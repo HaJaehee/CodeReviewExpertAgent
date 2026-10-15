@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import sys
 import tomllib
@@ -91,6 +92,16 @@ class Rule:
         return text
 
 
+def is_rule_excluded(rule_id: str, patterns: list[str] | set[str]) -> bool:
+    """룰 ID가 제외 패턴 목록에 매칭되는지 확인한다."""
+    if not patterns or not rule_id:
+        return False
+    for pat in patterns:
+        if pat == rule_id or fnmatch.fnmatch(rule_id, pat):
+            return True
+    return False
+
+
 class Taxonomy:
     def __init__(self, rules: list[Rule], version: str = "") -> None:
         self.rules = rules
@@ -106,6 +117,7 @@ class Taxonomy:
         chunk_local_only: bool = True,
         max_rules: int = MAX_RULES_PER_CHUNK,
         dimensions: set[Dimension] | None = None,
+        exclude_rules: list[str] | set[str] | None = None,
     ) -> list[Rule]:
         """해당 언어에 적용할 룰을 우선순위 순으로 골라 상한까지만 돌려준다."""
         selected = [r for r in self.rules if r.applies_to(language)]
@@ -113,6 +125,8 @@ class Taxonomy:
             selected = [r for r in selected if r.chunk_local]
         if dimensions:
             selected = [r for r in selected if r.dimension in dimensions]
+        if exclude_rules:
+            selected = [r for r in selected if not is_rule_excluded(r.id, exclude_rules)]
 
         selected.sort(key=lambda r: (_SEVERITY_ORDER[r.severity], r.id))
         return selected[:max_rules]

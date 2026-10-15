@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from .llm import LLMClient
+from .rules import is_rule_excluded
 from .schema import Finding, FilterVerdict, RejectReason, ReviewChunk
 
 log = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ class ReviewFilter:
         *,
         require_changed_line: bool = True,
         max_workers: int = 4,
+        exclude_rules: list[str] | set[str] | None = None,
     ) -> None:
         self.client = client
         self.chunks = chunks
@@ -150,6 +152,7 @@ class ReviewFilter:
         #: 전체 파일 감사(`scan`) 모드에서는 False 로 둔다.
         self.require_changed_line = require_changed_line
         self.max_workers = max_workers
+        self.exclude_rules = set(exclude_rules) if exclude_rules else set()
         self.stats = FilterStats()
         #: 검증 호출 자체가 실패한 건. 기각과는 구분해서 올린다 — 전자는 설비
         #: 고장이고 후자는 정상 동작이다.
@@ -212,6 +215,13 @@ class ReviewFilter:
             return FilterVerdict(
                 finding, False, "동일 라인·동일 룰의 중복 지적",
                 RejectReason.DUPLICATE, short_circuited=True,
+            )
+
+        if self.exclude_rules and is_rule_excluded(finding.rule_id, self.exclude_rules):
+            return FilterVerdict(
+                finding, False,
+                f"제외 규칙에 지정된 룰입니다 ({finding.rule_id})",
+                RejectReason.RULE_EXCLUDED, short_circuited=True,
             )
 
         chunk = self._resolve_chunk(finding)

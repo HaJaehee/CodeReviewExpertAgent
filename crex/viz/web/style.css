@@ -601,6 +601,74 @@ input::placeholder { color: var(--fg-faint); }
   white-space: nowrap;
 }
 
+.verdicts th.th-fold { width: 38px; text-align: center; }
+.verdicts td.c-fold { width: 38px; text-align: center; padding-right: 4px; }
+.btn-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+.btn-fold:hover {
+  border-color: var(--fg-faint);
+  color: var(--fg);
+  background: var(--line-soft);
+}
+.verdicts tr.is-folded {
+  opacity: 0.55;
+  background: rgba(255, 255, 255, 0.02);
+}
+.verdicts tr.is-folded:hover {
+  opacity: 0.9;
+}
+.verdicts tr.is-folded .v-sugg,
+.verdicts tr.is-folded .v-comment {
+  display: none !important;
+}
+.verdicts tr.is-folded .c-msg-text {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+.tag-folded {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-right: 4px;
+}
+.verdict-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+}
 .verdicts td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 .verdicts tr.empty td { color: var(--fg-faint); border: none; padding-top: 12px; }
 .verdicts .c-where { font-family: var(--mono); white-space: nowrap; }

@@ -204,6 +204,26 @@ def test_json_config_wins_over_a_leftover_toml() -> None:
         _check(config.review.max_workers == 9, f"{config.review.max_workers}")
 
 
+def test_review_exclude_and_exclude_rules_parsed() -> None:
+    """review.exclude 와 review.exclude_rules 설정이 리스트로 정상 파싱된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(
+            Path(tmp),
+            {
+                "review": {
+                    "exclude": ["build/**", "third_party/*"],
+                    "exclude_rules": ["cpp.dangling-*", "python.unsafe-exec"],
+                }
+            },
+        )
+        config = load_config(search_from=Path(tmp))
+        _check(config.review.exclude == ["build/**", "third_party/*"], f"exclude: {config.review.exclude}")
+        _check(
+            config.review.exclude_rules == ["cpp.dangling-*", "python.unsafe-exec"],
+            f"exclude_rules: {config.review.exclude_rules}",
+        )
+
+
 TESTS = [
     test_comment_keys_are_stripped_everywhere,
     test_comment_key_that_shadows_a_real_key_is_still_a_comment,
@@ -217,6 +237,7 @@ TESTS = [
     test_bom_does_not_break_the_file,
     test_leftover_toml_config_is_reported_not_ignored,
     test_json_config_wins_over_a_leftover_toml,
+    test_review_exclude_and_exclude_rules_parsed,
 ]
 
 

@@ -61,6 +61,7 @@
     code_not_found: '코드가 스니펫에 없음',
     duplicate: '중복 지적',
     filter_error: '검증 호출 실패 → 보수적 기각',
+    rule_excluded: '룰 제외',
   };
 
   // ── 상태 ──────────────────────────────────────────────────────────
@@ -83,6 +84,8 @@
       calls: {},          // call_id → { role, request, response, error }
       chunks: [],
       verdicts: [],
+      folded: new Set(),
+      hideFolded: false,
       result: null,
       agentSummary: '',
       counts: { generator: 0, verifier: 0 },
@@ -359,11 +362,37 @@
     renderVerdicts();
   }
 
+  function updateFoldedBadge() {
+    const count = state.folded.size;
+    const badge = $('folded-count');
+    if (badge) {
+      badge.textContent = count;
+      badge.hidden = !count;
+    }
+    const btn = $('btn-fold-all');
+    if (btn) {
+      const allFolded = state.verdicts.length > 0 && state.verdicts.every((v) => state.folded.has(v.path + ':' + v.line + ':' + v.rule_id));
+      btn.textContent = allFolded ? '전체 펼치기' : '전체 접기';
+    }
+  }
+
   // 표와 CSV 가 같은 목록을 본다. 화면에 보이는 것과 파일에 담기는 것이 달라지면
   // 사람은 그 차이를 알아차리지 못한 채로 잘못된 표를 근거로 삼는다.
   function visibleVerdicts() {
-    return state.verdicts.filter((v) =>
-      verdictFilter === 'all' || (verdictFilter === 'kept') === v.kept);
+    return state.verdicts.filter((v) => {
+      const key = v.path + ':' + v.line + ':' + v.rule_id;
+      const isFolded = state.folded.has(key);
+      if (verdictFilter === 'folded') {
+        return isFolded;
+      }
+      if (state.hideFolded && isFolded) {
+        return false;
+      }
+      if (verdictFilter === 'all') return true;
+      if (verdictFilter === 'kept') return v.kept;
+      if (verdictFilter === 'rejected') return !v.kept;
+      return true;
+    });
   }
 
   function renderVerdicts() {
@@ -372,12 +401,14 @@
     $('btn-verdicts-csv').disabled = !rows.length;
 
     if (!rows.length) {
-      body.innerHTML = '<tr class="empty"><td colspan="6">' +
+      body.innerHTML = '<tr class="empty"><td colspan="7">' +
         (state.verdicts.length ? '이 조건에 맞는 항목이 없습니다.' : '아직 없습니다.') + '</td></tr>';
       return;
     }
 
     body.innerHTML = rows.map((v) => {
+      const key = v.path + ':' + v.line + ':' + v.rule_id;
+      const isFolded = state.folded.has(key);
       let suggestionHtml = '';
       if (v.suggestion) {
         suggestionHtml =
@@ -395,16 +426,18 @@
           '</div>';
       }
 
-      return '<tr data-kept="' + v.kept + '">' +
+      const msgHtml = isFolded
+        ? '<div class="c-msg-text"><span class="tag-folded">접힘</span> ' + escapeHtml(v.message) + '</div>'
+        : '<div class="c-msg-text">' + escapeHtml(v.message) + '</div>' + suggestionHtml + verifierCommentHtml;
+
+      return '<tr data-kept="' + v.kept + '" class="' + (isFolded ? 'is-folded' : '') + '">' +
+        '<td class="c-fold"><button class="btn-fold" data-key="' + escapeHtml(key) + '" type="button" title="' + (isFolded ? '펼치기' : '접기') + '">' +
+          (isFolded ? '펼치기' : '접기') + '</button></td>' +
         '<td class="c-where">' + escapeHtml(v.path) + ':' + v.line + '</td>' +
         '<td><span class="sev" data-sev="' + v.severity + '">' +
           (SEVERITY_LABEL[v.severity] || v.severity) + '</span></td>' +
         '<td class="c-rule">' + escapeHtml(v.rule_id) + '</td>' +
-        '<td class="c-msg">' +
-          '<div class="c-msg-text">' + escapeHtml(v.message) + '</div>' +
-          suggestionHtml +
-          verifierCommentHtml +
-        '</td>' +
+        '<td class="c-msg">' + msgHtml + '</td>' +
         '<td class="c-verdict">' + (v.kept
           ? '<span class="tag tag-yes">유지</span>'
           : '<span class="tag tag-no">' +
@@ -679,7 +712,9 @@
     $('ver-meta').textContent = '호출 0';
     $('agent-summary').textContent = '—';
     $('run-label').textContent = '';
-    $('verdicts').innerHTML = '<tr class="empty"><td colspan="6">아직 없습니다.</td></tr>';
+    $('verdicts').innerHTML = '<tr class="empty"><td colspan="7">아직 없습니다.</td></tr>';
+    if ($('hide-folded')) $('hide-folded').checked = false;
+    updateFoldedBadge();
     closeDrawer();
     setStatus('idle');
   }
@@ -1661,6 +1696,43 @@
     });
     renderVerdicts();
   });
+
+  $('verdicts').addEventListener('click', (event) => {
+    const btn = event.target.closest('.btn-fold');
+    if (!btn) return;
+    const key = btn.dataset.key;
+    if (!key) return;
+    if (state.folded.has(key)) {
+      state.folded.delete(key);
+    } else {
+      state.folded.add(key);
+    }
+    updateFoldedBadge();
+    renderVerdicts();
+  });
+
+  const btnFoldAll = $('btn-fold-all');
+  if (btnFoldAll) {
+    btnFoldAll.addEventListener('click', () => {
+      if (!state.verdicts.length) return;
+      const allFolded = state.verdicts.every((v) => state.folded.has(v.path + ':' + v.line + ':' + v.rule_id));
+      if (allFolded) {
+        state.folded.clear();
+      } else {
+        state.verdicts.forEach((v) => state.folded.add(v.path + ':' + v.line + ':' + v.rule_id));
+      }
+      updateFoldedBadge();
+      renderVerdicts();
+    });
+  }
+
+  const hideFoldedCheck = $('hide-folded');
+  if (hideFoldedCheck) {
+    hideFoldedCheck.addEventListener('change', (event) => {
+      state.hideFolded = event.target.checked;
+      renderVerdicts();
+    });
+  }
 
   $('btn-verdicts-csv').addEventListener('click', async () => {
     const rows = visibleVerdicts();

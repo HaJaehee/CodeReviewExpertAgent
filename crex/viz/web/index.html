@@ -264,18 +264,26 @@
           <button class="tab is-on" data-filter="all" type="button">전체</button>
           <button class="tab" data-filter="kept" type="button">유지</button>
           <button class="tab" data-filter="rejected" type="button">기각</button>
+          <button class="tab" data-filter="folded" type="button">접힘 <span class="badge" id="folded-count" hidden>0</span></button>
         </div>
-        <button class="btn btn-ghost btn-sm" id="btn-verdicts-csv" type="button"
-                title="지금 보이는 판정을 CSV 파일로 저장합니다" disabled>CSV 저장</button>
+        <div class="verdict-actions">
+          <label class="check-inline" title="접은 지적을 테이블에서 숨깁니다">
+            <input id="hide-folded" type="checkbox">
+            <span>접힌 항목 숨기기</span>
+          </label>
+          <button class="btn btn-ghost btn-sm" id="btn-fold-all" type="button" title="모든 지적을 접거나 펼칩니다">모두 접기</button>
+          <button class="btn btn-ghost btn-sm" id="btn-verdicts-csv" type="button"
+                  title="지금 보이는 판정을 CSV 파일로 저장합니다" disabled>CSV 저장</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="verdicts">
           <thead>
             <tr>
-              <th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th>
+              <th class="th-fold">접기</th><th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th>
             </tr>
           </thead>
-          <tbody id="verdicts"><tr class="empty"><td colspan="6">아직 없습니다.</td></tr></tbody>
+          <tbody id="verdicts"><tr class="empty"><td colspan="7">아직 없습니다.</td></tr></tbody>
         </table>
       </div>
     </section>

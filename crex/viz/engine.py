@@ -203,12 +203,19 @@ class TracedPipeline(Pipeline):
         result: ReviewResult,
         *,
         require_changed_line: bool,
+        exclude_rules: list[str] | None = None,
+        **kwargs: Any,
     ) -> ReviewResult:
         self.tracer.plan(chunks, require_changed_line=require_changed_line)
         if not self.config.grounding.enabled:
             self.tracer.emit_chunks()
         out = super()._review(
-            chunks, repo_root, result, require_changed_line=require_changed_line
+            chunks,
+            repo_root,
+            result,
+            require_changed_line=require_changed_line,
+            exclude_rules=exclude_rules,
+            **kwargs,
         )
         self.tracer.result = out
         return out

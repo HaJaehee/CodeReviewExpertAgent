@@ -323,6 +323,104 @@ def test_unimplemented_mode_is_rejected_loudly() -> None:
         raise AssertionError("잘못된 min_severity 가 조용히 통과됨")
 
 
+def test_path_exclusion_via_config_and_crexignore() -> None:
+    """review.exclude 및 .crexignore 에 명시된 파일/경로는 리뷰 대상에서 제외된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+
+        excluded = repo / "src" / "excluded.cpp"
+        excluded.write_text("void foo() {}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "add excluded")
+
+        (repo / "src" / "buffer.cpp").write_text(AFTER + "\n// change", encoding="utf-8")
+        excluded.write_text("void foo() { int x = 1; }\n", encoding="utf-8")
+        full_diff = _git(repo, "diff", "--no-color", "-U3")
+
+        def capture(schema: dict) -> dict:
+            return {"findings": []}
+
+        cfg = _config("http://dummy:1234")
+        cfg.review.exclude = ["src/excluded.cpp"]
+
+        with FakeVLLM(on_findings=capture) as server:
+            cfg.generator.base_url = server.base_url
+            cfg.verifier.base_url = server.base_url
+            result = Pipeline(cfg).run_diff(full_diff, repo)
+
+        _check(result.chunks_reviewed == 1, f"제외 후 청크 수: {result.chunks_reviewed}")
+
+        # .crexignore 로 제외
+        (repo / ".crexignore").write_text("src/excluded.cpp\n", encoding="utf-8")
+        cfg.review.exclude = []
+        with FakeVLLM(on_findings=capture) as server:
+            cfg.generator.base_url = server.base_url
+            cfg.verifier.base_url = server.base_url
+            result = Pipeline(cfg).run_diff(full_diff, repo)
+
+        _check(result.chunks_reviewed == 1, f".crexignore 적용 후 청크 수: {result.chunks_reviewed}")
+
+
+def test_rule_exclusion_via_config_and_crexignore() -> None:
+    """review.exclude_rules 및 .crexignore (rule:...) 에 매칭되는 룰은 생성 스키마에서 제외된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+        captured: dict = {}
+
+        def capture(schema: dict) -> dict:
+            captured["schema"] = schema
+            return {"findings": []}
+
+        cfg = _config("http://dummy:1234")
+        cfg.review.exclude_rules = ["cpp.dangling-after-realloc"]
+
+        with FakeVLLM(on_findings=capture) as server:
+            cfg.generator.base_url = server.base_url
+            cfg.verifier.base_url = server.base_url
+            Pipeline(cfg).run_diff(diff, repo)
+
+        rules = captured["schema"]["properties"]["findings"]["items"]["properties"]["rule_id"]["enum"]
+        _check("cpp.dangling-after-realloc" not in rules, "제외된 룰이 생성 스키마에 포함됨")
+
+        (repo / ".crexignore").write_text("rule:cpp.unbounded-copy\n", encoding="utf-8")
+        cfg.review.exclude_rules = []
+        with FakeVLLM(on_findings=capture) as server:
+            cfg.generator.base_url = server.base_url
+            cfg.verifier.base_url = server.base_url
+            Pipeline(cfg).run_diff(diff, repo)
+
+        rules = captured["schema"]["properties"]["findings"]["items"]["properties"]["rule_id"]["enum"]
+        _check("cpp.unbounded-copy" not in rules, "crexignore 룰이 생성 스키마에 포함됨")
+
+
+def test_markdown_report_renders_details_fold() -> None:
+    """리포트에 지적이 <details open><summary> 태그로 접을 수 있게 출력된다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, diff = _make_repo(Path(tmp))
+
+        def emit_finding(schema: dict) -> dict:
+            items = schema["properties"]["findings"]["items"]["properties"]
+            return {
+                "findings": [
+                    {
+                        "line": items["line"]["enum"][0],
+                        "rule_id": "cpp.dangling-after-realloc",
+                        "severity": "high",
+                        "message": "메모리 안전성 문제",
+                        "suggestion": "raw 포인터 갱신",
+                    }
+                ]
+            }
+
+        with FakeVLLM(on_findings=emit_finding) as server:
+            result = Pipeline(_config(server.base_url)).run_diff(diff, repo)
+
+        md = to_markdown(result)
+        _check("<details open>" in md, f"details open 태그 누락:\n{md}")
+        _check("<summary><b>" in md, f"summary 태그 누락:\n{md}")
+        _check("</details>" in md, f"/details 태그 누락:\n{md}")
+
+
 TESTS = [
     test_end_to_end_finding_survives,
     test_total_generation_failure_is_not_silent,
@@ -332,6 +430,9 @@ TESTS = [
     test_rejected_finding_does_not_reach_report,
     test_input_stays_within_token_budget,
     test_sarif_output_shape,
+    test_path_exclusion_via_config_and_crexignore,
+    test_rule_exclusion_via_config_and_crexignore,
+    test_markdown_report_renders_details_fold,
 ]
 
 
