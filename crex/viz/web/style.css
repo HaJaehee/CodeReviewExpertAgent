@@ -969,6 +969,35 @@ input::placeholder { color: var(--fg-faint); }
   padding: 6px 10px;
 }
 
+.picker-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 16px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11.5px;
+}
+.picker-toolbar button {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+.picker-multi-count {
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.picker-checkbox {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--gen);
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
 .picker-body {
   flex: 1 1 auto;
   overflow-y: auto;

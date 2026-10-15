@@ -176,6 +176,25 @@ def test_stats_reject_rate() -> None:
     _check(abs(rf.stats.reject_rate - 2 / 3) < 1e-9, f"기각률 불일치: {rf.stats.reject_rate}")
 
 
+def test_strip_thinking_tags_and_reasoning_recovery() -> None:
+    """<think> 태그나 내부 코드가 있더라도 순수 JSON 을 복구해야 한다."""
+    from crex.llm import _extract_first_json_object, _strip_thinking_tags
+
+    raw_with_think = (
+        "<think>\nHere is some reasoning with code { int a = 1; }\n</think>\n"
+        '{"verdict": "yes", "code_present": "yes", "reason": "ok"}'
+    )
+    cleaned = _strip_thinking_tags(raw_with_think)
+    _check("<think>" not in cleaned, "think 태그가 남아있음")
+    extracted = _extract_first_json_object(cleaned)
+    _check(extracted is not None and extracted.get("verdict") == "yes", f"JSON 추출 실패: {extracted}")
+
+    # 미완료 think 태그
+    raw_unclosed = "<think>\nThinking about { foo }... unfinished"
+    cleaned_unclosed = _strip_thinking_tags(raw_unclosed)
+    _check(cleaned_unclosed == "", f"미완료 think 태그 정리 실패: {cleaned_unclosed}")
+
+
 TESTS = [
     test_out_of_range_line_rejected_without_llm,
     test_unchanged_line_rejected_in_diff_mode,
@@ -186,6 +205,7 @@ TESTS = [
     test_duplicate_rejected,
     test_llm_error_rejects_conservatively,
     test_stats_reject_rate,
+    test_strip_thinking_tags_and_reasoning_recovery,
 ]
 
 

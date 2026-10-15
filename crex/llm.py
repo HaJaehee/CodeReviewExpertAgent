@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
@@ -112,7 +113,7 @@ class EndpointConfig:
     temperature: float = 0.0
     max_output_tokens: int = 1600
     max_input_tokens: int = 8192
-    timeout: float = 120.0
+    timeout: float = 3600.0
     max_retries: int = 3
     #: 구조화 출력 전달 방식. "auto" 는 response_format → guided_json 순으로
     #: 시도하고 되는 것을 기억한다. 특정 방식을 고정하려면 이름을 직접 적는다.
@@ -241,17 +242,26 @@ class LLMClient:
             schema_name=schema_name,
             max_output_tokens=max_output_tokens,
         )
+        # thinking 태그가 있다면 먼저 벗겨내어 순수 응답을 확보한다.
+        clean_raw = _strip_thinking_tags(raw)
+        target = clean_raw if clean_raw else raw
+
         try:
-            return json.loads(raw)
+            return json.loads(target)
         except json.JSONDecodeError:
             pass
 
-        extracted = _extract_first_json_object(raw)
+        extracted = _extract_first_json_object(target)
         if extracted is not None:
             return extracted
 
+        if target is not raw:
+            extracted = _extract_first_json_object(raw)
+            if extracted is not None:
+                return extracted
+
         cut_off = self.last_finish_reason == "length"
-        salvaged = _repair_truncated_json(raw)
+        salvaged = _repair_truncated_json(target) or _repair_truncated_json(raw)
         if salvaged is not None:
             self._call_state.salvaged = True
             log.warning(
@@ -500,9 +510,36 @@ class LLMClient:
         self._call_state.finish_reason = choices[0].get("finish_reason")
         message = choices[0].get("message", {})
         content = message.get("content")
-        if content is None:
-            raise LLMError(f"content 없음 (reasoning 전용 응답?): {message}")
+        if content is None or (isinstance(content, str) and not content.strip()):
+            reasoning = message.get("reasoning_content")
+            if reasoning:
+                extracted = _extract_first_json_object(reasoning)
+                if extracted is not None:
+                    return json.dumps(extracted, ensure_ascii=False)
+                raise LLMError(
+                    f"content 없음 (reasoning_content 만 수신됨. max_output_tokens 한도로 잘렸거나 reasoning 모드 충돌): "
+                    f"finish_reason={self._call_state.finish_reason}, reasoning_tail={reasoning[-120:]!r}"
+                )
+            if content is None:
+                raise LLMError(f"content 없음 (reasoning 전용 응답?): {message}")
         return content
+
+
+_THINK_TAGS = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_OPEN_THINK_TAG = re.compile(r"<think>.*$", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking_tags(text: str) -> str:
+    """<think>...</think> 태그 및 미완료 <think>... 영역을 제거한다.
+
+    Qwen 2.5/3.x, DeepSeek R1 등 reasoning/thinking 모델이 온전한 추론 블록이나
+    미완료 추론 블록을 content 에 포함할 때, 내부의 코드나 텍스트가 JSON 추출을
+    방해하지 못하도록 한다.
+    """
+    cleaned = _THINK_TAGS.sub("", text)
+    if "<think>" in cleaned.lower():
+        cleaned = _OPEN_THINK_TAG.sub("", cleaned)
+    return cleaned.strip()
 
 
 def _extract_first_json_object(text: str) -> dict[str, Any] | None:

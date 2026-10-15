@@ -57,7 +57,7 @@
       ],
       "max_input_tokens": 8192,
 
-      "timeout": 120.0,
+      "timeout": 3600.0,
       "max_retries": 3,
 
       "// structured_output_mode": [
@@ -97,7 +97,7 @@
       "// max_input_tokens": "검증은 청크 하나만 보므로 더 좁게 잡는다",
       "max_input_tokens": 4096,
 
-      "timeout": 60.0,
+      "timeout": 3600.0,
       "structured_output_mode": "auto"
     }
   },

@@ -219,10 +219,11 @@ def load_config(path: Path | str | None = None, *, search_from: Path | None = No
         if "verifier" in llm
         else _endpoint(llm.get("generator", {}), default_model="Qwen3.6-27B")
     )
-    # 검증은 짧은 입력에 결론 하나와 짧은 근거면 되므로 예산을 따로 조인다.
-    # 상한이 VERIFIER_MAX_OUTPUT_TOKENS 인 이유: reason 이 500자(≈170토큰)까지
-    # 허용되므로 그보다 낮게 조이면 근거가 문장 중간에서 잘린다.
-    verifier.max_output_tokens = min(verifier.max_output_tokens, VERIFIER_MAX_OUTPUT_TOKENS)
+    # 검증은 짧은 입력에 결론 하나와 짧은 근거면 되므로 기본 예산(400)을 조인다.
+    # 단, 사용자가 thinking/reasoning 모델을 위해 max_output_tokens 를 명시적으로 올렸다면 존중한다.
+    explicit_verifier_tokens = (llm.get("verifier") or {}).get("max_output_tokens")
+    if explicit_verifier_tokens is None:
+        verifier.max_output_tokens = min(verifier.max_output_tokens, VERIFIER_MAX_OUTPUT_TOKENS)
 
     review = ReviewConfig(**_subset(data.get("review", {}), ReviewConfig))
     grounding = GroundingConfig(**_subset(data.get("grounding", {}), GroundingConfig))
@@ -282,7 +283,7 @@ def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:
         temperature=float(raw.get("temperature", 0.0)),
         max_output_tokens=int(raw.get("max_output_tokens", 1600)),
         max_input_tokens=int(raw.get("max_input_tokens", 8192)),
-        timeout=float(raw.get("timeout", 120.0)),
+        timeout=float(raw.get("timeout", 3600.0)),
         max_retries=int(raw.get("max_retries", 3)),
         structured_output_mode=raw.get("structured_output_mode", "auto"),
         guided_decoding_backend=raw.get("guided_decoding_backend", ""),

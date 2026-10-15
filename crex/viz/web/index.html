@@ -76,10 +76,13 @@
         </label>
       </div>
 
-      <label class="field" data-for="paths">
+      <div class="field" data-for="paths">
         <span>경로 한정 <em>(선택)</em></span>
-        <input id="paths" type="text" placeholder="src/, include/parser.h" spellcheck="false">
-      </label>
+        <div class="input-with-btn">
+          <input id="paths" type="text" placeholder="crex/, src/buffer.cpp" spellcheck="false">
+          <button class="btn btn-ghost btn-sm" id="btn-paths-browse" type="button">선택…</button>
+        </div>
+      </div>
 
       <div class="row">
         <button class="btn btn-primary" id="btn-run" type="button">리뷰 시작</button>
@@ -333,6 +336,12 @@
     </div>
     <div class="picker-filter-wrap">
       <input id="picker-filter" type="text" placeholder="필터링 (이름 검색)..." spellcheck="false">
+    </div>
+    <div class="picker-toolbar" id="picker-toolbar" hidden>
+      <button class="btn btn-ghost btn-xs" id="picker-select-sources" type="button">소스코드만 선택</button>
+      <button class="btn btn-ghost btn-xs" id="picker-select-all" type="button">전체 선택</button>
+      <button class="btn btn-ghost btn-xs" id="picker-select-none" type="button">선택 해제</button>
+      <span class="picker-multi-count" id="picker-multi-count">0개 선택됨</span>
     </div>
     <div class="picker-body">
       <ul class="picker-list" id="picker-list"></ul>

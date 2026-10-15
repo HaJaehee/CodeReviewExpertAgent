@@ -1022,12 +1022,18 @@
 
   // ── 파일 / 폴더 탐색기 모달 ──────────────────────────────────────────
 
+  const SOURCE_EXTS = new Set([
+    '.py', '.cpp', '.c', '.h', '.hpp', '.cs', '.cc', '.cxx', '.rs', '.go', '.java', '.js', '.ts'
+  ]);
+
   let pickerState = {
     open: false,
     title: '',
     sub: '',
     mode: 'dir',        // 'dir' | 'file'
     scope: 'all',       // 'all' | 'workspace'
+    multi: false,       // 다중 선택 모드 (체크박스)
+    selectedMap: new Map(), // absPath -> relPath (or display string)
     currentDir: '',
     workspaceRoot: '',
     parentDir: null,
@@ -1044,6 +1050,8 @@
     pickerState.sub = options.sub || '';
     pickerState.mode = options.mode || 'dir';
     pickerState.scope = options.scope || 'all';
+    pickerState.multi = !!options.multi;
+    pickerState.selectedMap = new Map();
     pickerState.onSelect = options.onSelect;
     pickerState.filterText = '';
     pickerState.selectedPath = '';
@@ -1053,6 +1061,9 @@
     $('picker-sub').textContent = pickerState.sub;
     $('picker-filter').value = '';
     $('picker-selected').value = '';
+    const tb = $('picker-toolbar');
+    if (tb) tb.hidden = !pickerState.multi;
+    updateMultiSelected();
 
     $('picker-modal').hidden = false;
     pickerState.open = true;
@@ -1064,6 +1075,7 @@
     $('picker-modal').hidden = true;
     pickerState.open = false;
     pickerState.onSelect = null;
+    pickerState.selectedMap = new Map();
   }
 
   async function loadBrowse(targetPath) {
@@ -1159,6 +1171,26 @@
     }
   }
 
+  function updateMultiSelected() {
+    if (!pickerState.multi) return;
+    const count = pickerState.selectedMap.size;
+    const mc = $('picker-multi-count');
+    if (mc) mc.textContent = count + '개 선택됨';
+    $('picker-selected').value = Array.from(pickerState.selectedMap.values()).join(', ');
+  }
+
+  function togglePickerItem(absPath, relPath, forceState) {
+    const key = absPath;
+    const val = (pickerState.scope === 'workspace' && relPath) ? relPath : absPath;
+    const shouldAdd = (forceState !== undefined) ? forceState : !pickerState.selectedMap.has(key);
+    if (shouldAdd) {
+      pickerState.selectedMap.set(key, val);
+    } else {
+      pickerState.selectedMap.delete(key);
+    }
+    updateMultiSelected();
+  }
+
   function selectPickerItem(absPath, relPath) {
     pickerState.selectedPath = absPath;
     pickerState.selectedRelPath = relPath;
@@ -1199,15 +1231,27 @@
 
     filtered.forEach((entry) => {
       const item = document.createElement('li');
-      item.className = 'picker-item' + (pickerState.selectedPath === entry.path ? ' is-selected' : '');
+      const isDir = entry.is_dir;
+      const isChecked = !isDir && pickerState.multi && pickerState.selectedMap.has(entry.path);
+      item.className = 'picker-item' +
+        ((!pickerState.multi && pickerState.selectedPath === entry.path) || isChecked ? ' is-selected' : '');
 
-      const icon = entry.is_dir ? '📁' : '📄';
+      const icon = isDir ? '📁' : '📄';
       const badges = [];
       if (entry.is_git) badges.push('<span class="picker-badge git">git</span>');
-      if (!entry.is_dir && entry.ext) badges.push(`<span class="picker-badge">${escapeHtml(entry.ext)}</span>`);
+      if (!isDir && entry.ext) {
+        const isSrc = SOURCE_EXTS.has(entry.ext.toLowerCase());
+        badges.push(`<span class="picker-badge${isSrc ? ' git' : ''}">${escapeHtml(entry.ext)}</span>`);
+      }
+
+      let checkHtml = '';
+      if (pickerState.multi && !isDir) {
+        checkHtml = `<input type="checkbox" class="picker-checkbox" ${isChecked ? 'checked' : ''}>`;
+      }
 
       item.innerHTML = `
         <div class="picker-item-left">
+          ${checkHtml}
           <span class="picker-item-icon">${icon}</span>
           <span class="picker-item-name">${escapeHtml(entry.name)}</span>
         </div>
@@ -1216,16 +1260,40 @@
         </div>
       `;
 
-      item.addEventListener('click', () => {
-        document.querySelectorAll('.picker-item').forEach((el) => el.classList.remove('is-selected'));
-        item.classList.add('is-selected');
-        selectPickerItem(entry.path, entry.rel_path);
+      if (pickerState.multi && !isDir) {
+        const cb = item.querySelector('.picker-checkbox');
+        if (cb) {
+          cb.addEventListener('change', (e) => {
+            e.stopPropagation();
+            togglePickerItem(entry.path, entry.rel_path, cb.checked);
+            item.classList.toggle('is-selected', cb.checked);
+          });
+        }
+      }
+
+      item.addEventListener('click', (e) => {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') return;
+        if (pickerState.multi) {
+          if (isDir) {
+            selectPickerItem(entry.path, entry.rel_path);
+          } else {
+            const cb = item.querySelector('.picker-checkbox');
+            const now = !pickerState.selectedMap.has(entry.path);
+            if (cb) cb.checked = now;
+            togglePickerItem(entry.path, entry.rel_path, now);
+            item.classList.toggle('is-selected', now);
+          }
+        } else {
+          document.querySelectorAll('.picker-item').forEach((el) => el.classList.remove('is-selected'));
+          item.classList.add('is-selected');
+          selectPickerItem(entry.path, entry.rel_path);
+        }
       });
 
       item.addEventListener('dblclick', () => {
-        if (entry.is_dir) {
+        if (isDir) {
           loadBrowse(entry.path);
-        } else {
+        } else if (!pickerState.multi) {
           confirmPicker();
         }
       });
@@ -1236,6 +1304,22 @@
 
   function confirmPicker() {
     let chosen = $('picker-selected').value.trim();
+    if (pickerState.multi) {
+      if (!chosen && pickerState.selectedMap.size > 0) {
+        chosen = Array.from(pickerState.selectedMap.values()).join(', ');
+      }
+      if (!chosen) {
+        toast('선택된 파일이 없습니다.', 'warn');
+        return;
+      }
+      if (pickerState.onSelect) {
+        const absList = Array.from(pickerState.selectedMap.keys()).join(', ') || chosen;
+        pickerState.onSelect(absList, chosen);
+      }
+      closePicker();
+      return;
+    }
+
     if (!chosen) {
       if (pickerState.selectedPath) chosen = pickerState.selectedPath;
       else if (pickerState.currentDir) chosen = pickerState.currentDir;
@@ -1432,6 +1516,65 @@
       },
     });
   });
+
+  const pathsBtn = $('btn-paths-browse');
+  if (pathsBtn) {
+    pathsBtn.addEventListener('click', () => {
+      const current = $('paths').value.trim();
+      const wsRoot = config && config.workspace ? config.workspace.root : '';
+      let initialPath = wsRoot;
+      if (wsRoot) {
+        const clean = wsRoot.replace(/[\\\/]+$/, '');
+        // 기본적으로 crex 폴더가 있으면 crex 폴더에서 시작
+        initialPath = clean + '/crex';
+      }
+      openPicker({
+        title: '대상 소스코드 선택 (체크박스)',
+        sub: '리뷰할 소스코드 파일들을 체크박스로 선택하세요',
+        mode: 'file',
+        multi: true,
+        scope: 'workspace',
+        initialPath: initialPath,
+        onSelect: (absPath, relPath) => {
+          $('paths').value = relPath || absPath;
+          savePrefs();
+        },
+      });
+    });
+  }
+
+  const btnSelSrc = $('picker-select-sources');
+  if (btnSelSrc) {
+    btnSelSrc.addEventListener('click', () => {
+      pickerState.entries.forEach((entry) => {
+        if (!entry.is_dir && entry.ext && SOURCE_EXTS.has(entry.ext.toLowerCase())) {
+          togglePickerItem(entry.path, entry.rel_path, true);
+        }
+      });
+      renderPickerList();
+    });
+  }
+
+  const btnSelAll = $('picker-select-all');
+  if (btnSelAll) {
+    btnSelAll.addEventListener('click', () => {
+      pickerState.entries.forEach((entry) => {
+        if (!entry.is_dir) {
+          togglePickerItem(entry.path, entry.rel_path, true);
+        }
+      });
+      renderPickerList();
+    });
+  }
+
+  const btnSelNone = $('picker-select-none');
+  if (btnSelNone) {
+    btnSelNone.addEventListener('click', () => {
+      pickerState.selectedMap.clear();
+      updateMultiSelected();
+      renderPickerList();
+    });
+  }
 
   $('picker-close').addEventListener('click', closePicker);
   $('picker-cancel').addEventListener('click', closePicker);

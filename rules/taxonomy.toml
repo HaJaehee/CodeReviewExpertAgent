@@ -511,3 +511,55 @@ password/secret/token/api_key/private_key 로 보이는 이름에 리터럴 문�
 대입되고, 그것이 명백한 더미값("", "changeme", "xxx")이 아닌 경우.
 """
 counter = "테스트 픽스처, 환경변수 조회, 명백한 플레이스홀더는 지적하지 않는다."
+
+[[rule]]
+id = "any.logic-error"
+language = "any"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "논리 오류 및 의도와 다른 구현"
+criteria = """
+조건문 분기 역전, 오프바이원(off-by-one) 인덱스 오류, 잘못된 연산자 사용, 반환값 오용 등
+명백한 비즈니스/실행 논리 결함이 있어 의도와 다르게 동작하거나 버그를 유발하는 경우.
+"""
+counter = "의도적인 조기 반환이나 설계상 의도된 대체 경로는 결함이 아니다."
+
+[[rule]]
+id = "any.unhandled-error"
+language = "any"
+dimension = "code_defect"
+severity = "medium"
+chunk_local = true
+title = "예외 및 에러 처리 누락"
+criteria = """
+파일/네트워크 I/O, 파싱, 외부 호출, 리소스 획득 등 실패 가능한 작업에서 오류 검사나
+적절한 예외 처리(try-catch/except)가 누락되어 비정상 종료(크래시) 위험이 있는 경우.
+"""
+counter = "상위 호출부로 예외를 자연스럽게 전파(throw/re-raise)하도록 의도된 함수는 지적하지 않는다."
+
+[[rule]]
+id = "any.boundary-condition"
+language = "any"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "경계 조건 및 빈 데이터 검증 누락"
+criteria = """
+배열/리스트/문자열이 비어있거나 인덱스가 범위를 벗어날 수 있는 상황, 0으로 나누기,
+경계값(최댓값/최솟값)에 대한 검증 없이 연산을 수행하여 런타임 오류가 발생할 수 있는 경우.
+"""
+counter = "앞선 조건문이나 타입 제약으로 이미 빈 데이터나 0이 아님이 보장된 경우는 지적하지 않는다."
+
+[[rule]]
+id = "any.null-dereference"
+language = "any"
+dimension = "code_defect"
+severity = "high"
+chunk_local = true
+title = "널(Null/None/nullptr) 역참조 및 부재 검증 누락"
+criteria = """
+null/None/nullptr 일 가능성이 있는 포인터나 객체를 사전 검증 없이 역참조하거나
+멤버에 접근하여 런타임 널 포인터 역참조 또는 NullReferenceException/AttributeError 크래시를 유발하는 경우.
+"""
+counter = "널이 될 수 없는 non-null 타입이거나 직전 코드에서 널 체크가 수행된 경우는 지적하지 않는다."
