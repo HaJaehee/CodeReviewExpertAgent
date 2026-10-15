@@ -31,7 +31,7 @@ Finding[] (with structured suggestions and AST context)
 Finding[] kept (with verifier_comment)  +  FilterVerdict[] rejected
    │
    ▼  crex/report.py :: write_all()
-Markdown / SARIF / JSON  (+ SQLite persistence in .crex/viz.db)
+Markdown / SARIF / JSON / HTML  (+ SQLite persistence in .crex/viz.db)
 ```
 
 Two LLM calls per chunk at most: one to generate, one to verify (only if the chunk
@@ -80,7 +80,8 @@ catches servers that accept the schema and ignore it.
 | `crex/rules.py` | 244 | Taxonomy loader, per-language selection, OCR `rule.json` emitter |
 | `crex/pipeline.py` | 328 | Orchestration for `run_diff()` and `run_scan()` |
 | `crex/viz/db.py` | 170 | Zero-dependency SQLite persistence for visualizer runs, events, and prefs |
-| `crex/report.py` | 191 | Markdown / SARIF 2.1.0 / JSON output |
+| `crex/report.py` | 275 | Markdown / SARIF 2.1.0 / JSON / HTML output |
+| `crex/ignore_manager.py` | 215 | `CrexIgnoreManager`: `.crexignore` parsing, mutation, finding matching |
 | `crex/config.py` | 387 | JSON/TOML config loading with comment-stripping and type validation |
 | `crex/cli.py` | 507 | `review` / `scan` / `compiledb` / `doctor` / `workspace` subcommands |
 | `crex/compiledb.py` | 645 | `compile_commands.json` builder (CMake / MSBuild logger) |

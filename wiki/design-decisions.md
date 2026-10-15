@@ -329,6 +329,70 @@ This wiki is English because it is written for agents.
 
 ---
 
+## Unescaped double-quote self-repair in structured JSON payloads
+
+When models quote source code containing double quotes (e.g. `printf("hello")` or string literals) in `message`, `suggestion`, or `reason`, they frequently emit raw unescaped quotes inside JSON string values.
+
+**Why.** Small local models (25–40B) do not reliably escape internal quotation marks when reproducing code snippets inside JSON strings, even when guided decoding is enabled. Under standard `json.loads()`, this causes syntax errors or splits the JSON mid-sentence, causing valid defects to be silently discarded.
+
+**Implementation.**
+1. `repair_unescaped_quotes()` in `crex/llm.py` and `crex/filter.py` utilizes lookahead regex heuristics targeting structural JSON tokens (`", "`, `": "`, `"\n`, `"}`) to distinguish true string boundaries from raw quotes, escaping internal quotes before JSON parsing.
+2. Prompts explicitly instruct both generator and verifier: "Never output raw unescaped double quotes inside JSON string fields; use single quotes or escape them properly."
+3. Multi-tier parsing fallback (`robust_json_loads`) repairs and extracts partial objects, preserving code snippet integrity and preventing valid findings from being dropped.
+
+---
+
+## Output token budget of 4,096 tokens and reasoning-model handling
+
+The default `max_output_tokens` for generator and verifier endpoints is 4,096.
+
+**Why.** Modern local models (Qwen 2.5/3.x-Coder with thinking, Gemma 4) frequently employ internal chain-of-thought (CoT) reasoning. Under a tight token budget (e.g., 500–1600 tokens), reasoning models exhaust their token allotment generating internal deliberations and truncate before producing the final JSON structure, or return `content=None` with reasoning-only payloads (`LLMError: content 없음`).
+
+**Implementation.**
+1. **Budget expansion**: Default output token budget set to 4,096 in code defaults and `crex.example.json`.
+2. **Reasoning extraction fallback**: If `content` is empty/None but `reasoning` or `reasoning_content` is present in the assistant message, `llm.py` extracts the final conclusion and JSON payload from the thought text rather than raising a fatal error.
+3. **Verifier comment sanitization**: Internal model deliberation text is explicitly stripped from user-facing `verifier_comment` and reports; only the final verdict and concise justification are displayed.
+4. **Prompt instruction**: System prompts instruct thinking models to deliberate concisely and reach the final verdict promptly ("생각을 하되 너무 긴 생각에 빠지지 말고 신속히 결론에 도달하라").
+
+---
+
+## Three-tier exclusion via `.crexignore` with path-scoped rule scoping
+
+Exclusions are supported via repository-root `.crexignore` files and `crex.json` (`review.exclude`, `review.exclude_rules`).
+
+**Why.** Repository maintainers need to commit review exclusion rules directly to the target Git repository without modifying the global or machine-level `crex.json` configuration. Furthermore, coarse-grained exclusions (ignoring an entire directory or disabling a rule globally) are too blunt—teams often want to suppress noise (like magic number checks in `tests/**`) while maintaining rigorous defect checks in production code.
+
+**Three granularities:**
+1. **Path glob exclusions** (`vendor/**`, `*.pb.cc`): Skipped before chunking and static analysis, saving 100% of LLM tokens and execution time.
+2. **Global rule exclusions** (`rule:cpp.c-style-cast`): Stripped from the generator's taxonomy prompt schema and deterministically rejected by `ReviewFilter` (`RULE_EXCLUDED`) before reaching the verifier.
+3. **Path-scoped rule exclusions** (`src/legacy/**:cpp.*`, `tests/** rule:any.magic-number`): Dynamically excluded from the taxonomy schema only when chunking files matching the path glob; files outside that path retain full rule coverage.
+
+**Precedence.** `DEFAULT_EXCLUDE` + `crex.json` + `.crexignore` are merged additively (union).
+
+---
+
+## Visualizer-integrated `.crexignore` addition and rollback
+
+Users can add or cancel `.crexignore` rules directly from code review findings in `crex.viz`.
+
+**Why.** Context-switching between the web dashboard and a code editor to craft glob and rule syntax induces cognitive friction and syntax errors. Managing exclusions directly from the finding row makes false-positive suppression instantaneous.
+
+**Implementation.**
+- Finding rows in `crex.viz` feature a 1-click `[+ 제외]` button presenting 4 recommended scopes (file-rule scoped, directory-rule scoped, global rule, whole file).
+- Existing `.crexignore` matches are detected dynamically (`POST /api/crexignore/check`) and marked with an `[제외됨]` badge and immediate `[취소]` button for effortless rollback.
+- `CrexIgnoreManager` (`crex/ignore_manager.py`) preserves file formatting, comments, and line endings.
+- Enforces workspace root containment and blocks non-loopback remote writes (`403 Forbidden`).
+
+---
+
+## Offline interactive HTML report generation
+
+`to_html()` in `crex/report.py` and the `crex.viz` client-side exporter produce self-contained `.html` reports.
+
+**Why.** Markdown reports lack collapsible sections and interactive filters, while CSV reports lack readability for multi-line suggestions and diffs. The HTML report packages the full `crex.viz` dark-mode theme, finding folding (`<details>`), metrics cards, and verdict tabs into a single zero-dependency file that renders cleanly in air-gapped browsers without external fonts, scripts, or CDNs.
+
+---
+
 ## Research sources
 
 | Source | Used for |
