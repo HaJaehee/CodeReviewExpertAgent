@@ -689,7 +689,16 @@ def _parse_verdict_from_reasoning_text(text: str) -> dict[str, Any] | None:
             verdict = "yes"
 
     clean_text = re.sub(r"\s+", " ", text).strip()
-    reason = clean_text[-400:] if len(clean_text) > 400 else clean_text
+    # 서두의 'Let me ...', 'Thinking Process:' 등 모델의 내부 사고 과정 서두 제거
+    trimmed = re.sub(r"^(?:let me|thinking process|thinking|i need to|first,)\b.*?(?:\.|\n)", "", clean_text, flags=re.IGNORECASE).strip()
+    candidate = trimmed if trimmed else clean_text
+    # verdict / code is present 등 메타 키워드 구문 정리
+    candidate = re.sub(r'\bverdict\s*[:=]\s*["\']?(?:yes|no|true|false)["\']?\.?', '', candidate, flags=re.IGNORECASE).strip()
+    candidate = re.sub(r'\bcode\s+(?:is\s+)?present\.?', '', candidate, flags=re.IGNORECASE).strip()
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    reason = candidate[-400:].strip() if len(candidate) > 400 else candidate
+    if not reason:
+        reason = "지적이 타당하여 승인합니다." if verdict == "yes" else "근거 부족 또는 오탐으로 기각합니다."
 
     return {
         "verdict": verdict,
