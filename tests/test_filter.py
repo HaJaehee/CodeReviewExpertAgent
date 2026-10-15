@@ -195,6 +195,50 @@ def test_strip_thinking_tags_and_reasoning_recovery() -> None:
     _check(cleaned_unclosed == "", f"미완료 think 태그 정리 실패: {cleaned_unclosed}")
 
 
+def test_review_filter_accepts_reasoning_only_response() -> None:
+    """검증 모델이 content=None 이고 reasoning 으로만 응답해도 ReviewFilter 가 정상 승인한다."""
+    from crex.llm import EndpointConfig, LLMClient, _extract_best_json_object, _extract_reasoning_text, _repair_truncated_json
+    import json
+
+    class FakeReasoningClient(LLMClient):
+        def __init__(self) -> None:
+            super().__init__(EndpointConfig(base_url="http://fake", model="fake-thinker"))
+
+        def _post_with_retry(self, payload):
+            message = {
+                "role": "assistant",
+                "content": None,
+                "reasoning": (
+                    "Let me examine the code snippet. "
+                    "realloc 이후 반환값을 대입하지 않고 이전 포인터를 참조하는 것은 심각한 결함입니다. "
+                    "지적이 타당하므로 승인합니다. Verdict: yes. Code is present."
+                ),
+            }
+            body = {"choices": [{"index": 0, "message": message, "finish_reason": "stop"}]}
+            choices = body.get("choices") or []
+            self._call_state.finish_reason = choices[0].get("finish_reason")
+            msg = choices[0].get("message", {})
+            content = msg.get("content")
+            if content is None or (isinstance(content, str) and not content.strip()):
+                reasoning = _extract_reasoning_text(msg, choices[0])
+                if reasoning:
+                    extracted = _extract_best_json_object(reasoning) or _repair_truncated_json(reasoning)
+                    if extracted is not None:
+                        return json.dumps(extracted, ensure_ascii=False)
+                    return reasoning
+            return content
+
+    chunks = _build_chunks()
+    client = FakeReasoningClient()
+    rf = ReviewFilter(client, chunks)
+    kept, rejected = rf.filter([_finding(15)])
+
+    _check(len(kept) == 1, f"reasoning-only 응답이어도 지적이 승인되어야 한다: {kept}")
+    _check(kept[0].verifier_comment is not None, "verifier_comment 가 채워져야 한다")
+    _check("realloc" in kept[0].verifier_comment, f"코멘트에 추론 내용 보존 확인: {kept[0].verifier_comment}")
+    _check(rf.stats.errors == 0, f"FILTER_ERROR 가 발생하지 않아야 한다: {rf.stats.errors}")
+
+
 TESTS = [
     test_out_of_range_line_rejected_without_llm,
     test_unchanged_line_rejected_in_diff_mode,
@@ -206,7 +250,9 @@ TESTS = [
     test_llm_error_rejects_conservatively,
     test_stats_reject_rate,
     test_strip_thinking_tags_and_reasoning_recovery,
+    test_review_filter_accepts_reasoning_only_response,
 ]
+
 
 
 def main() -> int:

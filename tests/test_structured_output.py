@@ -143,7 +143,26 @@ class _Server:
                         '{"verdict": "yes", "code_present": true, '
                         '"reason": "코드 if (status == "FAIL") { return -1; } 에서 널 체크가 누락되어 위험합니다."}'
                     )
+                if outer.flavor == "reasoning_only_verdict":
+                    body = json.dumps(
+                        {"choices": [{"index": 0, "message": {"role": "assistant",
+                                                              "content": None,
+                                                              "reasoning": "Let me examine the code snippet. The pointer is used after resize, causing a dangling pointer. This finding is valid. Verdict: yes. Code is present. Reason: invalid memory access."},
+                                      "finish_reason": "stop"}]},
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    return self._send(200, body)
+                if outer.flavor == "reasoning_with_json_verdict":
+                    body = json.dumps(
+                        {"choices": [{"index": 0, "message": {"role": "assistant",
+                                                              "content": None,
+                                                              "reasoning": "Thinking process...\nFinal JSON:\n```json\n{\"verdict\": \"yes\", \"code_present\": true, \"reason\": \"댕글링 포인터 검증 통과\"}\n```"},
+                                      "finish_reason": "stop"}]},
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    return self._send(200, body)
                 return self._ok(_sample_for(schema))
+
 
 
 
@@ -521,6 +540,24 @@ def test_complete_json_salvages_unescaped_quotes_in_verdict() -> None:
         _check('if (status == "FAIL")' in out.get("reason", ""), f"reason 인용 보존: {out}")
 
 
+def test_complete_json_handles_reasoning_only_verdict() -> None:
+    """content=None 이고 reasoning 본문만 수신되더라도 판정(verdict)을 올바르게 해석한다."""
+    with _Server("reasoning_only_verdict") as server:
+        out = server.client.complete_json("s", "u", VERDICT_SCHEMA, schema_name="verdict")
+        _check(out.get("verdict") == "yes", f"verdict yes 확인: {out}")
+        _check(out.get("code_present") is True, f"code_present true 확인: {out}")
+        _check("dangling pointer" in out.get("reason", ""), f"reason 본문 확인: {out}")
+
+
+def test_complete_json_handles_reasoning_with_embedded_json() -> None:
+    """content=None 이고 reasoning 내부에 JSON 객체가 포함되어 있으면 이를 추출하여 반환한다."""
+    with _Server("reasoning_with_json_verdict") as server:
+        out = server.client.complete_json("s", "u", VERDICT_SCHEMA, schema_name="verdict")
+        _check(out.get("verdict") == "yes", f"verdict yes 확인: {out}")
+        _check(out.get("code_present") is True, f"code_present true 확인: {out}")
+        _check("댕글링 포인터 검증 통과" in out.get("reason", ""), f"reason 일치 확인: {out}")
+
+
 TESTS = [
     test_modern_server_uses_response_format,
     test_old_vllm_falls_back_to_guided_json,
@@ -547,7 +584,10 @@ TESTS = [
     test_repair_json_quotes_handles_control_chars,
     test_complete_json_salvages_unescaped_quotes,
     test_complete_json_salvages_unescaped_quotes_in_verdict,
+    test_complete_json_handles_reasoning_only_verdict,
+    test_complete_json_handles_reasoning_with_embedded_json,
 ]
+
 
 
 

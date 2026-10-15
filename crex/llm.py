@@ -299,6 +299,24 @@ class LLMClient:
             )
             return salvaged
 
+        # reasoning 전용 응답 처리: JSON 객체가 포함되지 않은 산문형 추론(reasoning) 본문 해석
+        if schema_name == "verdict":
+            verdict_from_reasoning = _parse_verdict_from_reasoning_text(raw)
+            if verdict_from_reasoning is not None:
+                log.info(
+                    "검증 모델이 JSON 대신 추론(reasoning) 본문만 반환하여 판정을 해석했습니다: %s",
+                    verdict_from_reasoning.get("verdict"),
+                )
+                return verdict_from_reasoning
+
+        if schema_name == "findings":
+            findings_from_reasoning = _parse_findings_from_reasoning_text(raw)
+            if findings_from_reasoning is not None:
+                log.info(
+                    "생성 모델이 JSON 대신 추론(reasoning) 본문만 반환하여 지적을 해석했습니다: %d건",
+                    len(findings_from_reasoning.get("findings", [])),
+                )
+                return findings_from_reasoning
 
         if cut_off:
             raise TruncatedOutputError(
@@ -308,6 +326,7 @@ class LLMClient:
                 f"끝부분: {raw[-200:]!r}"
             )
         raise LLMError(f"JSON 파싱 실패, guided decoding 설정을 확인하십시오: {raw[:400]!r}")
+
 
     @property
     def last_finish_reason(self) -> str | None:
@@ -538,18 +557,162 @@ class LLMClient:
         message = choices[0].get("message", {})
         content = message.get("content")
         if content is None or (isinstance(content, str) and not content.strip()):
-            reasoning = message.get("reasoning_content")
+            reasoning = _extract_reasoning_text(message, choices[0] if choices else {})
             if reasoning:
-                extracted = _extract_first_json_object(reasoning)
+                # 1. reasoning 내부에서 완성된 JSON 또는 복구 가능한 JSON 추출 시도
+                extracted = _extract_best_json_object(reasoning) or _repair_truncated_json(reasoning)
                 if extracted is not None:
                     return json.dumps(extracted, ensure_ascii=False)
-                raise LLMError(
-                    f"content 없음 (reasoning_content 만 수신됨. max_output_tokens 한도로 잘렸거나 reasoning 모드 충돌): "
-                    f"finish_reason={self._call_state.finish_reason}, reasoning_tail={reasoning[-120:]!r}"
-                )
+                # 2. JSON 객체가 없더라도 reasoning 텍스트 자체를 content 대신 반환하여
+                #    complete_json 등 호출부가 추론 내용으로부터 판정을 해석할 수 있도록 한다
+                return reasoning
             if content is None:
-                raise LLMError(f"content 없음 (reasoning 전용 응답?): {message}")
+                raise LLMError(f"content 없음: {message}")
         return content
+
+
+def _extract_reasoning_text(message: dict[str, Any], choice: dict[str, Any]) -> str | None:
+    """message 또는 choice 에서 다양한 공급자(vLLM, Ollama, DeepSeek 등)의 추론 텍스트를 추출한다."""
+    for src in (message, choice):
+        if not isinstance(src, dict):
+            continue
+        for key in ("reasoning", "reasoning_content", "thought", "reasoning_text"):
+            val = src.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return None
+
+
+def _extract_best_json_object(text: str) -> dict[str, Any] | None:
+    """텍스트에서 최적의 JSON 객체를 추출한다.
+
+    reasoning/thinking 모델의 경우 중간에 스키마나 인용 객체를 먼저 읊고
+    마지막에 최종 판정/지적 JSON 객체를 출력하는 패턴이 흔하므로,
+    verdict 나 findings 키를 포함하는 객체를 우선하고,
+    그렇지 않으면 가장 마지막에 등장하는 유효한 JSON 객체를 선택한다.
+    """
+    candidates: list[dict[str, Any]] = []
+    start = text.find("{")
+    while start >= 0:
+        end = _balanced_end(text, start)
+        if end is not None:
+            chunk = text[start:end]
+            parsed = None
+            try:
+                parsed = json.loads(chunk)
+            except json.JSONDecodeError:
+                try:
+                    repaired = _repair_json_quotes(chunk)
+                    parsed = json.loads(repaired)
+                except Exception:
+                    pass
+            if isinstance(parsed, dict):
+                candidates.append(parsed)
+            start = text.find("{", end)
+        else:
+            break
+
+    if not candidates:
+        return _extract_first_json_object(text)
+
+    # 1. verdict 나 findings 를 포함하는 핵심 객체 우선 선택
+    for c in reversed(candidates):
+        if "verdict" in c or "findings" in c:
+            return c
+
+    # 2. 없으면 가장 마지막 객체 선택 (추론의 최종 결론)
+    return candidates[-1]
+
+
+def _parse_verdict_from_reasoning_text(text: str) -> dict[str, Any] | None:
+    """JSON 없이 산문으로만 작성된 추론(reasoning) 본문에서 판정을 안전하게 추출한다.
+
+    추론 모델(DeepSeek R1, Qwen 2.5/3.x Thinking 등)이 토큰 한도나 백엔드 제약으로
+    JSON 객체를 명시적으로 생성하지 못하고 추론 텍스트만 남겼을 때,
+    추론의 결론부 및 텍스트 문맥을 분석하여 검증 판정(yes/no)과 근거를 합성한다.
+    """
+    if not text or not text.strip():
+        return None
+
+    lower = text.lower()
+
+    # 1. code_present 판별
+    code_present = True
+    not_present_patterns = [
+        "코드 존재하지 않", "코드가 존재하지 않", "스니펫에 없", "스니펫에 존재하지",
+        "존재하지 않는 코드", "환각", "code is not present", "not present in snippet",
+        "code not found", "not found in the snippet", "hallucination",
+    ]
+    if any(p in lower or p in text for p in not_present_patterns):
+        code_present = False
+
+    # 2. verdict (yes / no) 판별
+    verdict = None
+
+    # 명시적 라벨 우선 매칭
+    m_label = re.search(r'\bverdict\s*[:=]\s*["\']?(yes|no|true|false)["\']?', lower)
+    if m_label:
+        v_str = m_label.group(1)
+        verdict = "yes" if v_str in ("yes", "true") else "no"
+    elif not code_present:
+        verdict = "no"
+    else:
+        # 기각/오탐 키워드 판정
+        reject_patterns = [
+            "기각", "오탐", "거짓 양성", "문제 없음", "문제되지 않", "정상 동작",
+            "false positive", "invalid finding", "not a bug", "not a defect", "reject",
+        ]
+        # 승인/결함 키워드 판정
+        approve_patterns = [
+            "승인", "유효한 지적", "타당한 지적", "실제 결함", "실제 버그", "실제 위험",
+            "버그가 맞", "결함이 맞", "문제가 맞", "수정이 필요", "개선이 필요",
+            "valid finding", "real bug", "real defect", "accept the finding", "approve", "confirm",
+        ]
+
+        has_reject = any(p in lower or p in text for p in reject_patterns)
+        has_approve = any(p in lower or p in text for p in approve_patterns)
+
+        if has_reject and not has_approve:
+            verdict = "no"
+        elif has_approve and not has_reject:
+            verdict = "yes"
+        elif has_approve and has_reject:
+            # 둘 다 언급된 경우 꼬리 부분(결론부)을 우선 판정
+            tail = text[-300:].lower()
+            if any(p in tail for p in ["승인", "valid", "yes", "결함이 맞", "문제가 맞"]):
+                verdict = "yes"
+            elif any(p in tail for p in ["기각", "reject", "no", "오탐", "false positive"]):
+                verdict = "no"
+            else:
+                verdict = "yes"  # 보수적 승인
+        else:
+            verdict = "yes"
+
+    clean_text = re.sub(r"\s+", " ", text).strip()
+    reason = clean_text[-400:] if len(clean_text) > 400 else clean_text
+
+    return {
+        "verdict": verdict,
+        "code_present": code_present,
+        "reason": reason,
+    }
+
+
+def _parse_findings_from_reasoning_text(text: str) -> dict[str, Any] | None:
+    """JSON 없이 산문으로만 작성된 생성 모델의 추론(reasoning) 본문에서 결함 없음을 감지한다."""
+    if not text or not text.strip():
+        return None
+
+    clean_text = text.strip().lower()
+    clean_patterns = [
+        "지적 사항 없음", "결함 없음", "문제 없음", "결함이 발견되지 않", "문제가 없",
+        "no issues found", "no bugs found", "code looks clean", "no findings",
+    ]
+    if any(p in clean_text for p in clean_patterns):
+        return {"findings": []}
+
+    return None
+
 
 
 _THINK_TAGS = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
