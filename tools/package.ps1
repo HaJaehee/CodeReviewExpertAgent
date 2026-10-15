@@ -3,7 +3,9 @@
     폐쇄망 반입용 번들을 만든다. 인터넷 되는 장비에서 실행한다.
 
 .DESCRIPTION
-    Python 런타임까지 통째로 담은 zip 하나를 dist/ 에 만든다.
+    폐쇄망 반입용 번들을 만든다.
+    앱 소스 번들($BundleName.zip)과 의존성 번들($BundleName-deps.zip)로 분리 압축한다.
+    (pylibs, runtime, wheels 는 별도의 의존성 압축파일로 분리)
     PyInstaller 를 쓰지 않는다 — 소스는 소스 그대로 들어가므로 반입 심사에서
     사람이 읽고 확인할 수 있다. 그게 폐쇄망에서 통과시키기 쉬운 형태다.
 
@@ -413,26 +415,97 @@ Write-Note "파일 $($entries.Count) 개의 SHA256 기록"
 Write-Step "압축"
 
 $ZipPath = Join-Path $DistDir "$BundleName.zip"
-if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Compress-Archive -Path $Staging -DestinationPath $ZipPath -CompressionLevel Optimal
+$DepsZipPath = Join-Path $DistDir "$BundleName-deps.zip"
 
-$zipHash = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash
-$sizeMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
+# 대상 zip 파일이 다른 프로그램(예: 반디집, 탐색기 등)에서 열려 있어 잠겼는지 사전 확인
+foreach ($targetZip in @($ZipPath, $DepsZipPath)) {
+    if (Test-Path $targetZip) {
+        try {
+            [IO.File]::OpenWrite($targetZip).Close()
+        } catch {
+            throw "$targetZip 파일이 다른 프로그램(예: 반디집, 알집, 탐색기 등)에서 열려 있어 덮어쓸 수 없습니다. 해당 프로그램을 닫고 다시 실행하십시오."
+        }
+    }
+}
 
-# zip 해시를 따로 남긴다. 반입 신청서에 적고, 반대편에서 대조한다.
-"$zipHash  $BundleName.zip" | Set-Content -Path "$ZipPath.sha256" -Encoding ascii
+# pylibs, runtime, wheels 폴더는 별도의 의존성 압축파일($BundleName-deps.zip)로 분리한다.
+$TargetDeps = @("pylibs", "runtime", "wheels")
+$HasDeps = $false
+$DepsRoot = Join-Path $DistDir "$BundleName-deps"
+$DepsStaging = Join-Path $DepsRoot $BundleName
+
+if (Test-Path $DepsRoot) { Remove-Item $DepsRoot -Recurse -Force }
+
+$movedDeps = @()
+foreach ($dep in $TargetDeps) {
+    $src = Join-Path $Staging $dep
+    if (Test-Path $src) {
+        $HasDeps = $true
+        if (-not (Test-Path $DepsStaging)) {
+            New-Item -ItemType Directory -Path $DepsStaging -Force | Out-Null
+        }
+        Move-Item -Path $src -Destination (Join-Path $DepsStaging $dep) -Force
+        $movedDeps += $dep
+    }
+}
+
+$depsZipHash = $null
+$depsSizeMB = 0
+
+try {
+    # 6-1. 앱/소스 번들 압축 (pylibs, runtime, wheels 제외)
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+    Write-Note "앱 번들 압축 중: $ZipPath"
+    Compress-Archive -Path $Staging -DestinationPath $ZipPath -CompressionLevel Optimal
+
+    $zipHash = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash
+    $sizeMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
+    "$zipHash  $BundleName.zip" | Set-Content -Path "$ZipPath.sha256" -Encoding ascii
+
+    # 6-2. 의존성 번들 압축 (pylibs, runtime, wheels)
+    if ($HasDeps) {
+        if (Test-Path $DepsZipPath) { Remove-Item $DepsZipPath -Force }
+        Write-Note "의존성 번들(pylibs, runtime, wheels) 압축 중: $DepsZipPath"
+        Compress-Archive -Path $DepsStaging -DestinationPath $DepsZipPath -CompressionLevel Optimal
+
+        $depsZipHash = (Get-FileHash -Path $DepsZipPath -Algorithm SHA256).Hash
+        $depsSizeMB = [math]::Round((Get-Item $DepsZipPath).Length / 1MB, 1)
+        "$depsZipHash  $BundleName-deps.zip" | Set-Content -Path "$DepsZipPath.sha256" -Encoding ascii
+    }
+} finally {
+    # 예외가 발생하더라도 항상 Staging 폴더 원상 복구 및 임시 디렉터리 정리
+    foreach ($dep in $movedDeps) {
+        $movedBack = Join-Path $DepsStaging $dep
+        if (Test-Path $movedBack) {
+            Move-Item -Path $movedBack -Destination (Join-Path $Staging $dep) -Force
+        }
+    }
+    if (Test-Path $DepsRoot) {
+        Remove-Item $DepsRoot -Recurse -Force
+    }
+}
 
 Write-Host ""
 Write-Host "완료" -ForegroundColor Green
-Write-Host "  버전   : crex $CrexVersion"
-Write-Host "  번들   : $ZipPath ($sizeMB MB)"
-Write-Host "  SHA256 : $zipHash"
-Write-Host "  해시   : $ZipPath.sha256"
+Write-Host "  버전       : crex $CrexVersion"
+Write-Host "  앱 번들    : $ZipPath ($sizeMB MB)"
+Write-Host "  앱 SHA256  : $zipHash"
+Write-Host "  앱 해시    : $ZipPath.sha256"
+if ($HasDeps) {
+    Write-Host "  의존성 번들: $DepsZipPath ($depsSizeMB MB)"
+    Write-Host "  의존성 SHA : $depsZipHash"
+    Write-Host "  의존성 해시: $DepsZipPath.sha256"
+}
 Write-Host ""
 Write-Host "다음:" -ForegroundColor Yellow
-Write-Host "  1. zip 과 .sha256 을 함께 반입 신청한다"
-Write-Host "  2. 폐쇄망에서 압축을 풀고 tools\verify.ps1 을 실행한다"
-Write-Host "  3. 자세한 절차는 번들 안의 docs\user_manual\transfer.md 를 본다"
+Write-Host "  1. zip 파일들과 .sha256 을 함께 반입 신청한다"
+Write-Host "     - 앱 번들    : $BundleName.zip"
+if ($HasDeps) {
+    Write-Host "     - 의존성 번들: $BundleName-deps.zip (pylibs, runtime, wheels)"
+}
+Write-Host "  2. 폐쇄망에서 동일한 폴더에 두 압축파일을 모두 푼다"
+Write-Host "  3. tools\verify.ps1 을 실행한다"
+Write-Host "  4. 자세한 절차는 번들 안의 docs\user_manual\transfer.md 를 본다"
 
 # robocopy 는 성공해도 0 이 아닌 코드를 낸다(1 = 복사함). 그 값이 $LASTEXITCODE 에
 # 그대로 남으면, 이 스크립트를 부른 쪽은 번들이 멀쩡히 만들어졌는데도 실패로 읽는다.

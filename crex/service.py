@@ -100,11 +100,14 @@ class ReviewService:
         )
 
     def review_file(self, path: str) -> str:
-        """파일 하나를 통째로 감사한다."""
+        """파일을 통째로 감사한다 (단일 파일 또는 쉼표 구분 복수 파일 지원)."""
         if not path:
             raise ReviewRequestError("path 가 필요합니다")
 
-        expansion = _guard_paths(lambda: expand_paths(self.repo_root, [path], max_files=1))
+        raw_targets = [p.strip() for p in path.split(",") if p.strip()] or [path]
+        expansion = _guard_paths(
+            lambda: expand_paths(self.repo_root, raw_targets, max_files=max(MAX_SCAN_FILES, len(raw_targets)))
+        )
         if not expansion.files:
             raise ReviewRequestError(
                 f"{path} 는 리뷰 대상이 아닙니다 "

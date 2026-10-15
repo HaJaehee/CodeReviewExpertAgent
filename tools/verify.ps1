@@ -76,6 +76,9 @@ if ($SkipManifest) {
     } else {
         foreach ($m in $missing)    { Write-Bad "누락: $m" }
         foreach ($m in $mismatched) { Write-Bad "변조/손상: $m" }
+        if ($missing | Where-Object { $_ -match '^(runtime|pylibs|wheels)[\\\/]' }) {
+            Write-Note "의존성 번들(crex-*-deps.zip)의 압축을 같은 폴더에 풀었는지 확인하십시오."
+        }
     }
 }
 

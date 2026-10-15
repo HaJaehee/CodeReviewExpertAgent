@@ -697,6 +697,10 @@
     if (btnBrowse) {
       btnBrowse.textContent = kind === 'file' ? '파일 선택…' : '폴더 선택…';
     }
+    const pathInput = $('path');
+    if (pathInput) {
+      pathInput.placeholder = kind === 'file' ? 'src/buffer.cpp, src/foo.py' : 'src';
+    }
   }
 
   function savePrefs() {
@@ -1063,6 +1067,12 @@
     $('picker-selected').value = '';
     const tb = $('picker-toolbar');
     if (tb) tb.hidden = !pickerState.multi;
+
+    if (pickerState.multi && Array.isArray(options.initialSelected)) {
+      options.initialSelected.forEach((p) => {
+        if (p) pickerState.selectedMap.set(p, p);
+      });
+    }
     updateMultiSelected();
 
     $('picker-modal').hidden = false;
@@ -1179,14 +1189,24 @@
     $('picker-selected').value = Array.from(pickerState.selectedMap.values()).join(', ');
   }
 
+  function isItemChecked(absPath, relPath) {
+    if (!pickerState.multi) return false;
+    if (pickerState.selectedMap.has(absPath)) return true;
+    if (relPath && pickerState.selectedMap.has(relPath)) return true;
+    return false;
+  }
+
   function togglePickerItem(absPath, relPath, forceState) {
     const key = absPath;
     const val = (pickerState.scope === 'workspace' && relPath) ? relPath : absPath;
-    const shouldAdd = (forceState !== undefined) ? forceState : !pickerState.selectedMap.has(key);
+    const isCurrentlySelected = isItemChecked(absPath, relPath);
+    const shouldAdd = (forceState !== undefined) ? forceState : !isCurrentlySelected;
     if (shouldAdd) {
+      if (relPath) pickerState.selectedMap.delete(relPath);
       pickerState.selectedMap.set(key, val);
     } else {
       pickerState.selectedMap.delete(key);
+      if (relPath) pickerState.selectedMap.delete(relPath);
     }
     updateMultiSelected();
   }
@@ -1232,7 +1252,7 @@
     filtered.forEach((entry) => {
       const item = document.createElement('li');
       const isDir = entry.is_dir;
-      const isChecked = !isDir && pickerState.multi && pickerState.selectedMap.has(entry.path);
+      const isChecked = !isDir && pickerState.multi && isItemChecked(entry.path, entry.rel_path);
       item.className = 'picker-item' +
         ((!pickerState.multi && pickerState.selectedPath === entry.path) || isChecked ? ' is-selected' : '');
 
@@ -1278,7 +1298,7 @@
             selectPickerItem(entry.path, entry.rel_path);
           } else {
             const cb = item.querySelector('.picker-checkbox');
-            const now = !pickerState.selectedMap.has(entry.path);
+            const now = !isItemChecked(entry.path, entry.rel_path);
             if (cb) cb.checked = now;
             togglePickerItem(entry.path, entry.rel_path, now);
             item.classList.toggle('is-selected', now);
@@ -1504,12 +1524,19 @@
     const currentPath = $('path').value.trim();
     const wsRoot = config && config.workspace ? config.workspace.root : '';
 
+    const initialList = isFile && currentPath
+      ? currentPath.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    const firstTarget = initialList[0] || currentPath;
+
     openPicker({
       title: isFile ? '감사할 파일 선택' : '감사할 폴더 선택',
-      sub: isFile ? '전체 코드를 감사할 파일 하나를 선택하세요' : '하위 전체를 감사할 디렉터리를 선택하세요',
+      sub: isFile ? '전체 코드를 감사할 소스코드 파일을 체크박스로 선택하세요' : '하위 전체를 감사할 디렉터리를 선택하세요',
       mode: isFile ? 'file' : 'dir',
+      multi: isFile,
       scope: 'workspace',
-      initialPath: currentPath ? (currentPath.includes(':') ? currentPath : (wsRoot + '/' + currentPath)) : wsRoot,
+      initialPath: firstTarget ? (firstTarget.includes(':') ? firstTarget : (wsRoot + '/' + firstTarget)) : wsRoot,
+      initialSelected: initialList,
       onSelect: (absPath, relPath) => {
         $('path').value = relPath || absPath;
         savePrefs();
@@ -1522,11 +1549,15 @@
     pathsBtn.addEventListener('click', () => {
       const current = $('paths').value.trim();
       const wsRoot = config && config.workspace ? config.workspace.root : '';
-      let initialPath = wsRoot;
-      if (wsRoot) {
+      const initialList = current
+        ? current.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      let initialPath = initialList[0] || wsRoot;
+      if (!initialList.length && wsRoot) {
         const clean = wsRoot.replace(/[\\\/]+$/, '');
-        // 기본적으로 crex 폴더가 있으면 crex 폴더에서 시작
         initialPath = clean + '/crex';
+      } else if (initialPath && !initialPath.includes(':') && wsRoot) {
+        initialPath = wsRoot.replace(/[\\\/]+$/, '') + '/' + initialPath;
       }
       openPicker({
         title: '대상 소스코드 선택 (체크박스)',
@@ -1535,6 +1566,7 @@
         multi: true,
         scope: 'workspace',
         initialPath: initialPath,
+        initialSelected: initialList,
         onSelect: (absPath, relPath) => {
           $('paths').value = relPath || absPath;
           savePrefs();

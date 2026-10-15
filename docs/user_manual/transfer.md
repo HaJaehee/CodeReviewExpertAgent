@@ -1,15 +1,15 @@
 # 폐쇄망 반입
 
-Python 런타임까지 담은 zip 하나를 만들어 들고 들어갑니다. PyInstaller 를 쓰지
-않습니다 — 소스가 소스 그대로 들어가므로 반입 심사에서 사람이 읽고 확인할 수
+Python 런타임과 서드파티 라이브러리를 소스와 분리하여 번들을 만듭니다. PyInstaller 를 쓰지
+않습니다 — 소스는 소스 그대로 들어가므로 반입 심사에서 사람이 읽고 확인할 수
 있고, 그게 통과시키기 쉬운 형태입니다.
 
 ```
 인터넷 되는 장비                 반입              폐쇄망
 ─────────────────                ────              ──────
-tools\package.ps1  ──▶  crex-YYYYMMDD.zip  ──▶  압축 해제
-                        + .sha256                tools\verify.ps1
-                                                 crex.cmd doctor
+tools\package.ps1  ──▶  crex-YYYYMMDD.zip       ──▶  동일 폴더에 압축 해제
+                        + crex-YYYYMMDD-deps.zip     tools\verify.ps1
+                        + 각각의 .sha256             crex.cmd doctor
 ```
 
 ---
@@ -21,8 +21,7 @@ cd <저장소>
 .\tools\package.ps1
 ```
 
-`dist\crex-<날짜>.zip` 과 `dist\crex-<날짜>.zip.sha256` 이 나옵니다. 약 54MB,
-5~10분 걸립니다.
+`dist\crex-<날짜>.zip` (앱 번들)과 `dist\crex-<날짜>-deps.zip` (의존성 번들: `runtime`, `pylibs`, `wheels`), 그리고 각각의 `.sha256` 파일이 생성됩니다.
 
 ### 옵션
 
@@ -85,7 +84,7 @@ zip 과 `.sha256` 을 **함께** 제출합니다. 심사에서 물어볼 만한 
 
 ## 3. 검증 (폐쇄망)
 
-압축을 풀고 번들 안에서 실행합니다.
+두 압축파일(앱 번들과 의존성 번들)을 동일한 상위 폴더에 풀어 `crex-<날짜>` 폴더로 합친 뒤 그 안에서 실행합니다.
 
 ```powershell
 cd crex-20260817
