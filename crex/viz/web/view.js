@@ -90,6 +90,7 @@
       agentSummary: '',
       counts: { generator: 0, verifier: 0 },
       liveRejects: 0,
+      crexignoreMatches: new Map(),
     };
   }
 
@@ -360,6 +361,35 @@
       $('m-static').textContent = result.static_findings_count;
     }
     renderVerdicts();
+    refreshCrexignoreMatches();
+  }
+
+  async function refreshCrexignoreMatches() {
+    if (!state.verdicts || !state.verdicts.length) {
+      state.crexignoreMatches.clear();
+      renderVerdicts();
+      return;
+    }
+    const items = state.verdicts.map((v) => ({ path: v.path, rule_id: v.rule_id }));
+    try {
+      const res = await fetch('/api/crexignore/check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        state.crexignoreMatches.clear();
+        for (const [key, pattern] of Object.entries(data.matches || {})) {
+          if (pattern) {
+            state.crexignoreMatches.set(key, pattern);
+          }
+        }
+        renderVerdicts();
+      }
+    } catch (err) {
+      // 조용히 넘어간다
+    }
   }
 
   function updateFoldedBadge() {
@@ -402,7 +432,7 @@
     if ($('btn-verdicts-html')) $('btn-verdicts-html').disabled = !rows.length;
 
     if (!rows.length) {
-      body.innerHTML = '<tr class="empty"><td colspan="7">' +
+      body.innerHTML = '<tr class="empty"><td colspan="8">' +
         (state.verdicts.length ? '이 조건에 맞는 항목이 없습니다.' : '아직 없습니다.') + '</td></tr>';
       return;
     }
@@ -431,6 +461,18 @@
         ? '<div class="c-msg-text"><span class="tag-folded">접힘</span> ' + escapeHtml(v.message) + '</div>'
         : '<div class="c-msg-text">' + escapeHtml(v.message) + '</div>' + suggestionHtml + verifierCommentHtml;
 
+      const ignoreKey = v.path + ':' + v.rule_id;
+      const matchedPattern = state.crexignoreMatches.get(ignoreKey);
+      let ignoreHtml = '';
+      if (matchedPattern) {
+        ignoreHtml =
+          '<span class="tag-ignored" title="매칭 패턴: ' + escapeHtml(matchedPattern) + '">제외됨</span>' +
+          '<button class="btn-ignore-remove" data-pattern="' + escapeHtml(matchedPattern) + '" type="button" title="이 제외 규칙을 .crexignore 에서 삭제">취소</button>';
+      } else {
+        ignoreHtml =
+          '<button class="btn-ignore-add" data-path="' + escapeHtml(v.path) + '" data-rule="' + escapeHtml(v.rule_id) + '" type="button" title=".crexignore 에 제외 추가">+ 제외</button>';
+      }
+
       return '<tr data-kept="' + v.kept + '" class="' + (isFolded ? 'is-folded' : '') + '">' +
         '<td class="c-fold"><button class="btn-fold" data-key="' + escapeHtml(key) + '" type="button" title="' + (isFolded ? '펼치기' : '접기') + '">' +
           (isFolded ? '펼치기' : '접기') + '</button></td>' +
@@ -444,6 +486,7 @@
           : '<span class="tag tag-no">' +
             escapeHtml(REJECT_LABEL[v.reject_reason] || '기각') + '</span>') + '</td>' +
         '<td class="c-reason">' + escapeHtml(v.reason || '') + '</td>' +
+        '<td class="c-ignore">' + ignoreHtml + '</td>' +
       '</tr>';
     }).join('');
   }
@@ -1699,18 +1742,39 @@
     renderVerdicts();
   });
 
-  $('verdicts').addEventListener('click', (event) => {
-    const btn = event.target.closest('.btn-fold');
-    if (!btn) return;
-    const key = btn.dataset.key;
-    if (!key) return;
-    if (state.folded.has(key)) {
-      state.folded.delete(key);
-    } else {
-      state.folded.add(key);
+  $('verdicts').addEventListener('click', async (event) => {
+    const foldBtn = event.target.closest('.btn-fold');
+    if (foldBtn) {
+      const key = foldBtn.dataset.key;
+      if (!key) return;
+      if (state.folded.has(key)) {
+        state.folded.delete(key);
+      } else {
+        state.folded.add(key);
+      }
+      updateFoldedBadge();
+      renderVerdicts();
+      return;
     }
-    updateFoldedBadge();
-    renderVerdicts();
+
+    const addBtn = event.target.closest('.btn-ignore-add');
+    if (addBtn) {
+      const path = addBtn.dataset.path;
+      const rule = addBtn.dataset.rule;
+      if (path && rule) {
+        openIgnoreScopeModal(path, rule);
+      }
+      return;
+    }
+
+    const rmBtn = event.target.closest('.btn-ignore-remove');
+    if (rmBtn) {
+      const pattern = rmBtn.dataset.pattern;
+      if (pattern) {
+        await handleRemoveIgnorePattern(pattern);
+      }
+      return;
+    }
   });
 
   const btnFoldAll = $('btn-fold-all');
@@ -2045,6 +2109,230 @@
     if (event.key === 'Escape') closeConfirm(null);
   });
 
+  // ── .crexignore 제외 관리 ──────────────────────────────────────────
+
+  let currentIgnoreTarget = null; // { path, rule }
+
+  function openIgnoreScopeModal(path, rule) {
+    currentIgnoreTarget = { path, rule };
+    $('ignore-scope-sub').textContent = path + ' · ' + rule;
+
+    const slashIdx = path.lastIndexOf('/');
+    const dirPattern = slashIdx !== -1 ? path.slice(0, slashIdx) + '/**' : '*';
+
+    const options = [
+      {
+        title: '이 파일에서 이 룰만 제외',
+        badge: '추천',
+        pattern: path + ':' + rule,
+        checked: true,
+      },
+      {
+        title: '이 디렉터리(' + dirPattern + ')에서 이 룰 제외',
+        pattern: dirPattern + ':' + rule,
+      },
+      {
+        title: '저장소 전체에서 이 룰 제외',
+        pattern: 'rule:' + rule,
+      },
+      {
+        title: '이 파일 전체를 리뷰 대상에서 제외',
+        pattern: path,
+      },
+    ];
+
+    const html = options.map((opt) =>
+      '<label class="ignore-option-item">' +
+        '<input type="radio" name="ignore-scope-choice" value="' + escapeHtml(opt.pattern) + '" ' + (opt.checked ? 'checked' : '') + '>' +
+        '<div class="ignore-option-content">' +
+          '<div class="ignore-option-title">' +
+            escapeHtml(opt.title) +
+            (opt.badge ? '<span class="ignore-option-badge">' + escapeHtml(opt.badge) + '</span>' : '') +
+          '</div>' +
+          '<div class="ignore-option-pattern">' + escapeHtml(opt.pattern) + '</div>' +
+        '</div>' +
+      '</label>'
+    ).join('');
+
+    $('ignore-options').innerHTML = html;
+    $('ignore-scope-modal').hidden = false;
+  }
+
+  function closeIgnoreScopeModal() {
+    $('ignore-scope-modal').hidden = true;
+    currentIgnoreTarget = null;
+  }
+
+  async function submitIgnoreScope() {
+    const selected = document.querySelector('input[name="ignore-scope-choice"]:checked');
+    if (!selected) return;
+    const pattern = selected.value;
+    closeIgnoreScopeModal();
+
+    try {
+      const res = await fetch('/api/crexignore/add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          pattern,
+          comment: 'viz 판정 결과에서 제외 추가',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '제외 규칙 추가에 실패했습니다.', 'error');
+        return;
+      }
+      toast('.crexignore 에 규칙이 추가되었습니다: ' + pattern, 'ok');
+      await refreshCrexignoreMatches();
+    } catch (err) {
+      toast('제외 규칙 추가 오류: ' + err.message, 'error');
+    }
+  }
+
+  async function handleRemoveIgnorePattern(pattern) {
+    const confirmed = await showConfirm({
+      title: '제외 규칙 취소',
+      sub: pattern,
+      message: '.crexignore 에서 다음 규칙을 삭제하시겠습니까?<br><code>' + escapeHtml(pattern) + '</code>',
+      okText: '규칙 삭제',
+      okDanger: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/crexignore/remove', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pattern }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '제외 규칙 취소에 실패했습니다.', 'error');
+        return;
+      }
+      toast('.crexignore 에서 규칙을 삭제했습니다: ' + pattern, 'ok');
+      await refreshCrexignoreMatches();
+    } catch (err) {
+      toast('제외 규칙 취소 오류: ' + err.message, 'error');
+    }
+  }
+
+  async function openCrexignoreManagerModal() {
+    $('crexignore-modal-sub').textContent = '로딩 중...';
+    $('crexignore-modal').hidden = false;
+    await loadCrexignorePatterns();
+  }
+
+  function closeCrexignoreManagerModal() {
+    $('crexignore-modal').hidden = true;
+  }
+
+  async function loadCrexignorePatterns() {
+    try {
+      const res = await fetch('/api/crexignore');
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '.crexignore 조회 실패', 'error');
+        return;
+      }
+      $('crexignore-modal-sub').textContent = data.file_path + (data.exists ? '' : ' (파일 없음)');
+      const patterns = data.patterns || [];
+      if (!patterns.length) {
+        $('crexignore-list').innerHTML = '<p style="color: var(--fg-faint); font-size: 12.5px; padding: 12px 0;">등록된 제외 규칙이 없습니다.</p>';
+        return;
+      }
+      const TYPE_NAME = { path: '파일/폴더', global_rule: '전역 룰', path_rule: '경로별 룰' };
+      const html = patterns.map((p) =>
+        '<div class="crexignore-rule-row">' +
+          '<div>' +
+            '<span class="crexignore-rule-tag">' + escapeHtml(TYPE_NAME[p.type] || p.type) + '</span>' +
+            '<code>' + escapeHtml(p.raw) + '</code>' +
+          '</div>' +
+          '<button class="crexignore-btn-delete" data-raw="' + escapeHtml(p.raw) + '" type="button">삭제</button>' +
+        '</div>'
+      ).join('');
+      $('crexignore-list').innerHTML = html;
+    } catch (err) {
+      toast('.crexignore 조회 오류: ' + err.message, 'error');
+    }
+  }
+
+  async function addCrexignoreManual() {
+    const input = $('crexignore-input-pattern');
+    const val = input.value.trim();
+    if (!val) {
+      toast('추가할 패턴을 입력하세요.', 'warn');
+      return;
+    }
+    try {
+      const res = await fetch('/api/crexignore/add', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pattern: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '규칙 추가 실패', 'error');
+        return;
+      }
+      input.value = '';
+      toast('.crexignore 에 규칙이 추가되었습니다: ' + val, 'ok');
+      await loadCrexignorePatterns();
+      await refreshCrexignoreMatches();
+    } catch (err) {
+      toast('규칙 추가 오류: ' + err.message, 'error');
+    }
+  }
+
+  $('ignore-scope-close').addEventListener('click', closeIgnoreScopeModal);
+  $('ignore-scope-btn-cancel').addEventListener('click', closeIgnoreScopeModal);
+  $('ignore-scope-scrim').addEventListener('click', closeIgnoreScopeModal);
+  $('ignore-scope-btn-submit').addEventListener('click', submitIgnoreScope);
+
+  const btnCrexignoreMgr = $('btn-crexignore-mgr');
+  if (btnCrexignoreMgr) {
+    btnCrexignoreMgr.addEventListener('click', openCrexignoreManagerModal);
+  }
+  $('crexignore-modal-close').addEventListener('click', closeCrexignoreManagerModal);
+  $('crexignore-modal-btn-done').addEventListener('click', closeCrexignoreManagerModal);
+  $('crexignore-modal-scrim').addEventListener('click', closeCrexignoreManagerModal);
+  $('crexignore-btn-add').addEventListener('click', addCrexignoreManual);
+  $('crexignore-input-pattern').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') addCrexignoreManual();
+  });
+  $('crexignore-list').addEventListener('click', async (event) => {
+    const delBtn = event.target.closest('.crexignore-btn-delete');
+    if (!delBtn) return;
+    const raw = delBtn.dataset.raw;
+    if (!raw) return;
+    const confirmed = await showConfirm({
+      title: '규칙 삭제',
+      sub: raw,
+      message: '.crexignore 에서 다음 규칙을 삭제하시겠습니까?<br><code>' + escapeHtml(raw) + '</code>',
+      okText: '삭제',
+      okDanger: true,
+    });
+    if (!confirmed) return;
+    try {
+      const res = await fetch('/api/crexignore/remove', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pattern: raw }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || '규칙 삭제 실패', 'error');
+        return;
+      }
+      toast('.crexignore 에서 삭제되었습니다: ' + raw, 'ok');
+      await loadCrexignorePatterns();
+      await refreshCrexignoreMatches();
+    } catch (err) {
+      toast('규칙 삭제 오류: ' + err.message, 'error');
+    }
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       // 위에 떠 있는 것부터 닫는다.
@@ -2052,6 +2340,10 @@
         closeAbout();
       } else if (!$('confirm-modal').hidden) {
         closeConfirm(null);
+      } else if (!$('ignore-scope-modal').hidden) {
+        closeIgnoreScopeModal();
+      } else if (!$('crexignore-modal').hidden) {
+        closeCrexignoreManagerModal();
       } else if (pickerState.open) {
         closePicker();
       } else {

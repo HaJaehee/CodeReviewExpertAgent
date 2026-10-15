@@ -272,6 +272,8 @@
             <span>접힌 항목 숨기기</span>
           </label>
           <button class="btn btn-ghost btn-sm" id="btn-fold-all" type="button" title="모든 지적을 접거나 펼칩니다">모두 접기</button>
+          <button class="btn btn-ghost btn-sm" id="btn-crexignore-mgr" type="button"
+                  title=".crexignore 제외 규칙을 관리합니다">.crexignore 관리</button>
           <button class="btn btn-ghost btn-sm" id="btn-verdicts-csv" type="button"
                   title="지금 보이는 판정을 CSV 파일로 저장합니다" disabled>CSV 저장</button>
           <button class="btn btn-ghost btn-sm" id="btn-verdicts-html" type="button"
@@ -282,10 +284,10 @@
         <table class="verdicts">
           <thead>
             <tr>
-              <th class="th-fold">접기</th><th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th>
+              <th class="th-fold">접기</th><th>위치</th><th>심각도</th><th>룰</th><th>내용</th><th>판정</th><th>사유</th><th class="th-ignore">제외</th>
             </tr>
           </thead>
-          <tbody id="verdicts"><tr class="empty"><td colspan="7">아직 없습니다.</td></tr></tbody>
+          <tbody id="verdicts"><tr class="empty"><td colspan="8">아직 없습니다.</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -422,6 +424,61 @@
     </div>
   </div>
   <div class="modal-scrim" id="confirm-scrim"></div>
+</div>
+
+<!-- ── 리뷰 제외 추가 모달 (.crexignore Scope Modal) ─────────────── -->
+<div class="modal" id="ignore-scope-modal" hidden>
+  <div class="modal-dialog modal-narrow">
+    <div class="modal-head">
+      <div>
+        <h3>리뷰 제외 추가</h3>
+        <p class="modal-sub" id="ignore-scope-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="ignore-scope-close" type="button">✕</button>
+    </div>
+    <div class="modal-body" style="padding: 16px 18px;">
+      <p style="margin: 0 0 12px; font-size: 12.5px; color: var(--fg-dim);">
+        이 지적을 향후 리뷰에서 제외할 범위를 선택하십시오:
+      </p>
+      <div class="ignore-options" id="ignore-options"></div>
+    </div>
+    <div class="modal-foot" style="padding: 10px 16px;">
+      <div class="row" style="display: flex; gap: 8px; justify-content: flex-end; margin: 0;">
+        <button class="btn btn-sm" id="ignore-scope-btn-cancel" type="button">취소</button>
+        <button class="btn btn-sm btn-primary" id="ignore-scope-btn-submit" type="button">제외 등록</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-scrim" id="ignore-scope-scrim"></div>
+</div>
+
+<!-- ── .crexignore 관리 모달 ──────────────────────────────────── -->
+<div class="modal" id="crexignore-modal" hidden>
+  <div class="modal-dialog">
+    <div class="modal-head">
+      <div>
+        <h3>.crexignore 규칙 관리</h3>
+        <p class="modal-sub" id="crexignore-modal-sub"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="crexignore-modal-close" type="button">✕</button>
+    </div>
+    <div class="modal-body" style="padding: 14px 18px; max-height: 60vh; overflow-y: auto;">
+      <div class="crexignore-summary" style="margin-bottom: 12px; font-size: 12px; color: var(--fg-dim);">
+        저장소 루트 <code>.crexignore</code> 파일에 등록된 패턴 목록입니다.
+      </div>
+      <div class="crexignore-list" id="crexignore-list"></div>
+      <div class="crexignore-add-box" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); display: flex; gap: 8px;">
+        <input type="text" id="crexignore-input-pattern" placeholder="새 패턴 (예: src/legacy/**:cpp.* 또는 rule:cpp.dangling-*)" style="flex: 1 1 auto; font-family: var(--mono); font-size: 12px;">
+        <button class="btn btn-sm btn-primary" id="crexignore-btn-add" type="button">규칙 추가</button>
+      </div>
+    </div>
+    <div class="modal-foot" style="padding: 10px 16px;">
+      <div class="row" style="display: flex; gap: 8px; justify-content: flex-end; margin: 0;">
+        <button class="btn btn-sm" id="crexignore-modal-btn-done" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-scrim" id="crexignore-modal-scrim"></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

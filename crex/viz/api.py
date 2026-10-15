@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..compiledb import CompileDbError, describe_status, detect_project
+from ..ignore_manager import CrexIgnoreManager
 from ..rules import Taxonomy
 from .. import __version__
 from ..service import ReviewRequestError
@@ -548,6 +549,108 @@ def _browse(request: Request, ctx: Context, rest: str) -> Response:
     })
 
 
+def _get_ignore_manager(ctx: Context) -> CrexIgnoreManager:
+    root = Path(ctx.registry.repo_root)
+    return CrexIgnoreManager(root)
+
+
+def _crexignore(request: Request, ctx: Context, rest: str) -> Response:
+    """`GET /api/crexignore` — 현재 워크스페이스의 .crexignore 상태 및 패턴 목록."""
+    if request.method == "GET":
+        mgr = _get_ignore_manager(ctx)
+        return json_response({
+            "workspace": str(mgr.workspace_root),
+            "file_path": str(mgr.file_path),
+            "exists": mgr.exists(),
+            "raw": mgr.read_raw(),
+            "patterns": [p.to_dict() for p in mgr.list_patterns()],
+            "switchable": ctx.workspace_switchable,
+        })
+    if request.method == "POST":
+        return _crexignore_add(request, ctx)
+    return error_response(f"{request.method} 는 지원하지 않습니다", 405)
+
+
+def _crexignore_add(request: Request, ctx: Context) -> Response:
+    if not ctx.workspace_switchable:
+        return error_response(
+            "이 서버는 루프백이 아닌 주소에 바인드되어 있어 .crexignore 파일을 수정할 수 없습니다.",
+            403,
+        )
+    payload = request.json()
+    pattern = str(payload.get("pattern", "")).strip()
+    comment = payload.get("comment")
+    if not pattern:
+        raise ReviewRequestError("pattern 이 필요합니다")
+
+    mgr = _get_ignore_manager(ctx)
+    added = mgr.add_pattern(pattern, comment=comment)
+    return json_response({
+        "ok": True,
+        "pattern": added,
+        "patterns": [p.to_dict() for p in mgr.list_patterns()],
+        "raw": mgr.read_raw(),
+    })
+
+
+def _crexignore_remove(request: Request, ctx: Context) -> Response:
+    if not ctx.workspace_switchable:
+        return error_response(
+            "이 서버는 루프백이 아닌 주소에 바인드되어 있어 .crexignore 파일을 수정할 수 없습니다.",
+            403,
+        )
+    payload = request.json()
+    pattern = str(payload.get("pattern", "")).strip()
+    if not pattern:
+        raise ReviewRequestError("pattern 이 필요합니다")
+
+    mgr = _get_ignore_manager(ctx)
+    removed = mgr.remove_pattern(pattern)
+    return json_response({
+        "ok": True,
+        "removed": removed,
+        "pattern": pattern,
+        "patterns": [p.to_dict() for p in mgr.list_patterns()],
+        "raw": mgr.read_raw(),
+    })
+
+
+def _crexignore_check(request: Request, ctx: Context) -> Response:
+    payload = request.json()
+    items = payload.get("items") or []
+    if not isinstance(items, list):
+        raise ReviewRequestError("items 는 리스트여야 합니다")
+
+    mgr = _get_ignore_manager(ctx)
+    matches: dict[str, str | None] = {}
+    for item in items:
+        if isinstance(item, dict):
+            p = str(item.get("path", "")).strip()
+            r = str(item.get("rule_id", "")).strip()
+            key = f"{p}:{r}"
+            matches[key] = mgr.find_match(p, r) if (p and r) else None
+    return json_response({"matches": matches})
+
+
+def _crexignore_action(request: Request, ctx: Context, rest: str) -> Response:
+    action = rest.strip("/")
+    if action == "add":
+        if request.method != "POST":
+            return error_response("add 는 POST 입니다", 405)
+        return _crexignore_add(request, ctx)
+    if action == "remove":
+        if request.method != "POST":
+            return error_response("remove 는 POST 입니다", 405)
+        return _crexignore_remove(request, ctx)
+    if action == "check":
+        if request.method != "POST":
+            return error_response("check 는 POST 입니다", 405)
+        return _crexignore_check(request, ctx)
+    if not action:
+        return _crexignore(request, ctx, "")
+    return error_response(f"없는 경로입니다: {request.path}", 404)
+
+
 def _int(raw: str | None, default: int) -> int:
     try:
         return int(raw) if raw is not None else default
@@ -568,12 +671,14 @@ _EXACT: dict[str, Callable[[Request, "Context", str], Response]] = {
     "/api/browse": _browse,
     "/api/compiledb": _compiledb,
     "/api/compiledb/cancel": _compiledb_cancel,
+    "/api/crexignore": _crexignore,
 }
 
 #: 뒤에 붙는 부분을 핸들러에 넘기는 접두 경로.
 _PREFIX: tuple[tuple[str, Callable[[Request, "Context", str], Response]], ...] = (
     ("/api/history/", _history_detail),
     ("/api/runs/", _run_detail),
+    ("/api/crexignore/", _crexignore_action),
     ("/static/", _static),
 )
 

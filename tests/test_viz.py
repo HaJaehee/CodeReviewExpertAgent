@@ -962,6 +962,67 @@ def test_history_api_endpoints_and_single_deletion() -> None:
         _check(json.loads(res_empty.body)["runs"] == [], "전체 삭제 후 목록이 비어있지 않음")
 
 
+def test_crexignore_api_endpoints() -> None:
+    """REST API /api/crexignore 조회, 추가, 삭제, 매칭 검증."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        out = Path(tmp) / "out"
+        out.mkdir()
+        ctx = _context(repo, "http://127.0.0.1:9", out)
+
+        # 1. 파일이 없을 때 GET /api/crexignore
+        res = handle(Request("GET", "/api/crexignore"), ctx)
+        _check(res.status == 200, f"GET 실패: {res.status}")
+        data = json.loads(res.body)
+        _check(data["exists"] is False, "파일이 없는데 exists=True")
+        _check(len(data["patterns"]) == 0, "패턴이 비어있지 않음")
+
+        # 2. POST /api/crexignore/add (전역 룰 제외 및 경로별 룰 제외 추가)
+        add1 = handle(Request("POST", "/api/crexignore/add", body=json.dumps({"pattern": "rule:cpp.dangling-*"}).encode()), ctx)
+        _check(add1.status == 200, f"add1 실패: {add1.status}")
+        add2 = handle(Request("POST", "/api/crexignore/add", body=json.dumps({"pattern": "src/legacy/**:cpp.*", "comment": "레거시 C++ 제외"}).encode()), ctx)
+        _check(add2.status == 200, f"add2 실패: {add2.status}")
+        add3 = handle(Request("POST", "/api/crexignore/add", body=json.dumps({"pattern": "third_party/**"}).encode()), ctx)
+        _check(add3.status == 200, f"add3 실패: {add3.status}")
+
+        # 3. 추가 후 GET /api/crexignore
+        res2 = handle(Request("GET", "/api/crexignore"), ctx)
+        data2 = json.loads(res2.body)
+        _check(data2["exists"] is True, "추가 후 exists=False")
+        _check(len(data2["patterns"]) == 3, f"패턴 개수 불일치: {len(data2['patterns'])}")
+
+        # 4. POST /api/crexignore/check
+        check_res = handle(Request("POST", "/api/crexignore/check", body=json.dumps({
+            "items": [
+                {"path": "src/legacy/old.cpp", "rule_id": "cpp.c-style-cast"},
+                {"path": "src/normal.cpp", "rule_id": "cpp.dangling-after-realloc"},
+                {"path": "third_party/lib.cpp", "rule_id": "any.magic-number"},
+                {"path": "src/normal.cpp", "rule_id": "python.something"},
+            ]
+        }).encode()), ctx)
+        _check(check_res.status == 200, f"check 실패: {check_res.status}")
+        matches = json.loads(check_res.body)["matches"]
+        _check(matches["src/legacy/old.cpp:cpp.c-style-cast"] == "src/legacy/**:cpp.*", "경로 룰 매칭 실패")
+        _check(matches["src/normal.cpp:cpp.dangling-after-realloc"] == "rule:cpp.dangling-*", "전역 룰 매칭 실패")
+        _check(matches["third_party/lib.cpp:any.magic-number"] == "third_party/**", "파일 경로 매칭 실패")
+        _check(matches["src/normal.cpp:python.something"] is None, "매칭되지 않아야 할 항목이 매칭됨")
+
+        # 5. POST /api/crexignore/remove
+        del_res = handle(Request("POST", "/api/crexignore/remove", body=json.dumps({"pattern": "rule:cpp.dangling-*"}).encode()), ctx)
+        _check(del_res.status == 200, f"remove 실패: {del_res.status}")
+        _check(json.loads(del_res.body)["removed"] is True, "삭제 성공 여부 불일치")
+
+        res3 = handle(Request("GET", "/api/crexignore"), ctx)
+        data3 = json.loads(res3.body)
+        _check(len(data3["patterns"]) == 2, f"삭제 후 패턴 개수 불일치: {len(data3['patterns'])}")
+
+        # 6. 원격 바인드 시 (workspace_switchable = False) 403 차단 확인
+        ctx_remote = Context(ctx.registry, ctx.taxonomy, workspace_switchable=False)
+        remote_add = handle(Request("POST", "/api/crexignore/add", body=json.dumps({"pattern": "vendor/**"}).encode()), ctx_remote)
+        _check(remote_add.status == 403, f"원격 바인드에서 쓰기 허용됨: {remote_add.status}")
+
+
 TESTS = [
     test_traced_pipeline_matches_plain_pipeline,
     test_stage_events_cover_every_stage,
@@ -995,6 +1056,7 @@ TESTS = [
     test_browse_api_directories_and_files,
     test_viz_db_crud_and_persistence,
     test_history_api_endpoints_and_single_deletion,
+    test_crexignore_api_endpoints,
 ]
 
 
