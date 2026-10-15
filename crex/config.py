@@ -85,9 +85,9 @@ SUPPORTED_MODES = ("native",)
 
 SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2}
 
-#: 검증 엔드포인트의 출력 예산 상한. 검증 응답은 결론(yes/no) 하나와 짧은
-#: 근거뿐이라 더 줄 이유가 없고, 크게 잡으면 GPU 만 오래 붙든다.
-VERIFIER_MAX_OUTPUT_TOKENS = 400
+#: 검증 엔드포인트의 출력 예산 상한. 추론(thinking) 모델의 reasoning 버퍼와
+#: 최종 결론 출력을 위해 기본 4096 으로 설정한다.
+VERIFIER_MAX_OUTPUT_TOKENS = 4096
 
 
 @dataclass
@@ -219,8 +219,8 @@ def load_config(path: Path | str | None = None, *, search_from: Path | None = No
         if "verifier" in llm
         else _endpoint(llm.get("generator", {}), default_model="Qwen3.6-27B")
     )
-    # 검증은 짧은 입력에 결론 하나와 짧은 근거면 되므로 기본 예산(400)을 조인다.
-    # 단, 사용자가 thinking/reasoning 모델을 위해 max_output_tokens 를 명시적으로 올렸다면 존중한다.
+    # 검증은 짧은 입력에 결론 하나와 짧은 근거면 되지만, 추론(thinking) 모델이
+    # 긴 reasoning 버퍼를 거친 뒤 최종 결론을 낼 수 있도록 기본 예산(4096)을 보장한다.
     explicit_verifier_tokens = (llm.get("verifier") or {}).get("max_output_tokens")
     if explicit_verifier_tokens is None:
         verifier.max_output_tokens = min(verifier.max_output_tokens, VERIFIER_MAX_OUTPUT_TOKENS)
@@ -281,7 +281,7 @@ def _endpoint(raw: dict, *, default_model: str) -> EndpointConfig:
         model=raw.get("model", default_model),
         api_key=raw.get("api_key", "EMPTY"),
         temperature=float(raw.get("temperature", 0.0)),
-        max_output_tokens=int(raw.get("max_output_tokens", 1600)),
+        max_output_tokens=int(raw.get("max_output_tokens", 4096)),
         max_input_tokens=int(raw.get("max_input_tokens", 8192)),
         timeout=float(raw.get("timeout", 3600.0)),
         max_retries=int(raw.get("max_retries", 3)),

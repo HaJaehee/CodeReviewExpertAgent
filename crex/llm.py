@@ -111,7 +111,7 @@ class EndpointConfig:
     model: str
     api_key: str = "EMPTY"  # vLLM 은 보통 인증이 없지만 헤더는 보내야 한다
     temperature: float = 0.0
-    max_output_tokens: int = 1600
+    max_output_tokens: int = 4096
     max_input_tokens: int = 8192
     timeout: float = 3600.0
     max_retries: int = 3

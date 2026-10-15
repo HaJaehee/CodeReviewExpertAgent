@@ -46,9 +46,9 @@
         "출력 상한. 여기 걸리면 JSON 이 문장 한복판에서 끊긴다 — 지적 일부만",
         "복구되고 나머지는 사라진다. 필요한 양은 review.max_findings_per_chunk 에",
         "비례한다 (지적 하나가 message+suggestion 최대 800자 ≈ 270토큰).",
-        "지적 5건 기준으로 1600 이면 넉넉하다. 청크가 잘렸다는 경고가 뜨면 올려라."
+        "추론(thinking) 모델의 reasoning 버퍼와 지적 5건 생성을 고려해 4096 으로 설정한다."
       ],
-      "max_output_tokens": 1600,
+      "max_output_tokens": 4096,
 
       "// max_input_tokens": [
         "입력 상한. 256K 컨텍스트가 있어도 쓰지 않는다 — 컨텍스트를 늘릴수록",
@@ -96,6 +96,12 @@
 
       "// max_input_tokens": "검증은 청크 하나만 보므로 더 좁게 잡는다",
       "max_input_tokens": 4096,
+
+      "// max_output_tokens": [
+        "검증 출력 상한. 추론(thinking) 모델이 내부 생각을 거친 뒤",
+        "최종 결론(JSON)까지 온전히 도달할 수 있도록 4096 으로 설정한다."
+      ],
+      "max_output_tokens": 4096,
 
       "timeout": 3600.0,
       "structured_output_mode": "auto"
