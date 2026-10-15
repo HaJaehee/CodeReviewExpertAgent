@@ -36,8 +36,8 @@
     코어(review/scan/doctor)는 이것들 없이 동작한다.
 
 .EXAMPLE
-    .\tools\package.ps1
-    .\tools\package.ps1 -PythonVersion 3.12.10 -SkipDeps
+    .\package.ps1
+    .\package.ps1 -PythonVersion 3.12.10 -SkipDeps
 #>
 #
 # 이 파일은 **UTF-8 BOM** 으로 저장한다. Windows PowerShell 5.1 은 BOM 이 없는
@@ -56,7 +56,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # 5.1 의 진행 표시줄은 다운로드를 몇 배 느리게 만든다
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = $PSScriptRoot
 $Stamp = Get-Date -Format "yyyyMMdd"
 $BundleName = "crex-$Stamp"
 $DistDir = Join-Path $RepoRoot $OutDir

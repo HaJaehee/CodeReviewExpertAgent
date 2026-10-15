@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 # 반입 번들에는 `tools/render_docs.py` 가 없다 — 번들을 *만드는* 쪽 물건이라
-# `tools/package.ps1` 이 빼낸다 (설명서 HTML 은 포장할 때 이미 렌더해 넣는다).
+# `package.ps1` 이 빼낸다 (설명서 HTML 은 포장할 때 이미 렌더해 넣는다).
 # 저장소에서는 전부 돌고, 번들에서는 통째로 건너뛴다.
 try:
     import render_docs  # noqa: E402

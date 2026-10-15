@@ -7,7 +7,7 @@ Python 런타임과 서드파티 라이브러리를 소스와 분리하여 번�
 ```
 인터넷 되는 장비                 반입              폐쇄망
 ─────────────────                ────              ──────
-tools\package.ps1  ──▶  crex-YYYYMMDD.zip       ──▶  동일 폴더에 압축 해제
+package.ps1        ──▶  crex-YYYYMMDD.zip       ──▶  동일 폴더에 압축 해제
                         + crex-YYYYMMDD-deps.zip     tools\verify.ps1
                         + 각각의 .sha256             crex.cmd doctor
 ```
@@ -18,7 +18,7 @@ tools\package.ps1  ──▶  crex-YYYYMMDD.zip       ──▶  동일 폴더�
 
 ```powershell
 cd <저장소>
-.\tools\package.ps1
+.\package.ps1
 ```
 
 `dist\crex-<날짜>.zip` (앱 번들)과 `dist\crex-<날짜>-deps.zip` (의존성 번들: `runtime`, `pylibs`, `wheels`), 그리고 각각의 `.sha256` 파일이 생성됩니다.
@@ -26,10 +26,10 @@ cd <저장소>
 ### 옵션
 
 ```powershell
-.\tools\package.ps1 -PythonVersion 3.12.10   # 담을 Python 버전 (3.11 이상)
-.\tools\package.ps1 -SkipRuntime             # 대상 장비에 Python 3.11+ 가 이미 있을 때
-.\tools\package.ps1 -SkipDeps                # MCP(Zed 연동) 를 안 쓸 때
-.\tools\package.ps1 -OutDir build            # 출력 위치 변경
+.\package.ps1 -PythonVersion 3.12.10   # 담을 Python 버전 (3.11 이상)
+.\package.ps1 -SkipRuntime             # 대상 장비에 Python 3.11+ 가 이미 있을 때
+.\package.ps1 -SkipDeps                # MCP(Zed 연동) 를 안 쓸 때
+.\package.ps1 -OutDir build            # 출력 위치 변경
 ```
 
 `-SkipDeps` 를 쓰면 번들이 약 10MB 로 줄어듭니다. 코어(`review` / `scan` /
@@ -192,7 +192,7 @@ D:\tools\crex-20260817\crex.cmd review --workspace D:\work\myrepo --staged
 소스만 바뀌었다면 런타임과 서드파티를 다시 담을 필요가 없습니다.
 
 ```powershell
-.\tools\package.ps1 -SkipRuntime -SkipDeps
+.\package.ps1 -SkipRuntime -SkipDeps
 ```
 
 몇 MB 짜리 zip 이 나옵니다. 폐쇄망에서 기존 번들 위에 `crex\`, `rules\`,
@@ -225,7 +225,7 @@ BOM 이 날아간 것입니다. `python tests/run_all.py` 가 이것도 확인�
 
 ```powershell
 # 확인
-Get-Content tools\package.ps1 -Encoding Byte -TotalCount 3
+Get-Content package.ps1 -Encoding Byte -TotalCount 3
 # 239 187 191 이 나와야 정상 (EF BB BF)
 ```
 
@@ -261,7 +261,7 @@ MCP SDK 가 Windows stdio 를 다룰 때 `pywin32` 를 씁니다. `pip install -
 
 ```powershell
 $env:PIP_INDEX_URL = "https://사내미러/simple"
-.\tools\package.ps1
+.\package.ps1
 ```
 
 ### 테스트가 실패한다

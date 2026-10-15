@@ -327,7 +327,7 @@ dotnet tool install -g roslynator.dotnet.cli
 
 ## Python — ruff / mypy / bandit
 
-mypy 는 CREX 기본 패키징(`requirements.txt`, `tools/package.ps1`)에 포함되어 있어,
+mypy 는 CREX 기본 패키징(`requirements.txt`, `package.ps1`)에 포함되어 있어,
 번들 배포 시 `pylibs/` 에 자동으로 담겨 별도 설치 없이 `python -m mypy` 로 즉시 동작합니다.
 
 ruff 와 bandit 도 pip 로 설치하거나 wheel 로 반입할 수 있습니다:
@@ -377,7 +377,7 @@ git clone --depth 1 https://github.com/semgrep/semgrep-rules /tmp/semgrep-rules
 
 ## 폐쇄망 반입
 
-`tools/package.ps1` 이 만드는 CREX 번들에는 **CREX 소스와 Python 런타임, MCP 용
+`package.ps1` 이 만드는 CREX 번들에는 **CREX 소스와 Python 런타임, MCP 용
 wheel 만** 들어갑니다. 위 분석기들은 **별도로 반입 신청**해야 합니다.
 
 1. 인터넷이 되는 장비에서 설치 파일을 내려받습니다.

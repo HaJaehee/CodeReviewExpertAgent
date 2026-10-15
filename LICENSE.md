@@ -13,7 +13,7 @@ requirement met here is notice.
 `certifi` reaches CREX as a transitive dependency of the optional MCP server
 (`fastmcp` -> `httpx` -> `httpcore` -> `certifi`). It is present only in bundles
 built with third-party packages included; a bundle produced by
-`tools/package.ps1 -SkipDeps` contains no MPL-licensed component.
+`package.ps1 -SkipDeps` contains no MPL-licensed component.
 
 `certifi` ships only the MPL-2.0 notice, not the license text, and points
 recipients to <http://mozilla.org/MPL/2.0/>. The text below is that document,

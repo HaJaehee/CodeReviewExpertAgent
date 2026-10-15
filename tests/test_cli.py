@@ -286,7 +286,7 @@ def test_powershell_scripts_carry_a_bom() -> None:
     끝나지 않는 것이 문제다 — cp949 선행 바이트가 뒤따르는 따옴표나 괄호를 삼켜
     스크립트가 통째로 파싱 오류로 죽는다.
 
-    실제로 `tools/package.ps1` 이 그 상태로 들어와 있었다(2026-08-29). 반입 번들을
+    실제로 `package.ps1` 이 그 상태로 들어와 있었다(2026-08-29). 반입 번들을
     만드는 스크립트라, 못 돌리면 폐쇄망에 아무것도 못 넣는다.
     """
     root = Path(__file__).resolve().parents[1]
