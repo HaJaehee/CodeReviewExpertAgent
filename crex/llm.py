@@ -663,11 +663,15 @@ def _repair_json_quotes(text: str) -> str:
                 if m:
                     delimiter = m.group(1)
                     if delimiter in "}]":
-                        # 객체 또는 배열 닫힘 바로 앞의 큰따옴표는 참 닫는 따옴표
-                        i += 1
-                        closed = True
-                        break
+                        after_delim = tail[m.end():]
+                        # 닫는 괄호 뒤에는 쉼표(,), 닫는 괄호(}, ]), 마크다운 펜스(`), 또는 문자열 끝만 올 수 있다.
+                        # 만약 일반 문자(한글, 영문, 세미콜론 등)가 이어진다면 이는 소스코드 본문(예: { ... } 블록)의 일부다.
+                        if re.match(r"^\s*([,}\]]|`|$)", after_delim):
+                            i += 1
+                            closed = True
+                            break
                     elif delimiter == ",":
+
                         after_comma = tail[m.end():]
                         # 쉼표 뒤에 다음 속성 키("key":) 또는 새 객체({), 새 배열([), 컨테이너 닫힘(}, ])이 오는가?
                         if re.match(r'^\s*("[a-zA-Z0-9_\-\.]+"\s*:|\{|\[|\]|\})', after_comma):

@@ -138,7 +138,13 @@ class _Server:
                         '"suggestion": "if (ptr != NULL) { ptr->name = "default"; }"}'
                         ']}'
                     )
+                if outer.flavor == "unescaped_quotes_verdict":
+                    return self._ok(
+                        '{"verdict": "yes", "code_present": true, '
+                        '"reason": "코드 if (status == "FAIL") { return -1; } 에서 널 체크가 누락되어 위험합니다."}'
+                    )
                 return self._ok(_sample_for(schema))
+
 
 
             def _ok(self, content: str, finish_reason: str = "stop"):
@@ -506,6 +512,15 @@ def test_complete_json_salvages_unescaped_quotes() -> None:
         _check('ptr->name = "default"' in f["suggestion"], f"suggestion 인용 보존: {f['suggestion']}")
 
 
+def test_complete_json_salvages_unescaped_quotes_in_verdict() -> None:
+    """검증자(verifier) 응답 내 소스코드 인용에 큰따옴표가 있어도 complete_json 이 온전히 복구한다."""
+    with _Server("unescaped_quotes_verdict") as server:
+        out = server.client.complete_json("s", "u", VERDICT_SCHEMA, schema_name="verdict")
+        _check(out.get("verdict") == "yes", f"verdict 일치: {out}")
+        _check(out.get("code_present") is True, f"code_present 일치: {out}")
+        _check('if (status == "FAIL")' in out.get("reason", ""), f"reason 인용 보존: {out}")
+
+
 TESTS = [
     test_modern_server_uses_response_format,
     test_old_vllm_falls_back_to_guided_json,
@@ -531,7 +546,9 @@ TESTS = [
     test_repair_json_quotes_handles_unescaped_code_quotes,
     test_repair_json_quotes_handles_control_chars,
     test_complete_json_salvages_unescaped_quotes,
+    test_complete_json_salvages_unescaped_quotes_in_verdict,
 ]
+
 
 
 
