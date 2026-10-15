@@ -349,7 +349,9 @@ vLLM 버전마다 구조화 출력을 받는 필드가 다릅니다.
     "max_findings_per_chunk": 5,
     "max_workers": 4,
     "require_changed_line": true,
-    "min_severity": "low"
+    "min_severity": "low",
+    "exclude": ["build/**", "third_party/**"],
+    "exclude_rules": ["cpp.c-style-cast", "src/legacy/**:cpp.*"]
   }
 }
 ```
@@ -379,6 +381,16 @@ MR 리뷰에서 남이 예전에 쓴 코드를 지적하는 건 대체로 무례
 처음에는 `"high"` 로 시작하는 걸 권합니다. 골든셋이 없는 상태에서는 각 룰의
 실제 정밀도를 모르는데, `high` 로 분류된 지적은 오탐이어도 확인 비용이 작습니다.
 FAR 을 측정해 룰별 정밀도가 확인되면 `"medium"` 으로 낮추세요.
+
+**`exclude`** — 리뷰 대상에서 제외할 파일이나 디렉터리 glob 패턴 목록입니다.
+저장소 루트에 `.crexignore` 파일을 만들어 적어도 동일하게 적용됩니다.
+
+**`exclude_rules`** — 리뷰하지 않을 룰 ID 또는 패턴 목록입니다. 특정 룰 지적을
+더 이상 보고 싶지 않을 때 끕니다. 전역 룰 제외(`rule:cpp.c-style-cast`)뿐만 아니라
+특정 파일/디렉터리에만 특정 룰을 제외하는 패턴(`src/legacy/**:cpp.*`, `tests/** rule:any.magic-number`)도
+지원합니다.
+
+자세한 제외 패턴 문법과 파일별 룰 제외 방법은 [리뷰 대상 제외](crexignore.md) 문서를 참고하십시오.
 
 ---
 
