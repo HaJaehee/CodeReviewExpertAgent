@@ -34,8 +34,10 @@ from crex.llm import (  # noqa: E402
     TruncatedOutputError,
     _extract_first_json_object,
     _relax_schema,
+    _repair_json_quotes,
     _repair_truncated_json,
 )
+
 from crex.report import to_markdown  # noqa: E402
 from crex.schema import ReviewResult  # noqa: E402
 
@@ -128,7 +130,16 @@ class _Server:
                                                 "reason": "x"}))
                 if outer.flavor.startswith("truncates"):
                     return self._ok(TRUNCATED[outer.flavor], finish_reason="length")
+                if outer.flavor == "unescaped_quotes_findings":
+                    return self._ok(
+                        '{"findings": ['
+                        '{"line": 41, "rule_id": "cpp.dangling-after-realloc", "severity": "high", '
+                        '"message": "포인터 "ptr" 가 NULL 인지 확인하지 않고 "ptr->name = "default"" 를 수행합니다.", '
+                        '"suggestion": "if (ptr != NULL) { ptr->name = "default"; }"}'
+                        ']}'
+                    )
                 return self._ok(_sample_for(schema))
+
 
             def _ok(self, content: str, finish_reason: str = "stop"):
                 body = json.dumps(
@@ -445,6 +456,56 @@ def test_verdict_schema_property_order_survives_relaxation() -> None:
            "완화가 프로퍼티 순서를 바꿨다 — 생성 순서가 바뀌어 정확도가 나빠진다")
 
 
+def test_repair_json_quotes_handles_unescaped_code_quotes() -> None:
+    """소스코드 인용 내부의 이스케이프되지 않은 큰따옴표가 복구되어 정상 파싱된다."""
+    cases = [
+        # 단순 코드 인용
+        ('{"message": "error: "something""}', 'error: "something"'),
+        # 복합 C/C++ 소스코드 인용
+        (
+            '{"findings": [{"line": 10, "rule_id": "r", "severity": "high", '
+            '"message": "const char* msg = "hello world"; 에서 널 검사 누락", '
+            '"suggestion": "if (msg != NULL) printf("%s\\n", msg);"}]}',
+            'const char* msg = "hello world"; 에서 널 검사 누락',
+        ),
+        # 판정 reason 내 큰따옴표 인용
+        (
+            '{"verdict": "yes", "code_present": true, '
+            '"reason": "코드 "if (x == "test")" 는 실제 결함이 맞습니다."}',
+            '코드 "if (x == "test")" 는 실제 결함이 맞습니다.',
+        ),
+    ]
+    for raw, expected_text in cases:
+        repaired = _repair_json_quotes(raw)
+        parsed = json.loads(repaired)
+        if "message" in parsed:
+            _check(parsed["message"] == expected_text, f"message 복구 실패: {parsed}")
+        elif "findings" in parsed:
+            _check(parsed["findings"][0]["message"] == expected_text, f"findings 복구 실패: {parsed}")
+        elif "reason" in parsed:
+            _check(parsed["reason"] == expected_text, f"reason 복구 실패: {parsed}")
+
+
+def test_repair_json_quotes_handles_control_chars() -> None:
+    """문자열 내부의 원시 개행 및 탭 문자가 이스케이프 시퀀스로 치환된다."""
+    raw = '{\n  "message": "첫째 줄\n둘째 줄\t(탭 포함)"\n}'
+    repaired = _repair_json_quotes(raw)
+    parsed = json.loads(repaired)
+    _check("첫째 줄\n둘째 줄\t(탭 포함)" in parsed["message"], f"제어문자 처리 실패: {parsed}")
+
+
+def test_complete_json_salvages_unescaped_quotes() -> None:
+    """엔드포인트가 큰따옴표가 이스케이프되지 않은 JSON을 반환해도 complete_json 이 온전히 복구한다."""
+    with _Server("unescaped_quotes_findings") as server:
+        out = server.client.complete_json("s", "u", FINDINGS_SCHEMA, schema_name="findings")
+        _check(len(out.get("findings", [])) == 1, f"지적이 복구되어야 한다: {out}")
+        f = out["findings"][0]
+        _check(f["line"] == 41, f"라인 일치: {f}")
+        _check('포인터 "ptr"' in f["message"], f"message 인용 보존: {f['message']}")
+        _check('ptr->name = "default"' in f["message"], f"message 인용 보존: {f['message']}")
+        _check('ptr->name = "default"' in f["suggestion"], f"suggestion 인용 보존: {f['suggestion']}")
+
+
 TESTS = [
     test_modern_server_uses_response_format,
     test_old_vllm_falls_back_to_guided_json,
@@ -467,7 +528,11 @@ TESTS = [
     test_probe_detects_enum_violation,
     test_zero_findings_with_errors_is_not_reported_as_clean,
     test_verdict_schema_property_order_survives_relaxation,
+    test_repair_json_quotes_handles_unescaped_code_quotes,
+    test_repair_json_quotes_handles_control_chars,
+    test_complete_json_salvages_unescaped_quotes,
 ]
+
 
 
 def main() -> int:

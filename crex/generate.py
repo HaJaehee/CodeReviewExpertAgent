@@ -69,6 +69,11 @@ RULECHECKER_SYSTEM = """\
 ## 출력
 message 는 한국어로, 무엇이 왜 문제이고 어떤 위험이 있는지 두 문장 이내로 명확히 쓴다.
 suggestion 에는 고칠 코드를 쓴다 (없으면 빈 문자열).
+
+## 소스코드 인용 시 따옴표 규칙 (필수 안전장치)
+- message 또는 suggestion 내에서 소스코드나 문자열 리터럴을 인용할 때는 **반드시 작은따옴표(')나 백틱(`)을 사용**하거나, 큰따옴표를 이스케이프(\")하라.
+- JSON 문자열 값 내부에서 이스케이프되지 않은 큰따옴표(")를 직접 쓰면 JSON 문법이 깨지므로 절대 금지한다.
+  - 예: `printf('hello');` 또는 `if (str == 'error')` 또는 `if (str == \"error\")`
 """
 
 
@@ -92,8 +97,10 @@ RULECHECKER_USER = """\
 ## 지시
 1. **종합 코드 리뷰 (기본)**: 정적분석 도구 결과 유무와 무관하게, added 줄과 AST 구문(호출 함수, 변수 선언/사용, 제어 흐름)을 면밀히 분석하여 전반적인 코드 결함(비즈니스 로직 오류, 경계 조건 미처리, 예외/에러 핸들링 누락, 널 역참조, 자원 누수 등)을 적극적으로 지적하라.
 2. **정적분석 결과 반영**: 정적분석 도구가 결함을 보고했고 이것이 실제 문제라면, 적용할 룰 목록에서 가장 적합한 `rule_id`를 선택하여 반드시 지적에 포함하라.
-3. 발견된 결함이 있다면 findings 에 추가하라. 결함이 전혀 없을 때만 빈 목록을 반환하라.
+3. **코드 인용 따옴표**: message 와 suggestion 내에서 코드를 인용할 때는 작은따옴표(') 또는 백틱(`)을 사용하여 JSON 이 깨지지 않도록 하라.
+4. 발견된 결함이 있다면 findings 에 추가하라. 결함이 전혀 없을 때만 빈 목록을 반환하라.
 """
+
 
 
 class RuleChecker:
@@ -281,9 +288,18 @@ def build_findings_schema(
                         "line": line_schema,
                         "rule_id": {"type": "string", "enum": rule_ids},
                         "severity": {"type": "string", "enum": ["high", "medium", "low"]},
-                        "message": {"type": "string", "maxLength": 400},
-                        "suggestion": {"type": "string", "maxLength": 400},
+                        "message": {
+                            "type": "string",
+                            "maxLength": 400,
+                            "description": "지적 내용 (코드 인용 시 작은따옴표(') 또는 백틱(`) 사용)",
+                        },
+                        "suggestion": {
+                            "type": "string",
+                            "maxLength": 400,
+                            "description": "개선 코드 제안 (코드 인용 시 작은따옴표(') 또는 백틱(`) 사용)",
+                        },
                     },
+
                     "required": ["line", "rule_id", "severity", "message"],
                     "additionalProperties": False,
                 },

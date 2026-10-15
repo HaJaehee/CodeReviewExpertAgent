@@ -260,8 +260,34 @@ class LLMClient:
             if extracted is not None:
                 return extracted
 
+        # 소스코드 인용 따옴표 복구 후 파싱 시도
+        repaired_target = _repair_json_quotes(target)
+        try:
+            return json.loads(repaired_target)
+        except json.JSONDecodeError:
+            pass
+
+        extracted = _extract_first_json_object(repaired_target)
+        if extracted is not None:
+            return extracted
+
+        repaired_raw = _repair_json_quotes(raw) if target is not raw else None
+        if repaired_raw is not None:
+            try:
+                return json.loads(repaired_raw)
+            except json.JSONDecodeError:
+                pass
+            extracted = _extract_first_json_object(repaired_raw)
+            if extracted is not None:
+                return extracted
+
         cut_off = self.last_finish_reason == "length"
-        salvaged = _repair_truncated_json(target) or _repair_truncated_json(raw)
+        salvaged = (
+            _repair_truncated_json(repaired_target)
+            or _repair_truncated_json(target)
+            or (repaired_raw is not None and _repair_truncated_json(repaired_raw))
+            or _repair_truncated_json(raw)
+        )
         if salvaged is not None:
             self._call_state.salvaged = True
             log.warning(
@@ -272,6 +298,7 @@ class LLMClient:
                 self.config.model,
             )
             return salvaged
+
 
         if cut_off:
             raise TruncatedOutputError(
@@ -542,6 +569,137 @@ def _strip_thinking_tags(text: str) -> str:
     return cleaned.strip()
 
 
+def _repair_json_quotes(text: str) -> str:
+    """JSON 텍스트 내에서 값(Value) 문자열 내부의 이스케이프되지 않은 큰따옴표 및 제어문자를 안전하게 복구한다.
+
+    리뷰어 모델(RuleChecker/ReviewFilter)이 message 나 suggestion, reason 에서
+    소스코드나 문자열 리터럴(예: printf("hello"), if (x == "error"))을 인용할 때,
+    내부 큰따옴표가 이스케이프되지 않으면 JSON 디코딩 에러가 발생하거나
+    잘린 응답 복구기가 이를 조기 종료 경계로 오인하여 지적을 잘라먹는 문제가 발생한다.
+
+    이 함수는 키-값 구조와 컨테이너 스택을 추적하여:
+    1. 객체 키(Key)는 그대로 두고,
+    2. 값(Value) 문자열 내부에서 참 닫는 따옴표가 아닌 내부 큰따옴표는 \\" 로 이스케이프하며,
+    3. 문자열 내부의 원시 제어문자(\\n, \\r, \\t)를 이스케이프 시퀀스로 변환한다.
+    4. 토큰 한도로 끝에서 잘린 미완성 문자열의 경우 억지로 닫지 않고 원형을 유지하여
+       _repair_truncated_json 이 미완성 항목을 안전하게 버릴 수 있도록 한다.
+    """
+    try:
+        json.loads(text)
+        return text
+    except Exception:
+        pass
+
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    stack: list[str] = []
+
+    while i < n:
+        char = text[i]
+
+        if char in "{[":
+            stack.append(char)
+            out.append(char)
+            i += 1
+            continue
+        elif char in "}]":
+            if stack:
+                stack.pop()
+            out.append(char)
+            i += 1
+            continue
+        elif char != '"':
+            out.append(char)
+            i += 1
+            continue
+
+        # char == '"'
+        # 스택 상태와 직전 비공백 문자로 Key인지 Value인지 판별
+        prev_non_ws = ""
+        for c in reversed(out):
+            if not c.isspace():
+                prev_non_ws = c
+                break
+
+        current_container = stack[-1] if stack else None
+        is_key = (current_container == "{" and prev_non_ws in "{,")
+
+        if is_key:
+            # 객체 Key는 소스코드 인용이 들어가지 않으므로 일반 문자열로 읽는다
+            out.append(char)
+            i += 1
+            while i < n:
+                c = text[i]
+                if c == "\\" and i + 1 < n:
+                    out.append(c)
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                out.append(c)
+                i += 1
+                if c == '"':
+                    break
+            continue
+
+        # Key가 아닌 큰따옴표는 Value(문자열 값)의 시작이다
+        out.append('"')
+        i += 1
+        val_chars: list[str] = []
+        closed = False
+
+        while i < n:
+            c = text[i]
+            if c == "\\" and i + 1 < n:
+                # 이미 이스케이프된 문자열은 원형 유지
+                val_chars.append(c)
+                val_chars.append(text[i + 1])
+                i += 2
+                continue
+            elif c == '"':
+                # 닫는 따옴표 후보 판정
+                tail = text[i + 1:]
+                m = re.match(r"^\s*([,}\]])", tail)
+                if m:
+                    delimiter = m.group(1)
+                    if delimiter in "}]":
+                        # 객체 또는 배열 닫힘 바로 앞의 큰따옴표는 참 닫는 따옴표
+                        i += 1
+                        closed = True
+                        break
+                    elif delimiter == ",":
+                        after_comma = tail[m.end():]
+                        # 쉼표 뒤에 다음 속성 키("key":) 또는 새 객체({), 새 배열([), 컨테이너 닫힘(}, ])이 오는가?
+                        if re.match(r'^\s*("[a-zA-Z0-9_\-\.]+"\s*:|\{|\[|\]|\})', after_comma):
+                            i += 1
+                            closed = True
+                            break
+                        # 만약 쉼표 뒤에 배열 원소 문자열("val")이 오는 배열 컨테이너 안이라면?
+                        if current_container == "[" and re.match(r'^\s*"', after_comma):
+                            i += 1
+                            closed = True
+                            break
+                # 위 조건에 일치하지 않으면 소스코드 인용 등으로 들어간 내부 큰따옴표이므로 이스케이프
+                val_chars.append('\\"')
+                i += 1
+            else:
+                if c == "\n":
+                    val_chars.append("\\n")
+                elif c == "\r":
+                    val_chars.append("\\r")
+                elif c == "\t":
+                    val_chars.append("\\t")
+                else:
+                    val_chars.append(c)
+                i += 1
+
+        out.append("".join(val_chars))
+        if closed:
+            out.append('"')
+
+    return "".join(out)
+
+
 def _extract_first_json_object(text: str) -> dict[str, Any] | None:
     """텍스트에서 파싱 가능한 첫 JSON 객체를 꺼낸다.
 
@@ -562,11 +720,29 @@ def _extract_first_json_object(text: str) -> dict[str, Any] | None:
     while start >= 0:
         end = _balanced_end(text, start)
         if end is None:
+            # 닫는 괄호를 찾지 못한 경우라도 따옴표 복구 후 다시 시도해본다
+            repaired = _repair_json_quotes(text[start:])
+            sub_end = _balanced_end(repaired, 0)
+            if sub_end is not None:
+                try:
+                    parsed = json.loads(repaired[:sub_end])
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    pass
             return None
+        candidate = text[start:end]
         try:
-            parsed = json.loads(text[start:end])
+            parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            pass
+            try:
+                repaired = _repair_json_quotes(candidate)
+                parsed = json.loads(repaired)
+            except Exception:
+                pass
+            else:
+                if isinstance(parsed, dict):
+                    return parsed
         else:
             if isinstance(parsed, dict):
                 return parsed
@@ -616,6 +792,17 @@ def _repair_truncated_json(text: str) -> dict[str, Any] | None:
     문장이 완성된 지적처럼 보이고, 그것이야말로 이 프로젝트가 막으려는 것이다.
     미완의 마지막 항목은 필수 필드가 빠진 채로 나오므로 호출부가 걸러낸다.
     """
+    # 먼저 따옴표 복구를 적용하여 온전한 앞부분의 지적이 문자열 내 따옴표로 인해 잘려나가는 것을 방지한다
+    repaired_text = _repair_json_quotes(text)
+    res = _repair_truncated_json_raw(repaired_text)
+    if res is not None:
+        return res
+    if repaired_text != text:
+        return _repair_truncated_json_raw(text)
+    return None
+
+
+def _repair_truncated_json_raw(text: str) -> dict[str, Any] | None:
     start = text.find("{")
     if start < 0:
         return None
@@ -663,6 +850,7 @@ def _repair_truncated_json(text: str) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     return None
+
 
 
 def _apply_structured_output(
