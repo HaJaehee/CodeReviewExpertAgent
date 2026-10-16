@@ -1,87 +1,89 @@
 # 동작 원리
 
-이 문서는 CREX 를 고칠 사람을 위한 것입니다. 쓰기만 할 거면 안 읽어도 됩니다.
+이 문서는 CREX의 내부 구조를 이해하거나 코드를 수정하려는 개발자를 위한 아키텍처 문서입니다.
 
-## 전체 흐름
+## 전체 파이프라인 흐름
 
 ```
-git diff
+git diff (또는 scan 대상 파일 목록)
    │
    ▼
-parse_unified_diff()          crex/chunk.py
-   │  FileDiff[] — hunk 별로 라인 상태와 번호를 붙여둔다
+parse_unified_diff()                 crex/chunk.py
+   │  FileDiff[] — hunk별로 라인 상태(added/deleted/unchanged)와 라인 번호 인덱싱
    ▼
-Chunker.chunk_file()          crex/chunk.py
-   │  ① diff/파일 정합성 검사
-   │  ② hunk → 심볼 경계 확장 → 상한 적용
-   │  ③ 겹치는 범위 병합
+Chunker.chunk_file()                 crex/chunk.py + crex/treesitter.py
+   │  ① diff와 디스크 파일 정합성 검증 (_verify_source)
+   │  ② hunk → 심볼(함수/클래스) 경계 확장 → 4배/3배 상한 및 최대 150줄 분할
+   │  ③ Tree-sitter AST 분석: 둘러싼 심볼, 클래스 멤버 필드, 피호출 함수 계약(SymbolContract) 추출
+   │  ④ attach_cross_chunk_context() → 다중 청크·파일 변경 요약 지도(Change Map) 결합
+   ▼
+FlowAnalyzer.enrich()                crex/flow.py
+   │  ⑤ 저장소 내 미수정 인접 파일 심볼 탐색 (최대 40개 파일)
+   │  ⑥ 다단계 호출 그래프(Caller → 변경 함수 → Callee 1~2 hop) 접힌 실행 경로 슬라이스 생성
+   │  ⑦ 결정론적 교차 함수 흐름 위험 신호(Flow Hazards) 탐지 및 주입
    │  ReviewChunk[]
    ▼
-GroundingGate.collect()       crex/ground.py
-   │  분석기 병렬 실행 (기본 6종) → StaticFinding[]
-   │  attach() 로 라인 범위가 맞는 청크에 붙임
+GroundingGate.collect()              crex/ground.py
+   │  정적분석기 병렬 실행 (기본 6종, 전체 8종) → StaticFinding[]
+   │  attach()로 라인 범위가 겹치는 청크에 배정 (변경 라인 지적 우선 정렬)
    ▼
-RuleChecker.review()          crex/generate.py
-   │  청크당 LLM 1회, enum 제약 스키마
+RuleChecker.review()                 crex/generate.py
+   │  청크당 LLM 1회 호출, 컴포넌트별 토큰 예산 배분 및 JSON Schema enum 강제
    │  Finding[]
    ▼
-ReviewFilter.filter()         crex/filter.py
-   │  ① 결정론적 검사 (LLM 없이 기각)
-   │  ② 살아남은 것만 교차 모델 재판정
-   │  Finding[] + FilterVerdict[]
+ReviewFilter.filter()                crex/filter.py
+   │  ① 결정론적 검증 (LLM 호출 없이 범위 밖·미변경 라인·제외 룰·중복 즉시 기각)
+   │  ② 교차 모델 재판정 (±25줄 집중 윈도우 + 창 외부 연관 심볼 정의 스니펫 확장)
+   │  Finding[] (유지) + FilterVerdict[] (기각)
    ▼
-report.write_all()            crex/report.py
+report.write_all()                   crex/report.py
+   │  Markdown / SARIF / JSON / HTML 리포트 출력 (+ .crex/viz.db SQLite 이력 저장)
 ```
 
 ---
 
-## 청킹
+## 청킹 및 교차 흐름 문맥 구성
 
-### 왜 hunk 를 그대로 안 쓰나
+### 왜 diff hunk를 그대로 쓰지 않나
 
-바뀐 세 줄만 보여주면 모델이 맥락을 몰라서 헛소리를 합니다. 함수 시그니처도,
-그 위에서 뭘 했는지도 모르니까요.
+변경된 세 줄만 모델에 보여주면 함수 시그니처나 앞선 변수 초기화 상태를 알 수 없어 모델이 추측에 의존하게 됩니다. 반대로 수천 줄짜리 파일 전체를 통째로 넣으면 소형 모델의 주의력이 분산되어 정밀도가 급격히 떨어집니다([설정 문서](configuration.md#입력-토큰-상한을-왜-8192-로-두나) 참고).
 
-그렇다고 파일 전체를 주면 컨텍스트가 폭발하고 정밀도가 떨어집니다.
-[설정 문서](configuration.md#입력-토큰-상한을-왜-8192-로-두나)에 적은 이유들입니다.
+따라서 인간 리뷰어가 코드를 읽는 단위와 동일하게 **변경된 라인을 감싸는 함수·메서드 경계**까지만 확장합니다.
 
-그래서 함수 경계까지만 넓힙니다. 리뷰어가 실제로 보는 단위도 그것이고요.
+### 확장 상한 및 안전 분할 알고리즘
 
-### 확장 상한 및 안전 분할
+수백 줄짜리 거대 함수를 만났을 때 컨텍스트가 폭주하지 않도록 5단계 방어 장치를 적용합니다.
 
-넓히다 보면 800줄짜리 신(神) 함수를 만납니다. 그래서 상한과 분할 알고리즘을 둡니다.
+1. **배수 기반 절단**: 심볼 경계까지 확장한 길이가 원본 hunk의 4배(`expansion_limit`)를 초과하면 hunk를 중심으로 위아래 대칭이 되도록 3배(`expansion_truncate`) 길이로 잘라냅니다(BitsAI-CR 프로덕션 기준값).
+2. **절대 라인 수 상한 (`absolute_max_lines`, 기본 150줄)**: 배수와 무관하게 단일 청크가 가질 수 있는 최대 라인 수를 제한합니다.
+3. **토큰 예산 연동 자동 상한 (`calculate_safe_max_lines`)**: `generator.max_input_tokens`에서 시스템 프롬프트·룰·AST·정적분석 오버헤드를 제외한 안전 라인 수를 계산하여 설정 불일치 시 자동으로 상한을 낮춥니다(Auto-Clamping).
+4. **병합 상한 검사 (`_merge_ranges`)**: 인접한 여러 hunk를 하나로 합칠 때 합산 줄 수가 상한을 초과하면 병합하지 않고 독립 청크로 유지합니다.
+5. **거대 범위 군집 분할 (`_partition_oversized_range`)**: 단일 hunk 자체가 상한을 넘으면 변경 라인 군집을 기준으로 `±6`줄 문맥을 유지하며 여러 청크로 균등 분할합니다.
 
-1. **배수 기반 절단**: 원본 hunk 의 4배(`expansion_limit`)를 넘으면 3배(`expansion_truncate`)로 잘라냅니다. hunk 를 가운데 두고 위아래 대칭으로 자릅니다.
-2. **절대 상한 (`absolute_max_lines`, 기본 150줄)**: LLM 입력 토큰 예산(8,192 토큰)을 지키기 위한 절대 상한선입니다.
-3. **토큰 기반 자동 상한 계산 (`calculate_safe_max_lines`)**: `generator.max_input_tokens` 기반으로 비코드 오버헤드(시스템, 룰, AST, 정적분석 등 ~3,200토큰)를 제한 뒤 안전한 청크 라인 수를 실시간 계산하여, 설정 불일치 시 자동으로 청크 상한을 하향 조정(Auto-Clamping)합니다.
-4. **병합 상한 검사 (`_merge_ranges`)**: 인접한 여러 hunk 를 병합할 때 합친 크기가 `effective_max_lines` 를 초과하면 병합하지 않고 별도 청크로 분리합니다.
-5. **대형 diff 안전 분할 (`_partition_oversized_range`)**: 거대 함수나 단일 hunk 가 상한을 넘을 경우, 변경 라인 군집을 기준으로 $\pm 6$줄 문맥을 유지하며 상한 이하의 독립 청크들로 자동 분할합니다.
+### 심볼 경계 탐색 (`SymbolLocator`)
 
-이 4배/3배 숫자는 BitsAI-CR 이 프로덕션에서 쓰는 값입니다. 근거가 있는 값이니
-바꾸기 전에 골든셋으로 재보세요.
+`SymbolLocator`는 `tree-sitter` 파서를 우선 사용하고, 패키지가 설치되어 있지 않으면 언어별 휴리스틱 폴백으로 동작합니다.
 
-### 심볼 경계 찾기
+- **Tree-sitter 경로**: 변경 범위를 완전히 감싸는 AST 심볼 노드 중 **가장 작은 노드**(클래스보다 메서드, 메서드보다 람다 우선)를 선택합니다.
+- **휴리스틱 폴백**:
+  - **Python**: 들여쓰기 수준을 추적하여 상위 `def`/`class` 선언부터 블록이 끝나는 지점까지 찾습니다.
+  - **C++ / C#**: 문자열 리터럴과 주석 내부의 중괄호를 제거한 뒤 중괄호 깊이를 추적하여 함수 본문 경계를 찾습니다.
 
-`SymbolLocator` 가 tree-sitter 를 먼저 시도하고, 안 되면 휴리스틱으로 갑니다.
+### 3단계 교차 흐름(Cross-Flow) 문맥 주입
 
-tree-sitter 경로는 대상 범위를 감싸는 노드 중 **가장 작은 것**을 고릅니다.
-클래스보다 메서드가, 메서드보다 람다가 우선입니다. 언어별로 찾는 노드 타입은
-`SymbolLocator._NODE_TYPES` 에 있습니다.
+청크 분할로 인해 함수·파일 경계 너머의 흐름을 놓치는 문제를 해결하기 위해, 추가 LLM 호출 없이 결정론적 정적 분석으로 3가지 교차 문맥을 추출합니다.
 
-휴리스틱은 언어별로 다릅니다.
+1. **Stage 1 — AST 심볼 계약(`SymbolContract`) 및 변경 요약 지도(`Change Map`)**:
+   - `TreeSitterAnalyzer.extract_file_symbols()`가 파일 내 모든 함수·클래스의 시그니처, 반환 표현식(`returns`), 예외(`throws`), 자원/락 연산(`resource_ops`), 클래스 멤버 필드(`member_fields`), 정의 스니펫(`symbol_definitions`)을 추출합니다.
+   - `attach_cross_chunk_context()`가 이번 리뷰에서 함께 수정된 다른 청크·파일들의 1줄 변경 요약 지도(`Change Map`)와 교차 파일 피호출 계약을 각 청크에 부착합니다.
+2. **Stage 2 — 검증기 창 외부 심볼 정의 확장 (`ReviewFilter._resolve_related_context`)**:
+   - 검증 모델이 지적 라인 주변 `±25`줄 윈도우만 볼 때 창 바깥(다른 함수나 다른 파일)에 정의된 피호출 함수의 계약을 확인하지 못해 정당한 교차 함수 지적을 기각하거나 오탐을 통과시키는 문제를 막기 위해, 관련도 점수가 높은 상위 최대 3개의 창 외부 심볼 정의 스니펫을 검증 프롬프트에 함께 첨부합니다.
+3. **Stage 3 — 호출 그래프 실행 경로 슬라이싱 및 흐름 위험 신호 (`FlowAnalyzer`)**:
+   - `crex/flow.py`의 `FlowAnalyzer`가 diff에 포함되지 않은 저장소 내 미수정 인접 파일(최대 40개)까지 탐색해 미해결 피호출 함수(Callee)와 변경된 함수를 호출하는 상위 호출부(Caller)를 찾습니다.
+   - `Caller → 변경 함수 → Callee (1~2 hop)` 호출 체인을 구성하고, 중간 일반 대입문은 `// ... (중간 생략)`으로 접고 분기·자원/락·호출·반환/예외문만 남긴 실행 경로 슬라이스를 생성합니다.
+   - 널/오류 반환 미검사 역참조, 예외 전파 시 선행 자원/락 누수, 중첩 락 호출, 상위 호출부 계약 불일치를 대조하여 `- 교차 함수 흐름 위험 신호(Flow Hazards):`로 주입합니다.
 
-- **Python** — 인덴트를 추적합니다. 위로 올라가며 대상보다 얕은 `def`/`class` 를
-  찾고, 아래로 인덴트가 그 수준 이하로 돌아올 때까지가 블록입니다.
-- **C++/C#** — 중괄호 깊이를 셉니다. 문자열 리터럴과 `//` 주석 안의 중괄호는
-  제거하고 셉니다. 시그니처가 여러 줄에 걸친 경우를 위해 여는 괄호 위쪽으로도
-  좀 더 올라갑니다.
-
-휴리스틱이 실패하면 `None` 을 돌려주고, 그러면 hunk 위아래로 6줄만 붙입니다.
-전처리기 조건부 안에서 괄호가 불균형한 C++ 이 대표적인 실패 사례입니다.
-
-### 라인 상태 주석
-
-이게 청킹의 핵심 산출물입니다.
+### 라인 상태 주석 (`DiffLine.annotate`)
 
 ```
 [unchanged @14]   void Grow(size_t extra) {
@@ -92,262 +94,128 @@ tree-sitter 경로는 대상 범위를 감싸는 노드 중 **가장 작은 것*
 [unchanged @18]   }
 ```
 
-모델이 "이게 몇 번째 줄이더라"를 세지 않아도 됩니다. 읽으면 바로 나옵니다.
-라인 번호 환각의 상당수가 여기서 사라집니다.
+모든 코드 줄 앞에 변경 상태와 실제 라인 번호를 명시하여 모델이 줄 번호를 직접 세거나 추론할 필요를 없앱니다.
 
-삭제된 줄은 신 파일에 위치가 없으므로, 원래 있던 자리(다음 유지 라인 앞)에
-끼워 넣고 구 파일 기준 번호를 붙입니다.
+### 소스 정합성 검증 (`_verify_source`)
 
-### 정합성 검사
-
-`_verify_source()` 가 diff 가 주장하는 라인 내용과 실제 파일을 대조합니다.
-하나라도 어긋나면 기본적으로 `DiffSourceMismatch` 를 던지고 그 파일을 건너뜁니다.
-
-이 검사가 왜 필요한지는 개발 중에 직접 겪었습니다. 손으로 쓴 테스트 fixture 의
-hunk 헤더가 한 줄 어긋나 있었는데, 청커는 아무 불평 없이 라인 번호가 전부 밀린
-청크를 만들어냈습니다. 실제 운영에서 이런 일이 생기면 존재하지 않는 줄을
-자신 있게 지적하게 됩니다. 라인 주석 체계의 존재 이유를 정면으로 무너뜨리는
-실패 모드라서 기본값을 예외로 잡았습니다.
+diff가 기술하는 줄 내용과 디스크의 실제 파일 줄 내용을 대조합니다. 한 줄이라도 어긋나면 기본적으로 `DiffSourceMismatch` 예외를 발생시키고 해당 파일을 건너뛰어, 밀린 라인 번호로 인해 엉뚱한 줄을 지적하는 사고를 원천 방지합니다.
 
 ---
 
-## 그라운딩
+## 정적분석 그라운딩 (`crex/ground.py`)
 
-분석기는 `Analyzer` 추상 클래스를 구현합니다. `build_command()` 와 `parse()`
-두 개만 채우면 됩니다.
+모든 정적분석 어댑터는 `Analyzer` 추상 클래스를 상속하며 `build_command()`와 `parse()` 두 메서드만 구현합니다.
 
-```python
-class Cppcheck(Analyzer):
-    name = "cppcheck"
-    executable = "cppcheck"
-    languages = (Language.CPP,)
-
-    def build_command(self, paths): ...
-    def parse(self, stdout, stderr): ...
-```
-
-`available()` 은 `shutil.which()` 로 확인하고, 없으면 `AnalyzerResult(skipped=True)`
-를 돌려줍니다. 타임아웃, `OSError`, 파서 예외도 전부 skipped 로 흡수합니다.
-분석기 하나 때문에 리뷰가 멈추면 안 되니까요.
-
-출력 파싱은 두 정규식이 대부분을 처리합니다.
-
-- `_GNU_STYLE` — `path:line:col: severity: message [rule]` (clang-tidy, cppcheck, mypy)
-- `_MSBUILD_STYLE` — `path(line,col): severity CODE: message` (dotnet build, roslynator)
-
-JSON 을 내는 도구(ruff, bandit, semgrep)는 각자 파서를 씁니다.
-
-`note` 레벨은 버립니다. 직전 경고의 부연이라서 그대로 두면 같은 결함이 두 번
-지적됩니다.
-
-`attach()` 는 경로를 접미사 매칭합니다. 분석기마다 절대경로와 상대경로를 섞어
-내보내기 때문입니다.
-
-### 프롬프트에서의 역할
-
-정적분석 결과는 프롬프트에 이렇게 들어갑니다.
-
-```
-## 정적분석 도구 결과
-- [cppcheck:invalidPointer] src/buffer.cpp:17 — Dereferencing pointer that may be invalid
-```
-
-그리고 시스템 프롬프트가 모델의 역할을 재정의합니다.
-
-> 당신의 역할은 결함을 처음부터 찾는 것이 아니다.
-> 1. 도구가 보고한 항목이 실제로 문제인지 코드를 보고 판단한다.
-> 2. 도구가 구조적으로 잡을 수 없는 것만 추가로 지적한다.
-
-"찾아라"에서 "검증하고 보완하라"로 바꾸는 것만으로 근거 없는 지적이 줄어듭니다.
+- 실행 파일이 `PATH`에 없거나 타임아웃·`OSError`·파싱 오류가 발생하면 모두 `AnalyzerResult(skipped=True)`로 안전하게 흡수하여 분석기 하나 때문에 전체 파이프라인이 중단되지 않도록 보장합니다.
+- 수집된 `StaticFinding`은 `GroundingGate.attach()`를 통해 파일 경로 접미사와 라인 범위가 일치하는 청크에 배정되며, 실제 변경된 라인(`changed_linenos`)에 해당하는 지적이 우선적으로 프롬프트에 실립니다.
 
 ---
 
-## 생성
+## 지적 생성 (`crex/generate.py`)
 
-### enum 제약이 핵심
+### JSON Schema `enum` 제약
 
-`build_findings_schema()` 가 만드는 스키마를 보세요.
+`build_findings_schema()`가 청크마다 동적으로 생성하는 스키마는 다음과 같습니다.
 
 ```python
 {
-  "line": {"type": "integer", "enum": [8, 10]},        # 이 청크의 변경 라인만
-  "rule_id": {"type": "string", "enum": ["cpp.use-after-move", ...]},
+  "line": {"type": "integer", "enum": [15, 16, 17]},   # 이 청크에서 실제 added된 라인만 허용
+  "rule_id": {"type": "string", "enum": ["cpp.dangling-after-realloc", ...]},
   "severity": {"type": "string", "enum": ["high", "medium", "low"]},
   ...
 }
 ```
 
-guided decoding 은 스키마를 어기는 토큰을 마스킹합니다. 모델이 라인 11을 내고
-싶어도 **그 토큰을 생성할 수 없습니다.** 존재하지 않는 룰 ID 도 마찬가지입니다.
+vLLM의 Guided Decoding은 스키마에 어긋나는 토큰의 생성 확률을 마스킹합니다. 따라서 모델이 변경되지 않은 14번 줄이나 존재하지 않는 룰 ID를 출력하는 것 자체가 불가능해집니다.
 
-보통 구조화 출력은 "JSON 파싱 실패를 없앤다"는 용도로 쓰이는데, 여기서는
-환각 자체를 봉쇄하는 데 씁니다. 사후 필터링이 아니라 생성 단계 차단입니다.
+### 심각도 상한 클램핑 (`_severity_of`)
 
-`maxItems` 로 청크당 지적 수도 제한합니다.
-
-### 에이전트 루프를 안 쓰는 이유
-
-OCR 같은 도구는 모델에게 `file_read`, `code_search` 같은 툴을 주고 자율 탐색을
-시킵니다. 큰 모델에서는 잘 됩니다.
-
-25~40B 급에서는 툴콜 실패와 컨텍스트 폭주가 함께 옵니다. 모델이 파일을 열고,
-검색하고, 또 열다가 컨텍스트를 다 쓰고, 그 상태에서 지적을 만듭니다.
-어디서 뭐가 잘못됐는지 추적하기도 어렵습니다.
-
-CREX 는 고정 단계로 갑니다. 청크 하나, 프롬프트 하나, 지적 목록 하나.
-느리지만 예측 가능하고 디버깅이 됩니다.
-
-### 심각도 상한
-
-`_severity_of()` 를 보세요. 모델이 보고한 심각도를 택소노미 값의 상한 안에서만
-받습니다. 룰이 `medium` 인데 모델이 `high` 라면 `medium` 이 됩니다.
-
-안 그러면 모델이 자기가 찾은 걸 전부 `high` 로 올립니다. 그러면 우선순위가
-의미를 잃습니다.
+모델이 자신이 찾은 지적의 심각도를 과장하지 못하도록, 각 룰의 택소노미 정의 `severity`를 상한선으로 적용합니다.
 
 ---
 
-## 검증
+## 교차 검증 필터 (`crex/filter.py`)
 
-### 두 겹
+### 2단계 필터링
 
-**결정론적 검사** (`_check_deterministic`) 가 먼저입니다. LLM 을 부르지 않습니다.
+1. **결정론적 검증 (`_check_deterministic`)**: LLM 호출 없이 즉시 검사합니다.
+   - 제외 규칙(`.crexignore` / `exclude_rules`)에 해당하는 룰 → `RULE_EXCLUDED`
+   - 지적이 속한 청크가 없거나 청크 라인 범위를 벗어남 → `LINE_OUT_OF_RANGE`
+   - `require_changed_line=True`일 때 변경되지 않은 라인을 지적함 → `LINE_NOT_CHANGED`
+   - 동일 파일·라인·룰 중복 지적 → `DUPLICATE`
+2. **교차 모델 재판정 (`_verify_llm`)**: 결정론적 검사를 통과한 지적만 별도 검증 모델로 보냅니다. 지적 라인 주변 `±25`줄 집중 윈도우와 창 외부 연관 심볼 정의(`_resolve_related_context`)를 함께 제공하여, 생성 모델의 프롬프트 분위기에 휩쓸리지 않고 객관적으로 타당성을 재판정합니다.
 
-- 지적이 속한 청크를 못 찾음 → `LINE_OUT_OF_RANGE`
-- 라인이 청크 범위 밖 → `LINE_OUT_OF_RANGE`
-- 라인이 변경되지 않은 줄 → `LINE_NOT_CHANGED`
-- 같은 라인·같은 룰 중복 → `DUPLICATE`
+### Conclusion-First 스키마
 
-공짜이고 100% 확실합니다. guided decoding 이 걸려 있으면 여기서 걸릴 일이
-거의 없지만, 구버전 vLLM 이나 구조화 출력이 안 되는 환경을 위해 남겨둡니다.
-두 겹으로 막는 겁니다.
-
-**LLM 재판정** 은 살아남은 것만 받습니다. 검증 프롬프트에는 **지적과 해당 라인 주변의 국소 문맥 윈도우(`render_window`, ±25줄)**만
-넣습니다. 원본 리뷰의 문맥이나 다른 지적은 주지 않으며, 4,096 토큰 상한 내에 30% 수준으로 안착시켜 코드가 잘려 정상 지적이 기각되는 것을 원천 차단합니다. 생성 때의 맥락을
-그대로 주면 검증자가 그 맥락에 끌려갑니다.
-
-### Conclusion-First
-
-응답 스키마의 프로퍼티 순서가 곧 생성 순서입니다.
+검증 스키마의 프로퍼티 순서는 생성 순서와 직결됩니다.
 
 ```python
 VERDICT_SCHEMA = {
     "properties": {
-        "verdict": {...},        # ← 먼저
+        "verdict": {...},        # ← 결론(yes/no)을 가장 먼저 생성
         "code_present": {...},
-        "reason": {...},         # ← 나중
+        "reason": {...},         # ← 판정 사유와 코멘트는 뒤에 생성
     },
 }
 ```
 
-결론 토큰을 먼저 뽑고 근거를 뒤에 붙입니다. BitsAI-CR 이 Reasoning-First(근거
-먼저)와 비교한 뒤 프로덕션에 채택한 형태입니다. 정밀도 77.09%, 샘플당 1.7초.
+결론 토큰(`verdict`)을 먼저 출력하게 하고 근거(`reason`)를 뒤에 붙이는 방식(BitsAI-CR의 Conclusion-First 구조)으로 지연 시간과 정밀도를 동시에 확보합니다.
 
-**순서를 바꾸면 지연시간과 정확도가 함께 나빠집니다.** 스키마를 손볼 일이 있으면
-이 순서를 유지하세요.
-
-### code_present 가 verdict 보다 강하다
-
-```python
-if not response.get("code_present", True):
-    return FilterVerdict(finding, False, ..., RejectReason.CODE_NOT_FOUND)
-if response.get("verdict") != "yes":
-    return FilterVerdict(finding, False, ..., RejectReason.VERDICT_NO)
-```
-
-검증자가 `verdict: "yes"` 를 냈더라도 `code_present: false` 면 기각합니다.
-"지적이 묘사하는 코드가 스니펫에 없습니다"는 건 명백한 환각 신호이고, 그 상황에서
-`yes` 가 나왔다는 건 검증자도 흔들렸다는 뜻입니다.
-
-### 실패는 기각
-
-검증 호출이 실패하면 통과시키지 않고 기각합니다(`FILTER_ERROR`).
-정밀도가 우선이라는 원칙을 여기서도 지킵니다. 검증 엔드포인트가 죽으면
-리뷰 결과가 비게 되는데, 그게 근거 없는 지적이 나가는 것보다 낫습니다.
-
-로그의 기각률 한 줄로 바로 알아챌 수 있습니다.
+또한 검증 모델이 `verdict: "yes"`를 반환하더라도 `code_present: false`("지적이 설명하는 코드가 스니펫에 존재하지 않음")이면 즉시 `CODE_NOT_FOUND`로 기각합니다. 검증 API 호출 자체가 실패한 경우에도 보수적으로 기각(`FILTER_ERROR`)하여 검증되지 않은 지적이 리포트에 섞이지 않도록 방어합니다.
 
 ---
 
-## MCP 계층 분리
+## MCP 계층 분리 (`crex/service.py` / `crex/mcp.py`)
 
-`crex/service.py` 와 `crex/mcp.py` 가 나뉜 이유가 있습니다.
+- `crex/service.py` (`ReviewService`): 7종 MCP 도구의 실제 비즈니스 로직을 모두 담고 있으며 **`fastmcp`를 임포트하지 않습니다.**
+- `crex/mcp.py`: `FastMCP` 데코레이터 바인딩과 전송 계층(`stdio` / `Streamable HTTP`)만 담당합니다.
 
-- `service.py` — `ReviewService`. MCP 도구 7종의 실제 동작이 전부 여기 있습니다.
-  **FastMCP 를 import 하지 않습니다.**
-- `mcp.py` — FastMCP 바인딩만. 타입 힌트와 docstring 에서 도구 스키마가
-  자동 생성되므로 실질적인 코드가 거의 없습니다.
-
-이렇게 두면 FastMCP 없이도 리뷰 로직 전체를 테스트할 수 있습니다. 폐쇄망 반입
-직후 무결성 확인이 pip install 을 전제하면 곤란하다는 게 핵심 이유입니다.
-MCP 사양이 바뀌어도 `mcp.py` 만 고치면 됩니다.
-
-`ReviewRequestError` 는 "사용자가 고칠 수 있는 오류"를 뜻합니다. `mcp.py` 가
-이것만 `ToolError` 로 올려서 에이전트가 사용자에게 그대로 전달하게 하고,
-나머지 예외는 로그를 남긴 뒤 일반 실패로 감쌉니다.
+이 분리 덕분에 `fastmcp`가 설치되지 않은 순수 표준 라이브러리 환경에서도 `ReviewService`의 모든 동작을 100% 단위 테스트할 수 있습니다.
 
 ---
 
-## 왜 외부 의존이 최소인가
+## 왜 외부 의존성을 최소화했나
 
-폐쇄망에 wheel 하나 반입하는 게 생각보다 큰 일입니다. 보안 검토를 받아야 하고,
-의존성의 의존성까지 따라가야 하고, 버전이 바뀔 때마다 반복해야 합니다.
+폐쇄망 환경에서는 외부 패키지 하나를 반입할 때마다 하위 의존성 전체의 보안 심사와 해시 검증을 거쳐야 합니다. 따라서 CREX 코어는 Python 3.11+ 표준 라이브러리만으로 완결되도록 설계했습니다.
 
-그래서 코어는 stdlib 만 씁니다. FastMCP 는 MCP 사양이 계속 움직이는 표적이라
-직접 구현하면 유지보수가 계속 붙어서 예외로 뒀고, GitPython 은 폴백을 남겨
-필수가 아니게 했습니다.
-
-- HTTP: `urllib.request` (httpx/requests 대신)
-- 데이터 모델: `dataclasses` (pydantic 대신)
-- 설정: `json` (stdlib) — 주석은 `//` 키, 여러 줄 글은 문자열 배열
-- 룰 택소노미: `tomllib` (3.11+ stdlib)
-- 병렬: `concurrent.futures.ThreadPoolExecutor`
-- 테스트: 자체 러너 (pytest 대신)
-
-tree-sitter 만 선택 의존성이고, 없으면 휴리스틱으로 갑니다.
-
-토크나이저도 안 씁니다. `estimate_tokens()` 가 문자 수를 3으로 나누는 개산입니다.
-코드는 산문보다 토큰 밀도가 높아서 보수적으로 잡았습니다. 정확한 토크나이저를
-쓰려면 transformers 를 반입해야 하는데, 그럴 만한 가치가 없습니다 —
-예산을 8192 로 잡고 개산이 20% 틀려도 실제로는 6500~10000 사이이고,
-32K 컨텍스트에서는 아무 문제가 없습니다.
+- HTTP 클라이언트: `urllib.request`
+- 데이터 모델: `dataclasses`
+- 설정 파일 파서: `json` (`//` 주석 키 및 다중 줄 배열 지원)
+- 룰 택소노미 파서: `tomllib`
+- 관제 화면 영구 저장소: `sqlite3` (`.crex/viz.db`)
+- 관제 화면 웹 서버: `http.server.ThreadingHTTPServer` (`uvicorn` 선택 지원)
+- 병렬 실행: `concurrent.futures.ThreadPoolExecutor`
+- 테스트 프레임워크: 자체 경량 러너 (`tests/run_all.py`)
 
 ---
 
-## 테스트
+## 테스트 스위트 구조
 
 ```bash
 python tests/run_all.py
 ```
 
-| 파일 | 다루는 것 |
+| 테스트 모듈 | 검증 영역 |
 |---|---|
-| `test_chunk.py` | diff 파싱, 심볼 확장, 라인 주석, 정합성 검사 |
-| `test_filter.py` | 결정론적 기각, LLM 판정, 보수적 실패 처리 |
-| `test_ground.py` | 분석기 출력 파서, 설정별 활성화 |
-| `test_pipeline.py` | 종단 — 실제 git 저장소 + 가짜 vLLM |
-| `test_eval.py` | KBI/FAR 계산 |
-
-`tests/fake_vllm.py` 가 `ThreadingHTTPServer` 로 `/v1/chat/completions` 를 흉내냅니다.
-LLM 없이 HTTP 경로까지 실제로 태울 수 있습니다.
-
-guided decoding 을 흉내내지는 않지만, **요청된 스키마의 enum 을 실제로 검사해서**
-위반이 있으면 기록합니다. 스키마 제약이 의도대로 구성되는지를 검증하는 겁니다.
-
-파이프라인 테스트는 임시 디렉터리에 git 저장소를 만들고 실제 `git diff` 를
-뽑습니다. 손으로 쓴 diff 는 개발 중에 두 번이나 틀렸기 때문에 쓰지 않습니다.
+| `test_chunk.py` | diff 파싱, 심볼 경계 확장, 거대 청크 분할, 라인 주석, 파일 정합성 검증 |
+| `test_proactive_review.py` | Tree-sitter AST 계약, 교차 청크 Change Map, 검증기 문맥 확장, 호출 그래프 슬라이싱 및 흐름 위험 신호 |
+| `test_filter.py` | 결정론적 기각, 교차 모델 판정, 보수적 오류 기각 |
+| `test_ground.py` | 8종 정적분석기 출력 파서 및 설정별 활성화 규칙 |
+| `test_pipeline.py` | 실제 임시 Git 저장소 + 모의 vLLM(`fake_vllm.py`) 전 구간 통합 검증 |
+| `test_viz.py` | 관제 화면 이벤트 추적, SQLite DB 영속성, `.crexignore` API, HTTP/ASGI 서버 |
+| `test_cli.py` | CLI 인자 우선순위, CP949 콘솔 인코딩, 합쇼체 문장 규칙, PowerShell BOM 검증 |
+| `test_config.py` | JSON 설정 주석 키 제거, 배열 줄바꿈 병합, 오타 검증 |
+| `test_workspace.py` | 워크스페이스 해석 우선순위, 런타임 전환, `crex.json` 고정 |
+| `test_compiledb.py` | CMake/MSBuild 컴파일 DB 생성 및 로거 연동 |
+| `test_docs.py` | 사용 설명서 마크다운→HTML 렌더러, GitHub 슬러그 호환성, 내부 앵커 링크 무결성 |
+| `test_eval.py` | 골든셋 KBI / FAR / 룰별 정밀도 산출 |
 
 ---
 
-## 손대기 전에 알아둘 것
+## 코드 수정 시 반드시 지켜야 할 불변식
 
-**스키마의 프로퍼티 순서** — 검증 스키마에서 `verdict` 를 맨 앞에서 옮기지 마세요.
-
-**`RejectReason` 은 늘리기만 하세요** — 기각 사유는 필터 튜닝의 근거 데이터입니다.
-기존 값의 의미를 바꾸면 과거 리포트와 비교가 안 됩니다.
-
-**룰 ID** — [룰 작성법](writing-rules.md#id-는-절대-바꾸지-마세요)에 적은
-그대로입니다.
-
-**`Finding` 에 필드를 추가할 때** — `to_dict()`/`from_dict()` 를 함께 고치세요.
-평가 하네스가 이 형식으로 JSONL 을 읽습니다.
+1. **검증 스키마 프로퍼티 순서**: `VERDICT_SCHEMA`에서 `verdict`를 항상 첫 번째 프로퍼티로 유지하십시오.
+2. **`RejectReason` 열거형 하위 호환성**: 새로운 기각 사유를 추가할 수는 있지만 기존 값의 이름을 바꾸지 마십시오(과거 평가 리포트와의 비교 호환성 유지).
+3. **룰 ID 불변성**: [룰 작성법](writing-rules.md#id-는-절대-바꾸지-마세요)에 설명된 대로 기존 룰 ID는 변경하지 마십시오.
+4. **사용자 대면 문자열 존댓말 규칙**: `crex/` 및 `crex/viz/web/` 내 사용자에게 노출되는 런타임 한국어 문자열은 합쇼체/해요체 규칙을 지켜야 합니다(`test_cli.py::test_user_facing_text_is_written_in_polite_form`이 자동 검사합니다).
+5. **한글 PowerShell 스크립트 UTF-8 BOM 유지**: 한글이 포함된 `.ps1` 파일은 반드시 UTF-8 BOM(`EF BB BF`)을 유지해야 합니다(`test_cli.py::test_powershell_scripts_carry_a_bom`이 자동 검사합니다).

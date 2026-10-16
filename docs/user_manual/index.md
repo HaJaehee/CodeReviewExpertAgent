@@ -1,54 +1,45 @@
 # CREX 사용 설명서
 
-폐쇄망에 있는 25~40B급 로컬 모델로 C++/C#/Python 코드를 리뷰하는 도구입니다.
+폐쇄망 환경의 25~40B 규모 로컬 모델로 C++, C#, Python 코드를 리뷰하는 도구입니다.
 
-처음이라면 [시작하기](getting-started.md)부터 보세요. 설치하고 첫 리뷰를 돌려서
-결과를 읽는 데까지 30분이면 됩니다.
+처음 사용하신다면 [시작하기](getting-started.md)부터 읽어 보십시오. 설치부터 첫 리뷰를 실행하고 결과를 확인하는 데까지 30분이면 충분합니다.
 
-Zed 을 쓴다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어떤 말이 어떤 도구를
-부르는지, 지적을 받았을 때 뭘 하는지를 다룹니다.
+Zed 에디터를 사용하신다면 [워크플로](workflow.md)가 주 사용 문서입니다. 어떤 요청이 어떤 도구를 호출하는지, 리뷰 지적을 받았을 때 어떻게 대응해야 하는지를 다룹니다.
 
-| 문서 | 언제 보나 |
+| 문서 | 다루는 내용 |
 |---|---|
-| [시작하기](getting-started.md) | 설치, 첫 실행, 결과 읽는 법 |
-| [워크플로](workflow.md) | Zed 에서 리뷰 부르기, 지적 받았을 때 |
-| [설정](configuration.md) | `crex.json` 의 모든 항목과 손대야 할 때 |
-| [리뷰 대상 제외](crexignore.md) | `.crexignore` 로 파일 및 룰 제외하기 |
-| [정적분석 도구](analyzers.md) | clang-tidy·cppcheck·ruff 설치, 라이선스, 반입 |
-| [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 룰을 추가하려면 |
-| [평가와 튜닝](evaluation.md) | 골든셋 만들기, KBI/FAR 해석, 룰 폐기 |
-| [관제 화면](visualizer.md) | 두 모델의 프롬프트·응답·판정을 웹에서 지켜보기 |
-| [반입](transfer.md) | Python 런타임까지 담은 번들 만들기·검증 |
-| [운영](operations.md) | vLLM 기동, Zed 연동, 일상 운영 |
-| [문제 해결](troubleshooting.md) | 증상별 원인과 조치 |
-| [동작 원리](internals.md) | 내부 구조와 설계 의도 |
+| [시작하기](getting-started.md) | 설치, 첫 실행, 리포트 읽는 법 |
+| [워크플로](workflow.md) | Zed에서 리뷰 호출하기, 지적 사항 대응 절차 |
+| [설정](configuration.md) | `crex.json`의 모든 설정 항목과 조정 기준 |
+| [리뷰 대상 제외](crexignore.md) | `.crexignore`로 파일 및 룰 제외하기 |
+| [정적분석 도구](analyzers.md) | `clang-tidy`·`cppcheck`·`ruff` 설치, 라이선스, 반입 절차 |
+| [룰 작성법](writing-rules.md) | 오탐을 늘리지 않고 새 룰을 추가하는 방법 |
+| [평가와 튜닝](evaluation.md) | 골든셋 구축, KBI/FAR 지표 해석, 저품질 룰 폐기 |
+| [관제 화면](visualizer.md) | 생성·검증 모델의 프롬프트, 응답, 판정 내역을 웹에서 확인 |
+| [반입](transfer.md) | Python 런타임까지 포함한 오프라인 번들 생성 및 검증 |
+| [운영](operations.md) | vLLM 서버 기동, Zed 연동, 일상 운영 가이드 |
+| [문제 해결](troubleshooting.md) | 자주 발생하는 증상별 원인과 해결 방법 |
+| [동작 원리](internals.md) | 파이프라인 내부 구조와 설계 의도 |
 
 ## 30초 요약
 
 ```bash
-cp crex.example.json crex.json  # 엔드포인트 주소만 고치면 됩니다
-python -m crex doctor           # 무엇이 되고 무엇이 안 되는지 확인
-python -m crex review --staged  # 스테이징된 변경 리뷰
+cp crex.example.json crex.json  # 엔드포인트 주소와 모델명만 수정하면 됩니다
+python -m crex doctor           # 연결 및 분석기 동작 상태 확인
+python -m crex review --staged  # 스테이징된 변경 사항 리뷰
 ```
 
-리뷰 결과는 기본적으로 stdout 에 마크다운으로 나옵니다. 파일로 받으려면
-`--out reports/` 를 붙이세요. 마크다운, SARIF, JSON 세 가지가 함께 나옵니다.
+리뷰 결과는 기본적으로 표준 출력(`stdout`)에 마크다운 형식으로 출력됩니다. 파일로 저장하려면 `--out reports/` 옵션을 붙이십시오. 마크다운, SARIF, JSON, HTML 네 가지 형식이 함께 생성됩니다.
 
-CREX 를 리뷰 대상 저장소 안에 둘 필요는 없습니다. 설치본은 한 자리에 두고
-`--workspace` 로 대상만 가리킵니다 —
-[시작하기](getting-started.md#crex-는-어디에-두나) 참고.
+CREX를 리뷰 대상 저장소 안에 설치할 필요는 없습니다. 설치본은 한곳에 두고 `--workspace` 옵션으로 대상 저장소만 지정하면 됩니다 — 자세한 내용은 [시작하기](getting-started.md#crex-는-어디에-두나)를 참고하십시오.
 
 ```bash
 python -m crex review --workspace D:\work\myrepo --staged
 ```
 
-Zed 을 쓴다면 에이전트 패널에서 바로 부를 수도 있습니다 —
-[운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 보세요. 여러 사람이 서버 하나를
-같이 쓰거나 클라이언트가 다른 장비에 있다면 `python -m crex.mcp --transport http` 로
-[Streamable HTTP 엔드포인트](operations.md#streamable-http-엔드포인트)를 엽니다.
+Zed 에디터를 사용하신다면 에이전트 패널에서 바로 리뷰를 요청할 수도 있습니다 — [운영 문서의 Zed 연동](operations.md#zed-연동-mcp)을 참고하십시오. 여러 개발자가 서버 한 대를 공유하거나 클라이언트가 다른 장비에 있다면 `python -m crex.mcp --transport http` 명령으로 [Streamable HTTP 엔드포인트](operations.md#streamable-http-엔드포인트)를 열 수 있습니다.
 
-리뷰가 왜 그런 결과를 냈는지 들여다보려면 [관제 화면](visualizer.md)을 띄우세요.
-두 모델이 주고받은 프롬프트와 응답이 그대로 보입니다.
+리뷰 결과가 나온 과정과 근거를 상세히 살펴보려면 [관제 화면](visualizer.md)을 실행하십시오. 생성·검증 모델이 주고받은 프롬프트와 응답 원문을 그대로 확인할 수 있습니다.
 
 ```bash
 python -m crex.viz               # http://127.0.0.1:18765
@@ -56,12 +47,8 @@ python -m crex.viz               # http://127.0.0.1:18765
 
 ## 이 도구가 하지 않는 것
 
-코드를 고쳐주지 않습니다. 지적만 하고 수정안을 제시할 뿐, 파일을 건드리지 않습니다.
+코드를 직접 수정하지 않습니다. 결함을 지적하고 수정 예시 코드(`suggestion`)를 제시할 뿐, 작업 트리의 파일을 변경하지는 않습니다.
 
-전체 저장소를 이해하지 못합니다. 리뷰 단위는 변경된 함수 하나이고, 그 밖의
-파일은 보지 않습니다. "이 함수를 호출하는 쪽에서 널을 넘길 수 있다" 같은 지적은
-원리적으로 나오지 않습니다. 이건 한계이자 의도입니다 — 소형 모델에게 저장소
-전체를 뒤지게 하면 정확도가 무너집니다.
+저장소 전체를 무제한으로 탐색하지 않습니다. 기본 리뷰 단위는 변경된 함수(청크)이며, 여기에 Tree-sitter AST 심볼 계약·변경 요약 지도(Change Map)·인접 파일 호출 그래프 슬라이스(Call-Graph Flow)를 결합해 교차 함수 결함을 점검합니다. 소형 모델에게 저장소 전체를 자율 탐색하게 하면 컨텍스트가 폭주하고 정확도가 급격히 떨어지기 때문에, 검증된 정적 문맥만 선별하여 주입합니다.
 
-스타일을 지적하지 않습니다. 들여쓰기, 명명 규칙, 주석 유무 같은 건 포매터와
-린터가 할 일입니다. 여기서는 동작에 영향을 주는 결함만 봅니다.
+코딩 스타일은 지적하지 않습니다. 들여쓰기, 명명 규칙, 주석 유무 같은 스타일 검사는 포매터와 린터의 역할입니다. CREX는 실행 동작과 안전성에 영향을 주는 실제 결함에 집중합니다.
