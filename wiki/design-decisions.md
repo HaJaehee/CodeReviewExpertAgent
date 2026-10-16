@@ -407,6 +407,19 @@ Users can add or cancel `.crexignore` rules directly from code review findings i
 
 ---
 
+## Cross-Flow Review Stage 2: Context-expanded verifier with out-of-window symbol resolution
+
+`ReviewFilter._resolve_related_context()` (`crex/filter.py`) attaches out-of-window callee and class definitions to `VERIFIER_USER` when evaluating findings that span across functions or files.
+
+**Why.** `ReviewFilter._verify_llm()` uses a focused `±25`-line window (`chunk.render_window(finding.line, window=25)`) to fit within the verifier's 4,096 input token budget. Once Stage 1 enables `RuleChecker` to flag cross-function contract violations (e.g., dereferencing a nullable return from `acquire_slot()` defined at `L1-L4` while the call site is at `L80`), a verifier that sees only `L55-L105` cannot inspect `acquire_slot()`'s body. It must either reject valid cross-function defects for lack of evidence or rubber-stamp hallucinated claims when the callee is actually safe.
+
+**Implementation.**
+1. **Unified symbol pool**: `ReviewFilter` aggregates `symbol_definitions` across all `ReviewChunk`s in the run.
+2. **Relevance scoring & in-window deduplication**: For each candidate finding, `_resolve_related_context()` scores symbol definitions by proximity to `finding.line` (`±2` lines: +4), explicit mention in `finding.message` / `finding.suggestion` (+3), presence in `chunk.calls` (+2), and enclosing symbol match (+1). Any definition whose lines already fall inside `[finding.line - 25, finding.line + 25]` of the same file is skipped to avoid duplication.
+3. **Bounded injection & budget guard**: Up to 3 top-ranked out-of-window symbol snippets are injected under `## 연관 심볼 및 피호출 함수 정의 (창 외부 문맥)`. If the combined prompt exceeds `verifier.max_input_tokens`, the auxiliary block is automatically dropped so the core `±25`-line code window is never truncated.
+
+---
+
 ## Research sources
 
 | Source | Used for |

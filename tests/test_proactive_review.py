@@ -233,6 +233,81 @@ def handle_request(req_token: str):
     _check("fetch_session" in c2.symbol_definitions, "교차 파일 심볼 정의가 c2.symbol_definitions 에 없음")
 
 
+def test_stage2_verifier_context_expansion() -> None:
+    """2단계: 검증기(ReviewFilter)가 ±25줄 창 바깥의 피호출 함수 정의를 프롬프트에 첨부하는지 검증."""
+    from crex.schema import DiffLine, LineStatus
+
+    captured_prompts: list[str] = []
+
+    class CapturingVerifier:
+        def complete_json(self, system: str, user: str, *args, **kwargs):
+            captured_prompts.append(user)
+            return {
+                "verdict": "yes",
+                "code_present": True,
+                "reason": "창 외부 정의에서 acquire_slot 이 nullptr 을 반환함이 확인되어 역참조 위험이 타당함.",
+            }
+
+    # L1~L6 에 정의된 acquire_slot 은 L80 주변 ±25줄 창(L55~L105) 밖에 위치함
+    chunk = ReviewChunk(
+        chunk_id="src/pool.cpp#0",
+        path="src/pool.cpp",
+        language=Language.CPP,
+        start_line=75,
+        end_line=85,
+        lines=[
+            DiffLine(LineStatus.UNCHANGED, 78, "void Pool::Run() {"),
+            DiffLine(LineStatus.ADDED, 79, "    Slot* s = acquire_slot();"),
+            DiffLine(LineStatus.ADDED, 80, "    s->use();"),
+            DiffLine(LineStatus.UNCHANGED, 81, "}"),
+        ],
+        changed_linenos={79, 80},
+        enclosing_symbol="Pool::Run",
+        calls=["acquire_slot", "s->use"],
+        symbol_definitions={
+            "acquire_slot": (
+                "L1: Slot* Pool::acquire_slot() {\n"
+                "L2:     if (free_list_.empty()) return nullptr;\n"
+                "L3:     return free_list_.back();\n"
+                "L4: }"
+            ),
+            "in_window_helper": (
+                "L76: void in_window_helper() {\n"
+                "L77: }"
+            ),
+        },
+    )
+
+    finding = Finding(
+        path="src/pool.cpp",
+        line=80,
+        dimension=Dimension.DEFECT,
+        severity=Severity.HIGH,
+        rule_id="any.null-dereference",
+        message="acquire_slot() 이 nullptr 을 반환할 수 있는데 널 검사 없이 s->use() 를 호출함",
+        chunk_id=chunk.chunk_id,
+    )
+
+    rf = ReviewFilter(CapturingVerifier(), {chunk.chunk_id: chunk})
+    kept, rejected = rf.filter([finding])
+
+    _check(len(kept) == 1 and not rejected, "지적이 유지되어야 함")
+    _check(len(captured_prompts) == 1, "검증기 호출 1회여야 함")
+    prompt = captured_prompts[0]
+    _check(
+        "연관 심볼 및 피호출 함수 정의 (창 외부 문맥)" in prompt,
+        f"창 외부 문맥 섹션이 검증 프롬프트에 없음:\n{prompt}",
+    )
+    _check(
+        "free_list_.empty()" in prompt and "return nullptr" in prompt,
+        f"창 외부 acquire_slot 본문이 검증 프롬프트에 첨부되지 않음:\n{prompt}",
+    )
+    _check(
+        "### `in_window_helper`" not in prompt,
+        f"이미 ±25줄 창 안에 있는 심볼이 중복 첨부됨:\n{prompt}",
+    )
+
+
 TESTS = [
     test_treesitter_ast_analyzer_cpp,
     test_treesitter_ast_analyzer_python,
@@ -242,6 +317,7 @@ TESTS = [
     test_verifier_prompt_and_comment_propagation,
     test_stage1_symbol_contracts_and_member_fields,
     test_stage1_cross_chunk_change_map,
+    test_stage2_verifier_context_expansion,
 ]
 
 

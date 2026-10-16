@@ -21,11 +21,12 @@ guided decoding 의 생성 순서를 결정하므로 `verdict` 를 맨 앞에 �
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from .llm import LLMClient
+from .llm import LLMClient, estimate_tokens
 from .rules import is_rule_excluded
 from .schema import Finding, FilterVerdict, RejectReason, ReviewChunk
 
@@ -62,17 +63,19 @@ VERIFIER_SYSTEM = """\
 
 제시된 코드 스니펫과 지적 내용을 바탕으로, 지적의 타당성을 평가하고 적극적인 검증 코멘트를 작성하라.
 스니펫의 각 줄에는 `[added @142]` 형태로 변경 상태와 실제 라인 번호가 붙어 있다.
+코드 스니펫 외에 `## 연관 심볼 및 피호출 함수 정의 (창 외부 문맥)` 섹션이 함께 제공될 수 있다.
 
 ## 승인 판정 기준 (적극적 승인)
 다음 경우 적극적으로 "yes" 로 승인하라:
 - 지적된 문제(잠재적 버그, 로직 결함, 리소스 누수/무효화, 예외 누락, 보안 취약점 등)가 코드의 흐름상 실제 위험이나 개선 필요성으로 확인되는 경우
+- 피호출 함수 정의나 클래스 멤버 필드 문맥(창 외부 문맥)과 대조했을 때, 호출부/피호출부 간 계약 불일치(널/오류 반환 미처리, 예외 전파, 락/자원 누수 등)가 실제로 성립하는 경우
 - 정적분석 도구의 분석이나 룰 기준에 부합하는 합리적인 지적인 경우
 - 사소한 표현 차이가 있더라도 지적의 핵심 취지가 코드의 잠재적 위험을 정확히 짚고 있는 경우
 
 ## 기각 판정 기준 (명백한 오류만 기각)
 다음 경우에만 "no" 로 기각하라:
 - 지적이 묘사하는 코드/변수/함수가 스니펫에 전혀 존재하지 않는다 (명백한 환각)
-- 지적의 주장이 실제 코드 동작과 완전히 모순된다 (예: 널 체크가 명확히 있는데 없다고 주장하는 경우)
+- 지적의 주장이 실제 코드 동작이나 첨부된 피호출 함수 정의와 완전히 모순된다 (예: 널 체크가 명확히 있거나 피호출 함수가 절대 널을 반환하지 않는데 역참조 위험을 주장하는 경우)
 - 실제 동작에 전혀 영향이 없는 극단적인 개인 취향 문제다
 
 ## 검증 코멘트 작성 지침
@@ -97,7 +100,7 @@ VERIFIER_USER = """\
 ```{lang}
 {code}
 ```
-
+{related_block}
 ## 검증할 지적
 - 위치: {path}:{line}
 - 분류: {dimension} / {severity}
@@ -269,6 +272,84 @@ class ReviewFilter:
 
     # -- 2단계: LLM 재판정 ---------------------------------------------------
 
+    def _resolve_related_context(
+        self, finding: Finding, chunk: ReviewChunk, window: int = 25
+    ) -> str:
+        """지적 라인 주변 창(±window) 밖에 정의된 연관 피호출 함수·클래스 정의를 발췌한다."""
+        symbol_pool: dict[str, tuple[str, str]] = {}
+        for other in self.chunks.values():
+            for sym_name, snippet in other.symbol_definitions.items():
+                symbol_pool.setdefault(sym_name, (other.path, snippet))
+        for sym_name, snippet in chunk.symbol_definitions.items():
+            symbol_pool[sym_name] = (chunk.path, snippet)
+
+        if not symbol_pool and not chunk.flow_context:
+            return ""
+
+        min_ln = finding.line - window
+        max_ln = finding.line + window
+
+        # 지적 대상 라인(±2줄)의 원문 텍스트 확보
+        nearby_code = " ".join(
+            ln.text
+            for ln in chunk.lines
+            if finding.line - 2 <= ln.lineno <= finding.line + 2
+        )
+        claim_text = f"{finding.message} {finding.suggestion or ''}"
+        call_bares = {c.split("(")[0].rsplit(".", 1)[-1].rsplit("::", 1)[-1].rsplit("->", 1)[-1] for c in chunk.calls}
+
+        scored: list[tuple[int, str, str]] = []
+        seen_snippets: set[str] = set()
+
+        for sym_name, (sym_path, snippet) in symbol_pool.items():
+            if not sym_name or not snippet or snippet in seen_snippets:
+                continue
+
+            # 동일 파일이고 정의 라인들이 모두 현재 ±window 안에 이미 포함되어 있으면 중복 제외
+            lineno_matches = [int(m) for m in re.findall(r"(?:^|\n)L(\d+):", snippet)]
+            has_foreign_header = snippet.startswith("// ") and not snippet.startswith(f"// {chunk.path}:")
+            if (
+                sym_path == chunk.path
+                and not has_foreign_header
+                and lineno_matches
+                and min(lineno_matches) >= min_ln
+                and max(lineno_matches) <= max_ln
+            ):
+                continue
+
+            bare = sym_name.split("(")[0].rsplit("::", 1)[-1].rsplit(".", 1)[-1].rsplit("->", 1)[-1]
+            if not bare:
+                continue
+
+            score = 0
+            pat = re.compile(rf"\b{re.escape(bare)}\b")
+            if pat.search(nearby_code):
+                score += 4
+            if pat.search(claim_text):
+                score += 3
+            if bare in call_bares or sym_name in chunk.calls:
+                score += 2
+            if chunk.enclosing_symbol and bare in chunk.enclosing_symbol:
+                score += 1
+
+            if score > 0:
+                seen_snippets.add(snippet)
+                scored.append((score, sym_name, snippet))
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        parts: list[str] = []
+        for _, sym_name, snippet in scored[:3]:
+            parts.append(f"### `{sym_name}`\n```{chunk.language.value}\n{snippet}\n```")
+
+        if chunk.flow_context:
+            parts.append(chunk.flow_context)
+
+        if not parts:
+            return ""
+
+        body = "\n\n".join(parts)
+        return f"\n## 연관 심볼 및 피호출 함수 정의 (창 외부 문맥)\n{body}\n"
+
     def _verify_llm(self, finding: Finding, chunk: ReviewChunk) -> FilterVerdict:
         suggestion_block = (
             f"- 제안된 수정: {finding.suggestion}\n" if finding.suggestion else ""
@@ -276,11 +357,15 @@ class ReviewFilter:
         symbol_line = (
             f"둘러싼 심볼: {chunk.enclosing_symbol}" if chunk.enclosing_symbol else ""
         )
+        code_window = chunk.render_window(finding.line, window=25)
+        related_block = self._resolve_related_context(finding, chunk, window=25)
+
         user = VERIFIER_USER.format(
             path=finding.path,
             symbol_line=symbol_line,
             lang=chunk.language.value,
-            code=chunk.render_window(finding.line, window=25),
+            code=code_window,
+            related_block=related_block,
             line=finding.line,
             dimension=finding.dimension.value,
             severity=finding.severity.value,
@@ -288,6 +373,24 @@ class ReviewFilter:
             message=finding.message,
             suggestion_block=suggestion_block,
         )
+
+        # 검증기 입력 토큰 예산 초과 방어: 예산 초과 시 창 외부 보조 문맥을 생략하여 핵심 코드 창을 보호
+        max_in = getattr(self.client.config, "max_input_tokens", 4096) if hasattr(self.client, "config") else 4096
+        verifier_budget = max(max_in - estimate_tokens(VERIFIER_SYSTEM) - 250, 512)
+        if related_block and estimate_tokens(user) > verifier_budget:
+            user = VERIFIER_USER.format(
+                path=finding.path,
+                symbol_line=symbol_line,
+                lang=chunk.language.value,
+                code=code_window,
+                related_block="",
+                line=finding.line,
+                dimension=finding.dimension.value,
+                severity=finding.severity.value,
+                rule_id=finding.rule_id,
+                message=finding.message,
+                suggestion_block=suggestion_block,
+            )
 
         try:
             # 예산은 설정(llm.verifier.max_output_tokens)이 정한다 — 검증용으로
