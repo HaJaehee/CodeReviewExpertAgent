@@ -49,9 +49,10 @@ RULECHECKER_SYSTEM = """\
 - 구체적인 언어 전용 룰뿐만 아니라 `any.logic-error`, `any.unhandled-error`, `any.boundary-condition`, `any.null-dereference` 등의 범용 룰을 적극 활용하여, 정적분석 도구가 탐지하지 못하는 일반적 코드 결함을 면밀히 짚어낸다.
 
 ## Tree-sitter AST 구문 분석 활용
-함께 제공되는 Tree-sitter 구문 분석 결과를 적극적으로 활용하라.
+함께 제공되는 Tree-sitter 구문 분석 결과(클래스 멤버 필드, 연관/피호출 함수 시그니처 및 계약, 전체 변경 요약 지도 Change Map 포함)를 적극적으로 활용하라.
 - 변경된 라인에서 호출된 함수/메서드, 변수 및 포인터의 선언과 참조 순서, 리소스 할당 및 해제 패턴, 제어문 분기 조건을 AST 수준에서 명확히 파악하라.
-- 예: 포인터 취득 후 크기 재할당(resize/realloc) 호출이 이어지는지, 동적 할당 후 해제 누락이 있는지, 널 포인터 체크 없는 참조가 있는지 등을 AST 노드 흐름을 통해 면밀히 검토하라.
+- **교차 함수·청크 흐름 검토**: 피호출 함수의 반환값(`nullptr`/`None`/`-1`/`false` 등)이나 예외 발생 가능성, 자원/락 연산 계약, 소속 클래스의 멤버 변수 불변식, 그리고 전체 변경 요약 지도(Change Map)의 타 청크/파일 변경 사항과 현재 청크 사이의 계약 불일치나 에러 전파 누락을 면밀히 검토하라.
+- 예: 포인터 취득 후 크기 재할당(resize/realloc) 호출이 이어지는지, 피호출 함수가 실패/널을 반환할 수 있는데 호출부에서 검사 없이 역참조하는지, 동적 할당 후 조기 반환 경로에서 해제 누락이 있는지 등을 AST 노드 흐름을 통해 면밀히 검토하라.
 
 ## 정적분석 결과의 적극적 반영
 정적분석 도구 결과가 함께 제공된 경우:
@@ -183,6 +184,7 @@ class RuleChecker:
                 "%s 프롬프트 크기가 입력 예산(%d토큰)에 근접하여 점진적 압축을 적용합니다",
                 chunk.chunk_id, user_budget,
             )
+            ast_text = chunk.render_ast_context(compact=True)
             static_text = chunk.render_static_findings(max_items=3)
             rules_text = render_rules_for_prompt(rules[:10])
             user = RULECHECKER_USER.format(

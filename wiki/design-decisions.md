@@ -393,6 +393,20 @@ Users can add or cancel `.crexignore` rules directly from code review findings i
 
 ---
 
+## Cross-Flow Review Stage 1: AST symbol contracts and cross-chunk Change Map injection
+
+`TreeSitterAnalyzer.extract_file_symbols()` (`crex/treesitter.py`) and `attach_cross_chunk_context()` (`crex/chunk.py`) deterministically extract symbol contracts and a cross-chunk Change Map, injecting them into every `ReviewChunk` prompt without extra LLM calls.
+
+**Why.** Partitioning diffs into 150-line stateless chunks (`ReviewChunk`) prevents context blowup on 25–40B local models, but isolates each chunk from its surrounding class invariants, callee return/exception contracts, and sibling chunks modified in the same review. When a function `parse_header()` can return `nullptr` (or `fetch_session()` can return `None` / raise `ValueError`) in another chunk or earlier in the file, a stateless chunk reviewing only the caller cannot know the callee's contract without guessing.
+
+**Implementation.**
+1. **`SymbolContract` extraction**: Per file, `TreeSitterAnalyzer` (with regex/indentation fallback when `tree-sitter` is absent) indexes every function/method and class/struct, capturing its signature, return value expressions (`returns`), thrown/raised exceptions (`throws`), resource/lock operations (`resource_ops`), class member fields (`member_fields`), and a bounded 18-line definition snippet (`symbol_definitions`).
+2. **Enclosing class fields & intra/cross-file callee contracts**: Each chunk receives the member fields of its enclosing class/struct and 1-line contract summaries of functions invoked inside the chunk (`callee_contracts`).
+3. **Cross-chunk Change Map**: `attach_cross_chunk_context()` builds a compact Change Map summarizing all other chunks and files modified in the review run (`path`, line range, enclosing symbol, changed line count, signature/return hints) and resolves cross-file callees across the modified fileset.
+4. **Progressive token-budget pruning**: `ReviewChunk.render_ast_context(compact=True)` drops the Change Map and trims field/contract counts if a dense chunk approaches `generator.max_input_tokens`, preserving 100% of annotated code lines.
+
+---
+
 ## Research sources
 
 | Source | Used for |

@@ -18,10 +18,11 @@ from .chunk import (
     Chunker,
     DiffSourceMismatch,
     SymbolLocator,
+    attach_cross_chunk_context,
     calculate_safe_max_lines,
     parse_unified_diff,
 )
-from .treesitter import TreeSitterAnalyzer
+from .treesitter import SymbolContract, TreeSitterAnalyzer
 from .config import SEVERITY_ORDER, Config
 from .filter import ReviewFilter
 from .generate import RuleChecker
@@ -95,6 +96,8 @@ class Pipeline:
         with self._timed(result, "chunk"):
             path_exclude, rule_exclude = self._get_effective_exclusions(repo_root)
             chunks: list[ReviewChunk] = []
+            file_symbols_by_path: dict[str, dict[str, SymbolContract]] = {}
+            ts_analyzer = TreeSitterAnalyzer()
             for path in paths:
                 if is_excluded(path, path_exclude):
                     log.info("%s: 제외 규칙(exclude)에 매칭되어 건너뜀", path)
@@ -102,7 +105,14 @@ class Pipeline:
                 source = _read(repo_root / path, result)
                 if source is None:
                     continue
+                lang = Language.from_path(path)
+                if lang is not Language.OTHER:
+                    file_symbols_by_path[path] = ts_analyzer.extract_file_symbols(
+                        source.splitlines(), lang, path=path
+                    )
                 chunks.extend(self._chunk_whole_file(path, source))
+            if len(chunks) > 1 or len(file_symbols_by_path) > 1:
+                attach_cross_chunk_context(chunks, file_symbols_by_path=file_symbols_by_path)
 
         # 전체 감사에서는 '변경된 라인' 개념이 없으므로 제약을 푼다.
         return self._review(
@@ -224,6 +234,7 @@ class Pipeline:
         )
 
         chunks: list[ReviewChunk] = []
+        file_symbols_by_path: dict[str, dict[str, SymbolContract]] = {}
         for file_diff in file_diffs:
             if path_exclude and is_excluded(file_diff.path, path_exclude):
                 log.info("%s: 제외 규칙(exclude)에 매칭되어 건너뜀", file_diff.path)
@@ -235,11 +246,18 @@ class Pipeline:
             if source is None:
                 continue
             try:
+                file_symbols_by_path[file_diff.path] = (
+                    chunker.treesitter_analyzer.extract_file_symbols(
+                        source.splitlines(), file_diff.language, path=file_diff.path
+                    )
+                )
                 chunks.extend(chunker.chunk_file(file_diff, source))
             except DiffSourceMismatch as exc:
                 # 라인 번호가 밀린 채로 리뷰하면 전부 거짓말이 된다. 파일 단위로 건너뛴다.
                 result.errors.append(str(exc))
                 log.error("%s 건너뜀: diff/파일 불일치", file_diff.path)
+        if len(chunks) > 1 or len(file_symbols_by_path) > 1:
+            attach_cross_chunk_context(chunks, file_symbols_by_path=file_symbols_by_path)
         return chunks
 
     def _chunk_whole_file(self, path: str, source: str) -> list[ReviewChunk]:
@@ -256,7 +274,9 @@ class Pipeline:
         window = min(self.config.chunking.absolute_max_lines, safe_lines)
         locator = SymbolLocator()
         treesitter_analyzer = TreeSitterAnalyzer()
+        file_symbols = treesitter_analyzer.extract_file_symbols(lines, language, path=path)
         chunks: list[ReviewChunk] = []
+        ast_contexts = []
         start = 1
         index = 0
 
@@ -273,7 +293,10 @@ class Pipeline:
                 for n in range(start, end + 1)
             ]
             all_lines = set(range(start, end + 1))
-            ast_ctx = treesitter_analyzer.analyze(lines, language, start, end, all_lines)
+            ast_ctx = treesitter_analyzer.analyze(
+                lines, language, start, end, all_lines, path=path, file_symbols=file_symbols
+            )
+            ast_contexts.append(ast_ctx)
             chunks.append(
                 ReviewChunk(
                     chunk_id=f"{path}#{index}",
@@ -285,11 +308,18 @@ class Pipeline:
                     changed_linenos=all_lines,
                     enclosing_symbol=ast_ctx.enclosing_symbol,
                     ast_context=ast_ctx.render_for_prompt(),
+                    ast_context_compact=ast_ctx.render_for_prompt(compact=True),
+                    calls=list(ast_ctx.calls),
+                    symbol_definitions=dict(ast_ctx.symbol_definitions),
                 )
             )
             index += 1
             start = end + 1
 
+        if len(chunks) > 1:
+            attach_cross_chunk_context(
+                chunks, ast_contexts=ast_contexts, file_symbols_by_path={path: file_symbols}
+            )
         return chunks
 
     def _build_gate(self, repo_root: Path) -> GroundingGate:

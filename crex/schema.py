@@ -187,6 +187,10 @@ class ReviewChunk:
     enclosing_symbol: str | None = None
     static_findings: list[StaticFinding] = field(default_factory=list)
     ast_context: str | None = None
+    ast_context_compact: str | None = None
+    calls: list[str] = field(default_factory=list)
+    symbol_definitions: dict[str, str] = field(default_factory=dict)
+    flow_context: str | None = None
 
     def render_code(self) -> str:
         return "\n".join(line.annotate() for line in self.lines)
@@ -214,12 +218,19 @@ class ReviewChunk:
             rendered.append(f"... (외 {len(self.static_findings) - max_items}건 정적분석 지적 생략)")
         return "\n".join(rendered)
 
-    def render_ast_context(self) -> str:
-        if self.ast_context:
-            return self.ast_context
-        if self.enclosing_symbol:
-            return f"- 둘러싼 심볼: `{self.enclosing_symbol}`"
-        return "(Tree-sitter 구문 분석 정보 없음)"
+    def render_ast_context(self, *, compact: bool = False) -> str:
+        if compact and self.ast_context_compact:
+            base = self.ast_context_compact
+        elif self.ast_context:
+            base = self.ast_context
+        elif self.enclosing_symbol:
+            base = f"- 둘러싼 심볼: `{self.enclosing_symbol}`"
+        else:
+            base = "(Tree-sitter 구문 분석 정보 없음)"
+
+        if self.flow_context and not compact:
+            return f"{base}\n{self.flow_context}"
+        return base
 
     def covers(self, lineno: int) -> bool:
         return self.start_line <= lineno <= self.end_line

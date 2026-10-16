@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass
 
 from .schema import DiffLine, FileDiff, Hunk, Language, LineStatus, ReviewChunk
-from .treesitter import TreeSitterAnalyzer
+from .treesitter import SymbolContract, TreeSitterAnalyzer, TreeSitterContext, _bare_symbol_name
 
 log = logging.getLogger(__name__)
 
@@ -454,11 +454,23 @@ class Chunker:
                 )
             )
 
+        file_symbols = self.treesitter_analyzer.extract_file_symbols(
+            source_lines, language, path=file_diff.path
+        )
         chunks: list[ReviewChunk] = []
+        ast_contexts: list[TreeSitterContext] = []
         for index, (start, end, name, changed) in enumerate(final_ranges):
             lines = _render_range(source_lines, start, end, deleted_before, added, unchanged)
-            ast_ctx = self.treesitter_analyzer.analyze(source_lines, language, start, end, changed)
-            ast_summary = ast_ctx.render_for_prompt()
+            ast_ctx = self.treesitter_analyzer.analyze(
+                source_lines,
+                language,
+                start,
+                end,
+                changed,
+                path=file_diff.path,
+                file_symbols=file_symbols,
+            )
+            ast_contexts.append(ast_ctx)
             chunks.append(
                 ReviewChunk(
                     chunk_id=f"{file_diff.path}#{index}",
@@ -469,8 +481,17 @@ class Chunker:
                     lines=lines,
                     changed_linenos=changed,
                     enclosing_symbol=name or ast_ctx.enclosing_symbol,
-                    ast_context=ast_summary,
+                    ast_context=ast_ctx.render_for_prompt(),
+                    ast_context_compact=ast_ctx.render_for_prompt(compact=True),
+                    calls=list(ast_ctx.calls),
+                    symbol_definitions=dict(ast_ctx.symbol_definitions),
                 )
+            )
+        if len(chunks) > 1:
+            attach_cross_chunk_context(
+                chunks,
+                ast_contexts=ast_contexts,
+                file_symbols_by_path={file_diff.path: file_symbols},
             )
         return chunks
 
@@ -684,3 +705,103 @@ def _render_range(
         out.append(deleted)
 
     return out
+
+
+def attach_cross_chunk_context(
+    chunks: list[ReviewChunk],
+    *,
+    ast_contexts: list[TreeSitterContext] | None = None,
+    file_symbols_by_path: dict[str, dict[str, SymbolContract]] | None = None,
+) -> None:
+    """여러 청크·파일 간의 변경 요약 지도(Change Map)와 교차 파일 피호출 심볼 계약을 연결한다."""
+    if not chunks:
+        return
+
+    global_symbols: dict[str, SymbolContract] = {}
+    if file_symbols_by_path:
+        for path, sym_map in file_symbols_by_path.items():
+            for key, sym in sym_map.items():
+                if not sym.path:
+                    sym.path = path
+                global_symbols.setdefault(key, sym)
+                if sym.bare_name:
+                    global_symbols.setdefault(sym.bare_name, sym)
+
+    # 각 청크의 1줄 변경 요약 생성
+    chunk_summaries: list[tuple[str, str]] = []
+    for chunk in chunks:
+        sym_label = chunk.enclosing_symbol or "전역"
+        bare = _bare_symbol_name(sym_label)
+        sym_obj = global_symbols.get(sym_label) or global_symbols.get(bare)
+        contract_hint = ""
+        if sym_obj and sym_obj.signature:
+            ret_part = f", 반환: {', '.join(sym_obj.returns[:2])}" if sym_obj.returns else ""
+            thr_part = f", 예외: {', '.join(sym_obj.throws[:2])}" if sym_obj.throws else ""
+            contract_hint = f" [{sym_obj.signature}{ret_part}{thr_part}]"
+        elif chunk.calls:
+            calls_preview = ", ".join(chunk.calls[:3])
+            contract_hint = f" [호출: {calls_preview}]"
+
+        summary = (
+            f"`{chunk.path}` L{chunk.start_line}-L{chunk.end_line} "
+            f"(`{sym_label}`, 변경 {len(chunk.changed_linenos)}줄){contract_hint}"
+        )
+        chunk_summaries.append((chunk.chunk_id, summary))
+
+    for idx, chunk in enumerate(chunks):
+        other_maps = [s for cid, s in chunk_summaries if cid != chunk.chunk_id][:8]
+        cross_contracts: list[str] = []
+        enclosing_bare = _bare_symbol_name(chunk.enclosing_symbol or "")
+
+        for call in chunk.calls:
+            bare = _bare_symbol_name(call)
+            sym = global_symbols.get(call) or global_symbols.get(bare)
+            if sym is None:
+                continue
+            if sym.path == chunk.path and sym.bare_name == enclosing_bare:
+                continue
+            rendered = sym.render_contract()
+            if rendered not in cross_contracts:
+                cross_contracts.append(rendered)
+            if sym.definition_snippet:
+                header = f"// {sym.path}:L{sym.start_line}-L{sym.end_line}\n" if sym.path else ""
+                chunk.symbol_definitions.setdefault(
+                    sym.bare_name, f"{header}{sym.definition_snippet}"
+                )
+                chunk.symbol_definitions.setdefault(
+                    sym.name, f"{header}{sym.definition_snippet}"
+                )
+
+        if ast_contexts and idx < len(ast_contexts):
+            ctx = ast_contexts[idx]
+            for c in cross_contracts:
+                if c not in ctx.callee_contracts:
+                    ctx.callee_contracts.append(c)
+            ctx.change_map = other_maps
+            chunk.ast_context = ctx.render_for_prompt()
+            chunk.ast_context_compact = ctx.render_for_prompt(compact=True)
+        else:
+            # 기존 ast_context 문자열에 교차 파일 계약 및 Change Map 병합
+            base = chunk.ast_context or ""
+            extra_lines: list[str] = []
+            for c in cross_contracts:
+                if c not in base:
+                    if not extra_lines:
+                        extra_lines.append("- 교차 파일 피호출 함수 계약:")
+                    extra_lines.append(f"  - {c}")
+            if other_maps and "전체 변경 요약 지도(Change Map):" not in base:
+                extra_lines.append("- 전체 변경 요약 지도(Change Map):")
+                for item in other_maps:
+                    extra_lines.append(f"  - {item}")
+            elif other_maps and "전체 변경 요약 지도(Change Map):" in base:
+                # 단일 파일 청킹 단계에서 들어간 요약을 다중 파일 전체 요약으로 갱신
+                prefix = base.split("- 전체 변경 요약 지도(Change Map):")[0].rstrip()
+                tail_parts = base.split("- 구문 오류(has_error):")
+                err_tail = f"\n- 구문 오류(has_error):{tail_parts[-1]}" if len(tail_parts) > 1 else ""
+                map_block = "\n".join(["- 전체 변경 요약 지도(Change Map):"] + [f"  - {m}" for m in other_maps])
+                chunk.ast_context = f"{prefix}\n{map_block}{err_tail}"
+                extra_lines = []
+
+            if extra_lines:
+                chunk.ast_context = f"{base}\n" + "\n".join(extra_lines) if base else "\n".join(extra_lines)
+
