@@ -308,6 +308,177 @@ def test_stage2_verifier_context_expansion() -> None:
     )
 
 
+def test_stage3_call_graph_slice_and_flow_hazards() -> None:
+    """3단계: 다단계 호출 그래프 슬라이싱(Caller -> Fn -> Callee 1~2 hop) 및 결정론적 흐름 위험 신호 탐지 검증."""
+    from crex.chunk import Chunker, attach_cross_chunk_context, parse_unified_diff
+    from crex.flow import FlowAnalyzer
+
+    repo_src = """\
+Record* fetch_from_db(int id) {
+    if (id <= 0) {
+        return nullptr;
+    }
+    return db_query(id);
+}
+
+Record* load_user_record(int uid) {
+    int normalized = uid * 10;
+    int step1 = normalized + 1;
+    int step2 = step1 + 2;
+    int step3 = step2 + 3;
+    int step4 = step3 + 4;
+    int step5 = step4 + 5;
+    return fetch_from_db(uid);
+}
+"""
+    service_src = """\
+bool run_job(int uid) {
+    Buffer* raw_buf = new Buffer(256);
+    Record* rec = load_user_record(uid);
+    rec->touch();
+    delete raw_buf;
+    return true;
+}
+"""
+    diff_text = """\
+diff --git a/src/service.cpp b/src/service.cpp
+index 1111111..2222222 100644
+--- a/src/service.cpp
++++ b/src/service.cpp
+@@ -1,6 +1,7 @@
+ bool run_job(int uid) {
+     Buffer* raw_buf = new Buffer(256);
++    Record* rec = load_user_record(uid);
++    rec->touch();
+     delete raw_buf;
+     return true;
+ }
+"""
+    chunker = Chunker()
+    ts = chunker.treesitter_analyzer
+    file_symbols = {
+        "src/repo.cpp": ts.extract_file_symbols(repo_src.splitlines(), Language.CPP, path="src/repo.cpp"),
+        "src/service.cpp": ts.extract_file_symbols(service_src.splitlines(), Language.CPP, path="src/service.cpp"),
+    }
+    fdiffs = parse_unified_diff(diff_text)
+    chunks = chunker.chunk_file(fdiffs[0], service_src)
+    attach_cross_chunk_context(chunks, file_symbols_by_path=file_symbols)
+    FlowAnalyzer(ts).enrich(chunks, file_symbols_by_path=file_symbols)
+
+    _check(len(chunks) == 1, f"청크 개수 불일치: {len(chunks)}")
+    chunk = chunks[0]
+    _check(bool(chunk.flow_context), "flow_context 가 생성되지 않음")
+    rendered = chunk.render_ast_context()
+    _check(
+        "호출 그래프 실행 경로 슬라이스(Call-Graph Flow)" in rendered,
+        f"호출 그래프 슬라이스 섹션 누락:\n{rendered}",
+    )
+    _check(
+        "load_user_record" in rendered and "fetch_from_db" in rendered,
+        f"2단계 피호출 체인(load_user_record -> fetch_from_db) 누락:\n{rendered}",
+    )
+    _check(
+        "중간 생략" in rendered,
+        f"긴 함수에 대한 접힌 실행 슬라이스(중간 생략)가 동작하지 않음:\n{rendered}",
+    )
+    _check(
+        "교차 함수 흐름 위험 신호(Flow Hazards)" in rendered,
+        f"흐름 위험 신호 섹션 누락:\n{rendered}",
+    )
+    _check(
+        "[널/오류 반환 미검사 위험]" in rendered and "nullptr" in rendered,
+        f"2-hop nullptr 반환 미검사 역참조 위험 신호 누락:\n{rendered}",
+    )
+
+
+def test_stage3_workspace_neighbor_discovery() -> None:
+    """3단계: diff 에 없는 저장소 내 미수정 인접 파일에서 피호출 함수와 상위 호출부를 자동 탐색하는지 검증."""
+    import tempfile
+    from pathlib import Path
+    from crex.chunk import Chunker, parse_unified_diff
+    from crex.flow import FlowAnalyzer
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        src_dir = root / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+
+        # 미수정 인접 파일 1: 피호출 함수 정의 (None 반환 가능)
+        (src_dir / "storage.py").write_text(
+            "def find_account(account_id: int):\n"
+            "    if account_id < 0:\n"
+            "        return None\n"
+            "    return {'id': account_id, 'balance': 100}\n",
+            encoding="utf-8",
+        )
+        # 미수정 인접 파일 2: 변경된 함수를 호출하는 상위 호출부 (반환값 미검사 사용)
+        (src_dir / "controller.py").write_text(
+            "def handle_withdraw_Endpoint(req_id: int):\n"
+            "    result = withdraw_amount(req_id)\n"
+            "    return result.strip()\n",
+            encoding="utf-8",
+        )
+        # 수정된 파일: find_account 를 호출해 검사 없이 인덱싱하고, 실패 시 None 반환
+        billing_src = (
+            "def withdraw_amount(account_id: int):\n"
+            "    acct = find_account(account_id)\n"
+            "    if acct['balance'] <= 0:\n"
+            "        return None\n"
+            "    return 'ok'\n"
+        )
+        (src_dir / "billing.py").write_text(billing_src, encoding="utf-8")
+
+        diff_text = """\
+diff --git a/src/billing.py b/src/billing.py
+index 1111111..2222222 100644
+--- a/src/billing.py
++++ b/src/billing.py
+@@ -1,5 +1,5 @@
+ def withdraw_amount(account_id: int):
++    acct = find_account(account_id)
++    if acct['balance'] <= 0:
++        return None
+     return 'ok'
+"""
+        chunker = Chunker()
+        ts = chunker.treesitter_analyzer
+        file_symbols = {
+            "src/billing.py": ts.extract_file_symbols(
+                billing_src.splitlines(), Language.PYTHON, path="src/billing.py"
+            )
+        }
+        fdiffs = parse_unified_diff(diff_text)
+        chunks = chunker.chunk_file(fdiffs[0], billing_src)
+        FlowAnalyzer(ts).enrich(
+            chunks,
+            file_symbols_by_path=file_symbols,
+            repo_root=root,
+        )
+
+        chunk = chunks[0]
+        _check("find_account" in chunk.symbol_definitions, "미수정 파일의 find_account 정의가 수집되지 않음")
+        _check(
+            "handle_withdraw_Endpoint" in chunk.symbol_definitions,
+            "미수정 파일의 상위 호출부 handle_withdraw_Endpoint 정의가 수집되지 않음",
+        )
+        _check(
+            "[상위 호출부 슬라이스]" in chunk.flow_context and "src/controller.py" in chunk.flow_context,
+            f"미수정 파일의 상위 호출부 슬라이스가 flow_context 에 없음:\n{chunk.flow_context}",
+        )
+        _check(
+            "[하위 피호출 슬라이스]" in chunk.flow_context and "src/storage.py" in chunk.flow_context,
+            f"미수정 파일의 하위 피호출 슬라이스가 flow_context 에 없음:\n{chunk.flow_context}",
+        )
+        _check(
+            "[널/오류 반환 미검사 위험]" in chunk.flow_context,
+            f"미수정 파일 피호출 함수의 None 반환 미검사 위험 신호 누락:\n{chunk.flow_context}",
+        )
+        _check(
+            "[상위 호출부 계약 불일치 위험]" in chunk.flow_context,
+            f"미수정 상위 호출부와의 계약 불일치 위험 신호 누락:\n{chunk.flow_context}",
+        )
+
+
 TESTS = [
     test_treesitter_ast_analyzer_cpp,
     test_treesitter_ast_analyzer_python,
@@ -318,6 +489,8 @@ TESTS = [
     test_stage1_symbol_contracts_and_member_fields,
     test_stage1_cross_chunk_change_map,
     test_stage2_verifier_context_expansion,
+    test_stage3_call_graph_slice_and_flow_hazards,
+    test_stage3_workspace_neighbor_discovery,
 ]
 
 

@@ -420,6 +420,27 @@ Users can add or cancel `.crexignore` rules directly from code review findings i
 
 ---
 
+## Cross-Flow Review Stage 3: Call-graph execution slicing and workspace flow hazard analysis
+
+`FlowAnalyzer` (`crex/flow.py`) constructs multi-hop (`Caller -> Changed Function -> Callee 1~2 hop`) call-graph execution slices, resolves callees and callers from unmodified workspace neighbor files, and emits deterministic cross-function flow hazard signals into `ReviewChunk.flow_context` and `symbol_definitions`.
+
+**Why.** Stages 1 and 2 connect symbols across chunks and files *within the diff*, and expose their contracts and definitions to the generator and verifier. However, three classes of cross-flow defects still escape single-hop contract summaries:
+1. **Unmodified workspace neighbors**: A diff often modifies only `service.cpp` while its callee `load_record()` lives in an unmodified file `storage.cpp`, or modifies `withdraw_amount()` while its existing caller `handle_withdraw_Endpoint()` lives in an unmodified file `controller.py` and fails to handle a newly added `None`/`nullptr` return.
+2. **Multi-hop propagation (2-hop callees)**: A helper `load_user_record()` delegates directly to `fetch_from_db()` which returns `nullptr`; a 1-hop return summary (`return fetch_from_db(uid)`) hides the underlying `nullptr` contract unless 2-hop contracts are propagated and sliced.
+3. **Long caller/callee bodies**: Dumping entire 60-line caller/callee bodies bloats the prompt, whereas folding intermediate statements (`// ... (중간 생략)`) to keep only signatures, branch guards, resource/lock operations, call sites, and return/throw statements gives 25–40B models a dense execution-path slice (`ICML 2025 Spotlight` code slicing).
+
+**Implementation.**
+1. **Workspace neighbor symbol discovery (`_discover_workspace_symbols`)**: Scans up to `MAX_WORKSPACE_FILES = 40` unmodified files in `repo_root` (prioritizing header/source counterparts with matching file stems, then same-directory files, then repository files filtered by fast substring matching on unresolved callee and enclosing symbol identifiers). Discovered symbols are added to `symbol_definitions` and the call graph.
+2. **Multi-hop call graph & folded execution slices (`_build_folded_slice`)**: Builds `Caller -> Changed Function -> Callee (1~2 hop)` chains and renders folded execution slices (retaining signatures, `if`/`switch`/`try` guards, resource/lock ops, call sites, and `return`/`throw`/`raise` statements, while collapsing intermediate lines into `// ... (중간 생략)`).
+3. **Deterministic flow hazard signals (`_detect_flow_hazards`)**: Cross-checks caller/callee contracts against AST/line usage patterns to emit targeted warnings under `- 교차 함수 흐름 위험 신호(Flow Hazards):`:
+   - `[널/오류 반환 미검사 위험]`: 1-hop or 2-hop callee returns `nullptr`/`NULL`/`None`/`false`/`-1`, and the caller dereferences or uses the return value without an explicit guard.
+   - `[예외 전파 및 자원/락 누수 위험]` / `[교차 함수 예외 전파 위험]`: Callee throws/raises while the caller holds unguarded heap/file/lock resources or lacks exception handling.
+   - `[중첩 락/동시성 위험]`: Both caller and callee acquire locks (`lock`, `mutex`, `lock_guard`, `Monitor.Enter`), flagging potential deadlock or lock-order inversion.
+   - `[상위 호출부 계약 불일치 위험]`: Modified function returns a nullable/error sentinel or throws, while an existing caller in the workspace uses the return value without guarding.
+4. **Zero extra LLM calls & stage-event preservation**: Runs deterministically at the end of the `"chunk"` pipeline stage (`Pipeline._chunk_diff` and `Pipeline.run_scan`), preserving the two-call-per-chunk ceiling and existing visualizer stage events (`chunk`, `ground`, `generate`, `filter`).
+
+---
+
 ## Research sources
 
 | Source | Used for |

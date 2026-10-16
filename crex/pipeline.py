@@ -25,6 +25,7 @@ from .chunk import (
 from .treesitter import SymbolContract, TreeSitterAnalyzer
 from .config import SEVERITY_ORDER, Config
 from .filter import ReviewFilter
+from .flow import FlowAnalyzer
 from .generate import RuleChecker
 from .ground import (
     DEFAULT_ANALYZERS,
@@ -113,6 +114,13 @@ class Pipeline:
                 chunks.extend(self._chunk_whole_file(path, source))
             if len(chunks) > 1 or len(file_symbols_by_path) > 1:
                 attach_cross_chunk_context(chunks, file_symbols_by_path=file_symbols_by_path)
+            if chunks:
+                FlowAnalyzer(ts_analyzer).enrich(
+                    chunks,
+                    file_symbols_by_path=file_symbols_by_path,
+                    repo_root=repo_root,
+                    path_exclude=path_exclude,
+                )
 
         # 전체 감사에서는 '변경된 라인' 개념이 없으므로 제약을 푼다.
         return self._review(
@@ -258,6 +266,13 @@ class Pipeline:
                 log.error("%s 건너뜀: diff/파일 불일치", file_diff.path)
         if len(chunks) > 1 or len(file_symbols_by_path) > 1:
             attach_cross_chunk_context(chunks, file_symbols_by_path=file_symbols_by_path)
+        if chunks:
+            FlowAnalyzer(chunker.treesitter_analyzer).enrich(
+                chunks,
+                file_symbols_by_path=file_symbols_by_path,
+                repo_root=repo_root,
+                path_exclude=path_exclude,
+            )
         return chunks
 
     def _chunk_whole_file(self, path: str, source: str) -> list[ReviewChunk]:
